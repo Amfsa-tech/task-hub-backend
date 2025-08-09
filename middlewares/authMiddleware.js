@@ -1,5 +1,5 @@
 // Add this after other middleware but before routes
-import verify from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 import User from '../models/user.js';
 import Tasker from '../models/tasker.js';
 import { JWT_SECRET } from '../utils/authUtils.js';
@@ -21,7 +21,7 @@ import { JWT_SECRET } from '../utils/authUtils.js';
 
   try {
     // Verify token
-    const decoded = verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
     
     // Get user from database
     const user = await User.findById(decoded.id);
@@ -58,6 +58,7 @@ import { JWT_SECRET } from '../utils/authUtils.js';
         message: 'Invalid token.'
       });
     } else {
+      console.error('Token verification error:', err);
       return res.status(401).json({
         status: "error", 
         message: 'Token verification failed.'
@@ -83,7 +84,7 @@ export const protectTasker = async (req, res, next) => {
 
   try {
     // Verify token
-    const decoded = verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
     
     // Get tasker from database
     const tasker = await Tasker.findById(decoded.id);
@@ -158,7 +159,7 @@ export const protectAny = async (req, res, next) => {
 
   try {
     // Verify token
-    const decoded = verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
     
     // Try to find user first, then tasker
     let user = await User.findById(decoded.id);
@@ -227,7 +228,7 @@ export const optionalAuth = async (req, res, next) => {
 
   try {
     // Verify token
-    const decoded = verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
     
     // Try to find user first, then tasker
     let user = await User.findById(decoded.id);

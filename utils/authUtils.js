@@ -1,9 +1,9 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
+import { JWT_SECRET_KEY } from '../config/envConfig.js';
 
-// JWT Secret - In production, this should be in environment variables
-export const JWT_SECRET =  "secret123";
+export const JWT_SECRET = JWT_SECRET_KEY;
 
 // Generate JWT token (no expiry)
 export const generateToken = (userId) => {

@@ -1,6 +1,7 @@
 import Task from '../models/task.js';
 import { Types } from 'mongoose';
 import { calculateDistance, milesToMeters } from '../utils/locationUtils.js';
+import Category from '../models/category.js';
 
 // Helper function to check if ID is valid
 const isValidObjectId = (id) => {
@@ -59,7 +60,6 @@ const createTask = async (req, res) => {
         const uniqueCategories = [...new Set(categories)];
 
         // Verify all categories exist and are active
-        const Category = require('../models/category');
         const existingCategories = await Category.find({
             _id: { $in: uniqueCategories },
             isActive: true

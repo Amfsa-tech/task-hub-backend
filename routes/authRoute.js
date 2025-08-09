@@ -62,7 +62,7 @@ router.delete('/user/notification-id', protectUser, removeUserNotificationId);
 router.delete('/tasker/notification-id', protectTasker, removeTaskerNotificationId);
 
 // NIN Identity Verification routes (tasker only)
-router.post('/verify-identity', protectTasker, verifyTaskerIdentity);
+router.post('/verify-identity', protectTasker, verifyTaskerIdentity); 
 router.get('/verification-status', protectTasker, getTaskerVerificationStatus);
 
 export default router;
