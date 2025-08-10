@@ -11,17 +11,14 @@ import { ONESIGNAL_APP_ID, ONESIGNAL_REST_KEY } from '../config/envConfig.js';
 export async function sendWelcomePush(playerId, heading, message) {
   const payload = {
     app_id: ONESIGNAL_APP_ID,
-    target_channel: 'push',
     include_subscription_ids: [playerId], // <= docs: send to 1 specific device
     contents: { en: message },
     headings: { en: heading },
     name: 'welcome_push',                 // optional, shows in OneSignal dashboard
-    isAndroid: true,
-    isIos: true
   };
 
   try {
-    const response = await fetch('https://api.onesignal.com/notifications', {
+    const response = await fetch('https://onesignal.com/api/v1/notifications', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
