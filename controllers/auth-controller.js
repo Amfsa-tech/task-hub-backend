@@ -225,11 +225,11 @@ const getUser = async (req, res) => {
             createdAt: req.user.createdAt
         };
 
-//  await sendWelcomePush(
-//             req.user.notificationId,
-//             'Welcome aboard!',
-//             'You can now start using TaskHub. Your account is ready 🎉'
-//         );
+ await sendWelcomePush(
+            req.user.notificationId,
+            'Welcome aboard!',
+            'You can now start using TaskHub. Your account is ready 🎉'
+        );
 
         return res.status(200).json({
             status: "success",
