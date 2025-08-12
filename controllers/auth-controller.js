@@ -4,6 +4,8 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import ninVerificationService from '../services/nin_service.js';
+import mongoose from 'mongoose';
+import Category from '../models/category.js';
 import {
     generateToken,
     generateRandomToken,
@@ -813,8 +815,6 @@ const updateTaskerCategories = async (req, res) => {
     }
 
     try {
-        const mongoose = require('mongoose');
-        const Category = require('../models/category');
 
         // Validate category IDs
         const categoryIds = categories.filter(id => id && mongoose.Types.ObjectId.isValid(id));
