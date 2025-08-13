@@ -1,10 +1,10 @@
 import createError from 'http-errors';
 import fetch from 'node-fetch';
-import { QOREID_CLIENT_ID, QOREID_SECRET_KEY } from '../config/envConfig.js';
+import { QOREID_CLIENT_KEY, QOREID_SECRET_KEY } from '../config/envConfig.js';
 
 // QoreID API Configuration
 const QOREID_BASE_URL = 'https://api.qoreid.com';
-const CLIENT_ID = QOREID_CLIENT_ID;
+const CLIENT_ID = QOREID_CLIENT_KEY;
 const SECRET_KEY = QOREID_SECRET_KEY;
 
 /**
