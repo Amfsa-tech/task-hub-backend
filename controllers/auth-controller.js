@@ -986,7 +986,7 @@ export const verifyTaskerIdentity = async (req, res) => {
         const { nin, firstName, lastName, dateOfBirth, gender, phoneNumber, email } = req.body;
 
         // Get tasker ID from auth middleware
-        const taskerId = req.user.id;
+        const taskerId = req.tasker.id;
 
         // Validate required fields
         if (!nin || !firstName || !lastName || !dateOfBirth || !gender) {
