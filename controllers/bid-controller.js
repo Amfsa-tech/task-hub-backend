@@ -1,5 +1,6 @@
 import Bid from '../models/bid.js';
-import TasK from '../models/task.js';
+import Task from '../models/task.js';
+import { notifyUserAboutNewBid, notifyTaskerAboutBidAcceptance, notifyTaskerAboutBidRejection } from '../utils/notificationUtils.js';
 import { Types, startSession } from 'mongoose';
 
 // Helper function to check if ID is valid
@@ -30,7 +31,7 @@ const createBid = async (req, res) => {
         }
         
         // Check if the task exists
-        const task = await TasK.findById(taskId);
+    const task = await Task.findById(taskId);
         if (!task) {
             return res.status(404).json({
                 status: "error",
@@ -109,6 +110,17 @@ const createBid = async (req, res) => {
         });
         
         await bid.save();
+        // Fire-and-forget: notify task owner about the new bid/application
+        try {
+            // req.tasker is present from protectTasker, includes first/last name
+            // task.user is the owner's id
+            // Do not await to keep response snappy
+            notifyUserAboutNewBid(task.user, task, bid, req.tasker).catch((e) => {
+                console.error('notifyUserAboutNewBid error:', e);
+            });
+        } catch (notifyErr) {
+            console.error('Failed to trigger new bid notification:', notifyErr);
+        }
         
         const responseMessage = task.isBiddingEnabled 
             ? "Bid placed successfully" 
@@ -183,7 +195,7 @@ const updateBid = async (req, res) => {
         }
         
         // Check if the task is still open
-        const task = await TasK.findById(bid.task);
+    const task = await Task.findById(bid.task);
         if (!task || task.status !== 'open') {
             return res.status(400).json({
                 status: "error",
@@ -276,7 +288,7 @@ const deleteBid = async (req, res) => {
             });
         }
         
-        await findByIdAndDelete(id);
+    await Bid.findByIdAndDelete(id);
         
         res.status(200).json({
             status: "success",
@@ -306,7 +318,7 @@ const getTaskBids = async (req, res) => {
         }
         
         // Check if the task exists
-        const task = await Task.findById(taskId);
+    const task = await Task.findById(taskId);
         if (!task) {
             return res.status(404).json({
                 status: "error",
@@ -415,7 +427,7 @@ const acceptBid = async (req, res) => {
             await bid.save({ session });
             
             // Update task status and assigned tasker
-            await findByIdAndUpdate(
+            await Task.findByIdAndUpdate(
                 bid.task._id,
                 {
                     status: 'assigned',
@@ -425,8 +437,16 @@ const acceptBid = async (req, res) => {
                 { session }
             );
             
+            // Pre-fetch other bids before updating them to rejected (for notifications after commit)
+            const otherBids = await Bid.find({
+                task: bid.task._id,
+                _id: { $ne: id }
+            })
+            .select('_id tasker amount')
+            .session(session);
+
             // Reject all other bids for this task
-            await updateMany(
+            await Bid.updateMany(
                 {
                     task: bid.task._id,
                     _id: { $ne: id }
@@ -441,6 +461,22 @@ const acceptBid = async (req, res) => {
             await session.commitTransaction();
             session.endSession();
             
+            // Fire-and-forget notifications after successful commit
+            try {
+                notifyTaskerAboutBidAcceptance(bid.tasker, bid.task, bid).catch((e) => {
+                    console.error('notifyTaskerAboutBidAcceptance error:', e);
+                });
+                if (Array.isArray(otherBids) && otherBids.length > 0) {
+                    for (const ob of otherBids) {
+                        notifyTaskerAboutBidRejection(ob.tasker, bid.task, ob).catch((e) => {
+                            console.error('notifyTaskerAboutBidRejection error:', e);
+                        });
+                    }
+                }
+            } catch (nErr) {
+                console.error('Post-commit bid notifications error:', nErr);
+            }
+
             res.status(200).json({
                 status: "success",
                 message: "Bid accepted successfully",
