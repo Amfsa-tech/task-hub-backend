@@ -39,6 +39,9 @@ const taskSchema = new Schema({
         enum: ['open', 'assigned', 'in-progress', 'completed', 'cancelled'],
         default: 'open'
     },
+    escrowAmount: { type: Number, default: 0 },
+    isEscrowHeld: { type: Boolean, default: false },
+    escrowAt: { type: Date },
     user: { 
         type: Schema.Types.ObjectId, 
         ref: 'User',

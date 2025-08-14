@@ -1,5 +1,6 @@
 import Bid from '../models/bid.js';
 import Task from '../models/task.js';
+import User from '../models/user.js';
 import { notifyUserAboutNewBid, notifyTaskerAboutBidAcceptance, notifyTaskerAboutBidRejection } from '../utils/notificationUtils.js';
 import Conversation from '../models/conversation.js';
 import Message from '../models/message.js';
@@ -376,7 +377,7 @@ const acceptBid = async (req, res) => {
             });
         }
         
-        const bid = await Bid.findById(id).populate('task');
+    const bid = await Bid.findById(id).populate('task');
             
         if (!bid) {
             return res.status(404).json({
@@ -428,12 +429,27 @@ const acceptBid = async (req, res) => {
             bid.status = 'accepted';
             await bid.save({ session });
             
-            // Update task status and assigned tasker
+            // Hold user funds at acceptance using bid amount
+            const amountToHold = bid.amount;
+            const walletUpdate = await User.updateOne(
+                { _id: bid.task.user, wallet: { $gte: amountToHold } },
+                { $inc: { wallet: -amountToHold } },
+                { session }
+            );
+
+            if (!walletUpdate.matchedCount || !walletUpdate.modifiedCount) {
+                throw new Error('INSUFFICIENT_WALLET_BALANCE');
+            }
+
+            // Update task: assign tasker and set escrow fields
             await Task.findByIdAndUpdate(
                 bid.task._id,
                 {
                     status: 'assigned',
                     assignedTasker: bid.tasker,
+                    isEscrowHeld: true,
+                    escrowAmount: amountToHold,
+                    escrowAt: new Date(),
                     updatedAt: Date.now()
                 },
                 { session }
@@ -511,6 +527,12 @@ const acceptBid = async (req, res) => {
             // Abort the transaction on error
             await session.abortTransaction();
             session.endSession();
+            if (error && error.message === 'INSUFFICIENT_WALLET_BALANCE') {
+                return res.status(402).json({
+                    status: "error",
+                    message: "Insufficient wallet balance to accept this bid"
+                });
+            }
             throw error;
         }
     } catch (error) {

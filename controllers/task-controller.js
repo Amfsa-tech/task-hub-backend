@@ -1,10 +1,11 @@
 import Task from '../models/task.js';
-import { Types } from 'mongoose';
+import { Types, startSession } from 'mongoose';
 import { calculateDistance, milesToMeters } from '../utils/locationUtils.js';
 import Category from '../models/category.js';
 import Tasker from '../models/tasker.js';
 import Bid from '../models/bid.js';
 import { notifyMatchingTaskers } from '../utils/notificationUtils.js';
+import User from '../models/user.js';
 
 // Helper function to check if ID is valid
 const isValidObjectId = (id) => {
@@ -533,10 +534,14 @@ const changeTaskStatus = async (req, res) => {
         let allowedTransitions = [];
         
         if (isUser) {
-            // Users can cancel tasks in most states
-            allowedTransitions = ['cancelled'];
-            if (currentStatus === 'open') {
-                allowedTransitions.push('open'); // Allow status refresh
+            // Users can cancel only before work starts
+            if (['open', 'assigned'].includes(currentStatus)) {
+                allowedTransitions = ['cancelled'];
+                if (currentStatus === 'open') {
+                    allowedTransitions.push('open'); // Allow status refresh
+                }
+            } else {
+                allowedTransitions = [];
             }
         }
         
@@ -562,13 +567,109 @@ const changeTaskStatus = async (req, res) => {
             });
         }
         
+        // Special handling: assigned -> in-progress (escrow already held at acceptance)
+        if (isTasker && currentStatus === 'assigned' && status === 'in-progress') {
+            task.status = 'in-progress';
+            task.updatedAt = new Date();
+            await task.save();
+            return res.json({
+                status: 'success',
+                message: 'Task started',
+                task
+            });
+        }
+
+        // Special handling: in-progress -> completed (release escrow to tasker)
+        if (isTasker && currentStatus === 'in-progress' && status === 'completed') {
+            const session = await startSession();
+            session.startTransaction();
+            try {
+                if (task.isEscrowHeld && task.escrowAmount > 0) {
+                    await Tasker.updateOne(
+                        { _id: task.assignedTasker },
+                        { $inc: { wallet: task.escrowAmount } },
+                        { session }
+                    );
+                    task.isEscrowHeld = false;
+                    task.escrowAmount = 0;
+                }
+                task.status = 'completed';
+                task.updatedAt = new Date();
+                await task.save({ session });
+                await session.commitTransaction();
+                session.endSession();
+                return res.json({
+                    status: 'success',
+                    message: 'Task completed and payout released',
+                    task
+                });
+            } catch (err) {
+                await session.abortTransaction();
+                session.endSession();
+                console.error('Payout release error:', err);
+                return res.status(500).json({
+                    status: 'error',
+                    message: 'Could not complete task',
+                    error: err.message
+                });
+            }
+        }
+
+        // Special handling: user cancels from 'assigned' -> refund escrow
+        if (isUser && status === 'cancelled' && currentStatus === 'assigned') {
+            const session = await startSession();
+            session.startTransaction();
+            try {
+                if (task.isEscrowHeld && task.escrowAmount > 0) {
+                    await User.updateOne(
+                        { _id: task.user._id },
+                        { $inc: { wallet: task.escrowAmount } },
+                        { session }
+                    );
+                    task.isEscrowHeld = false;
+                    task.escrowAmount = 0;
+                }
+                task.status = 'cancelled';
+                task.updatedAt = new Date();
+                await task.save({ session });
+                await session.commitTransaction();
+                session.endSession();
+                return res.json({
+                    status: 'success',
+                    message: 'Task cancelled and funds refunded',
+                    task
+                });
+            } catch (err) {
+                await session.abortTransaction();
+                session.endSession();
+                console.error('Refund on cancel error:', err);
+                return res.status(500).json({
+                    status: 'error',
+                    message: 'Could not cancel task',
+                    error: err.message
+                });
+            }
+        }
+
+        // Special handling: user cancels from 'open'
+        if (isUser && status === 'cancelled' && currentStatus === 'open') {
+            task.status = 'cancelled';
+            task.updatedAt = new Date();
+            await task.save();
+            return res.json({
+                status: 'success',
+                message: 'Task cancelled',
+                task
+            });
+        }
+
+        // Default path for other valid transitions (should be minimal with current rules)
         task.status = status;
         task.updatedAt = new Date();
         await task.save();
-        
-        res.json({
-            status: "success",
-            message: "Task status updated successfully",
+        return res.json({
+            status: 'success',
+            message: 'Task status updated successfully',
             task
         });
     } catch (error) {
