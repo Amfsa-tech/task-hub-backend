@@ -5,6 +5,7 @@ import authRoutes from './routes/authRoute.js';
 import taskRoutes from './routes/taskRoute.js';
 import bidRoutes from './routes/bidRoute.js';
 import categoryRoutes from './routes/categoryRoute.js';
+import chatRoutes from './routes/chatRoute.js';
 
 const app = express();
 
@@ -23,6 +24,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/bids', bidRoutes);
 app.use('/api/categories', categoryRoutes);
+app.use('/api/chat', chatRoutes);
 
 // Base route
 app.get('/', (req, res) => {

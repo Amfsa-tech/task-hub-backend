@@ -1,6 +1,8 @@
 import Bid from '../models/bid.js';
 import Task from '../models/task.js';
 import { notifyUserAboutNewBid, notifyTaskerAboutBidAcceptance, notifyTaskerAboutBidRejection } from '../utils/notificationUtils.js';
+import Conversation from '../models/conversation.js';
+import Message from '../models/message.js';
 import { Types, startSession } from 'mongoose';
 
 // Helper function to check if ID is valid
@@ -461,6 +463,29 @@ const acceptBid = async (req, res) => {
             await session.commitTransaction();
             session.endSession();
             
+            // Ensure a conversation exists and add a system message about acceptance
+            try {
+                let convo = await Conversation.findOne({ task: bid.task._id, user: bid.task.user, tasker: bid.tasker });
+                if (!convo) {
+                    convo = await Conversation.create({ task: bid.task._id, bid: bid._id, user: bid.task.user, tasker: bid.tasker });
+                } else if (!convo.bid) {
+                    convo.bid = bid._id;
+                }
+                const systemText = `Your bid was accepted. Task is now assigned.`;
+                await Message.create({
+                    conversation: convo._id,
+                    senderType: 'system',
+                    text: systemText,
+                });
+                convo.lastMessage = systemText;
+                convo.lastMessageAt = new Date();
+                // Increment unread for tasker so they see the update in chat list
+                convo.unread.tasker = (convo.unread.tasker || 0) + 1;
+                await convo.save();
+            } catch (convoErr) {
+                console.error('Error creating system message after acceptance:', convoErr);
+            }
+
             // Fire-and-forget notifications after successful commit
             try {
                 notifyTaskerAboutBidAcceptance(bid.tasker, bid.task, bid).catch((e) => {

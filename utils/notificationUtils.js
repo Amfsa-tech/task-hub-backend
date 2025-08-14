@@ -329,3 +329,32 @@ export const getCategoryMatchStats = async (categoryId) => {
         throw error;
     }
 }; 
+
+// Notify recipient about a new chat message
+export const notifyOnNewChatMessage = async (recipientType, recipientId, conversationId, preview) => {
+    try {
+        let notificationId = null;
+        if (recipientType === 'user') {
+            const user = await User.findById(recipientId).select('notificationId fullName');
+            if (!user || !user.notificationId) return;
+            notificationId = user.notificationId;
+        } else {
+            const tasker = await Tasker.findById(recipientId).select('notificationId firstName');
+            if (!tasker || !tasker.notificationId) return;
+            notificationId = tasker.notificationId;
+        }
+
+        await sendPushToUser(
+            notificationId,
+            'New message',
+            preview || 'You have a new chat message',
+            {
+                type: 'chat',
+                conversationId: conversationId?.toString(),
+                action: 'open_conversation'
+            }
+        );
+    } catch (error) {
+        console.error('Error sending chat message notification:', error);
+    }
+};
