@@ -1167,7 +1167,7 @@ export const updateUserNotificationId = async (req, res) => {
 export const updateTaskerNotificationId = async (req, res) => {
     try {
         const { notificationId } = req.body;
-        const taskerId = req.user.id;
+        const taskerId = req.tasker.id;
 
         // Validate notification ID
         if (!notificationId || typeof notificationId !== 'string') {
