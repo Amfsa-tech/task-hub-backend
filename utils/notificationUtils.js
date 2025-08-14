@@ -6,17 +6,18 @@ import { sendPushToUser, sendPushToMultipleUsers, sendTaskNotification, sendBidN
 // Notify taskers about new tasks matching their categories
 export const notifyMatchingTaskers = async (task, options = {}) => {
     try {
+    const enableRadiusFilter = options.enableRadiusFilter === true;
     const defaultMaxDistanceMiles = typeof options.maxDistanceMiles === 'number' ? options.maxDistanceMiles : 200;
         // Find taskers who have ANY of the task's categories in their categories array
         const matchingTaskers = await Tasker.find({
             categories: { $in: task.categories },
             isActive: true,
-            isEmailVerified: true,
+            // Do not require email verification for push notifications to avoid missing real-time alerts
             notificationId: { $ne: null } // Only notify taskers with notification IDs
         }).populate('categories', 'name displayName');
 
         if (matchingTaskers.length === 0) {
-            console.log(`No matching taskers found for categories: ${task.categories.join(', ')}`);
+            console.log(`No matching taskers to notify. Reasons may include: no taskers with these categories, accounts inactive, or no notificationId set. Categories: ${task.categories.join(', ')}`);
             return;
         }
 
@@ -27,13 +28,16 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
         const taskCategories = await Category.find({ _id: { $in: task.categories } });
         const categoryNames = taskCategories.map(cat => cat.displayName).join(', ');
         
-        // Collect notification IDs for batch sending, with optional radius filtering
+    // Collect notification IDs for batch sending, with optional radius filtering
         const notificationIds = [];
+    let skippedNoNotificationId = 0;
+    let skippedOutOfRadius = 0;
         
         for (const tasker of matchingTaskers) {
             if (tasker.notificationId) {
-                // If both task and tasker have location, filter by distance
-                if (task.location?.latitude != null && task.location?.longitude != null &&
+                // If enabled and both have location, filter by distance
+                if (enableRadiusFilter &&
+                    task.location?.latitude != null && task.location?.longitude != null &&
                     tasker.location?.latitude != null && tasker.location?.longitude != null) {
                     const distanceMeters = calculateDistance(
                         task.location.latitude,
@@ -43,6 +47,7 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
                     );
                     const withinRadius = distanceMeters <= milesToMeters(defaultMaxDistanceMiles);
                     if (!withinRadius) {
+                        skippedOutOfRadius++;
                         continue; // skip notifying this tasker due to distance
                     }
                 }
@@ -55,11 +60,18 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
                     .join(', ');
                     
                 console.log(`📧 Notification: Tasker ${tasker.firstName} ${tasker.lastName} (${tasker.emailAddress}) - New "${categoryNames}" task available: "${task.title}" (matches: ${matchingCategoryIds})`);
+            } else {
+                skippedNoNotificationId++;
             }
         }
         
+        // Diagnostics when no one to notify
+        if (notificationIds.length === 0) {
+            console.log(`No notification recipients. Skipped out-of-radius: ${skippedOutOfRadius}, missing notificationId: ${skippedNoNotificationId}`);
+        }
+
         // Send batch push notifications
-    if (notificationIds.length > 0) {
+        if (notificationIds.length > 0) {
             try {
                 await sendPushToMultipleUsers(
                     notificationIds,
