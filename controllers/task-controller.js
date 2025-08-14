@@ -143,6 +143,7 @@ const createTask = async (req, res) => {
         
         // Notify matching taskers about the new task (non-blocking)
         try {
+            console.log(`[notify] Triggering notifications for task ${task._id} (${task.title}) in categories: ${task.categories.join(', ')}`);
             await notifyMatchingTaskers(task);
         } catch (notificationError) {
             console.error('Error sending notifications:', notificationError);

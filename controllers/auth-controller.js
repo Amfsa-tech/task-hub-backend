@@ -74,7 +74,7 @@ const handleLoginAttempt = async (user, isValidPassword) => {
 
 //User registration
 
-const userRegister = async (req, res) => {
+export const userRegister = async (req, res) => {
     const { fullName, emailAddress, phoneNumber, country, residentState, address, password, dateOfBirth } = req.body;
 
     console.log(req.body);
@@ -153,7 +153,7 @@ const userRegister = async (req, res) => {
     }
 };
 
-const userLogin = async (req, res) => {
+export const userLogin = async (req, res) => {
     const { emailAddress, password } = req.body;
 
     if (!emailAddress || !password) {
@@ -208,7 +208,7 @@ const userLogin = async (req, res) => {
     }
 };
 
-const getUser = async (req, res) => {
+export const getUser = async (req, res) => {
     try {
         // Remove sensitive information before sending
         const userInfo = {
@@ -245,7 +245,7 @@ const getUser = async (req, res) => {
 
 // Tasker registration
 
-const taskerRegister = async (req, res) => {
+export const taskerRegister = async (req, res) => {
     const { firstName, lastName, emailAddress, phoneNumber, country, residentState, originState, address, password, dateOfBirth } = req.body;
 
     // Check for required fields
@@ -321,7 +321,7 @@ const taskerRegister = async (req, res) => {
     }
 };
 
-const taskerLogin = async (req, res) => {
+export const taskerLogin = async (req, res) => {
     const { emailAddress, password } = req.body;
 
     if (!emailAddress || !password) {
@@ -374,7 +374,7 @@ const taskerLogin = async (req, res) => {
     }
 };
 
-const getTasker = async (req, res) => {
+export const getTasker = async (req, res) => {
     try {
         // Get tasker with populated categories
         const tasker = await Tasker.findById(req.tasker._id)
@@ -429,7 +429,7 @@ const getTasker = async (req, res) => {
 // NEW AUTHENTICATION FEATURES
 
 // Email Verification
-const verifyEmail = async (req, res) => {
+export const verifyEmail = async (req, res) => {
     const { code, emailAddress, type } = req.body;
 
     if (!code || !emailAddress || !type) {
@@ -475,7 +475,7 @@ const verifyEmail = async (req, res) => {
 };
 
 // Resend Email Verification
-const resendEmailVerification = async (req, res) => {
+export const resendEmailVerification = async (req, res) => {
     const { emailAddress, type } = req.body;
 
     if (!emailAddress || !type) {
@@ -526,7 +526,7 @@ const resendEmailVerification = async (req, res) => {
 };
 
 // Forgot Password
-const forgotPassword = async (req, res) => {
+export const forgotPassword = async (req, res) => {
     const { emailAddress, type } = req.body;
 
     if (!emailAddress || !type) {
@@ -571,7 +571,7 @@ const forgotPassword = async (req, res) => {
 };
 
 // Reset Password
-const resetPassword = async (req, res) => {
+export const resetPassword = async (req, res) => {
     const { code, newPassword, type, emailAddress } = req.body;
 
     if (!code || !newPassword || !type || !emailAddress) {
@@ -628,7 +628,7 @@ const resetPassword = async (req, res) => {
 };
 
 // Change Password (for authenticated users)
-const changePassword = async (req, res) => {
+export const changePassword = async (req, res) => {
     const { currentPassword, newPassword } = req.body;
 
     if (!currentPassword || !newPassword) {
@@ -673,7 +673,7 @@ const changePassword = async (req, res) => {
 };
 
 // Update Profile
-const updateProfile = async (req, res) => {
+export const updateProfile = async (req, res) => {
     try {
         const allowedUpdates = ['fullName', 'firstName', 'lastName', 'phoneNumber', 'country', 'residentState', 'address', 'profilePicture'];
         const updates = {};
@@ -740,7 +740,7 @@ const updateProfile = async (req, res) => {
 };
 
 // Logout
-const logout = async (req, res) => {
+export const logout = async (req, res) => {
     try {
         res.status(200).json({
             status: "success",
@@ -756,7 +756,7 @@ const logout = async (req, res) => {
 };
 
 // Update Profile Picture
-const updateProfilePicture = async (req, res) => {
+export const updateProfilePicture = async (req, res) => {
     const { profilePicture } = req.body;
 
     if (!profilePicture) {
@@ -795,7 +795,7 @@ const updateProfilePicture = async (req, res) => {
 };
 
 // Update Tasker Categories
-const updateTaskerCategories = async (req, res) => {
+export const updateTaskerCategories = async (req, res) => {
     const { categories } = req.body;
 
     // Check if user is a tasker
@@ -880,7 +880,7 @@ const updateTaskerCategories = async (req, res) => {
 };
 
 // Deactivate Account
-const deactivateAccount = async (req, res) => {
+export const deactivateAccount = async (req, res) => {
     const { password } = req.body;
 
     if (!password) {
@@ -917,7 +917,7 @@ const deactivateAccount = async (req, res) => {
 };
 
 // Update Tasker Location
-const updateTaskerLocation = async (req, res) => {
+export const updateTaskerLocation = async (req, res) => {
     const { latitude, longitude } = req.body;
 
     // Check if user is a tasker
@@ -1304,28 +1304,5 @@ export const removeTaskerNotificationId = async (req, res) => {
     }
 };
 
-export {
-    userRegister,
-    userLogin,
-    getUser,
-    taskerRegister,
-    taskerLogin,
-    getTasker,
-    verifyEmail,
-    resendEmailVerification,
-    forgotPassword,
-    resetPassword,
-    changePassword,
-    updateProfile,
-    logout,
-    updateProfilePicture,
-    updateTaskerCategories,
-    deactivateAccount,
-    updateTaskerLocation,
-    // updateUserNotificationId,
-    // updateTaskerNotificationId,
-    // removeUserNotificationId,
-    // removeTaskerNotificationId
-    // verifyTaskerIdentity,
-    // getTaskerVerificationStatus
-};
+// Note: All handlers in this file are exported using `export const ...` above.
+// The explicit export block was removed to avoid duplicate export errors with ESM.

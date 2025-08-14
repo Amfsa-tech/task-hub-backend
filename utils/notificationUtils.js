@@ -6,6 +6,7 @@ import { sendPushToUser, sendPushToMultipleUsers, sendTaskNotification, sendBidN
 // Notify taskers about new tasks matching their categories
 export const notifyMatchingTaskers = async (task, options = {}) => {
     try {
+    console.log(`[notify] notifyMatchingTaskers called for task ${task?._id} with options:`, options);
     const enableRadiusFilter = options.enableRadiusFilter === true;
     const defaultMaxDistanceMiles = typeof options.maxDistanceMiles === 'number' ? options.maxDistanceMiles : 200;
         // Find taskers who have ANY of the task's categories in their categories array
@@ -19,8 +20,7 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
         if (matchingTaskers.length === 0) {
             console.log(`No matching taskers to notify. Reasons may include: no taskers with these categories, accounts inactive, or no notificationId set. Categories: ${task.categories.join(', ')}`);
             return;
-        }
-
+    }
     console.log(`Found ${matchingTaskers.length} matching taskers for task: ${task.title}`);
         
         // Get category names for logging
@@ -29,7 +29,7 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
         const categoryNames = taskCategories.map(cat => cat.displayName).join(', ');
         
     // Collect notification IDs for batch sending, with optional radius filtering
-        const notificationIds = [];
+    const notificationIds = [];
     let skippedNoNotificationId = 0;
     let skippedOutOfRadius = 0;
         
@@ -64,6 +64,7 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
                 skippedNoNotificationId++;
             }
         }
+    console.log(`[notify] Done building recipients. toNotify=${notificationIds.length}, skippedNoId=${skippedNoNotificationId}, skippedOutOfRadius=${skippedOutOfRadius}`);
         
         // Diagnostics when no one to notify
         if (notificationIds.length === 0) {
