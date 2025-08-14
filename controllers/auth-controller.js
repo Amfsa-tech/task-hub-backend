@@ -410,6 +410,12 @@ const getTasker = async (req, res) => {
             createdAt: tasker.createdAt
         };
 
+         await sendWelcomePush(
+            req.tasker.notificationId,
+            'Welcome aboard!',
+            'You can now start using TaskHub. Your account is ready 🎉'
+        );
+
         return res.status(200).json({
             status: "success",
             message: 'Tasker fetched successfully',
@@ -1259,7 +1265,7 @@ export const removeUserNotificationId = async (req, res) => {
 // Remove Tasker Notification ID (when tasker logs out or uninstalls app)
 export const removeTaskerNotificationId = async (req, res) => {
     try {
-        const taskerId = req.user.id;
+        const taskerId = req.tasker.id;
 
         const tasker = await Tasker.findByIdAndUpdate(
             taskerId,

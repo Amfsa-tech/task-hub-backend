@@ -11,14 +11,14 @@ import { ONESIGNAL_APP_ID, ONESIGNAL_REST_KEY } from '../config/envConfig.js';
 export async function sendWelcomePush(playerId, heading, message) {
   const payload = {
     app_id: ONESIGNAL_APP_ID,
-    include_subscription_ids: [playerId], // <= docs: send to 1 specific device
+  include_player_ids: [playerId],
     contents: { en: message },
     headings: { en: heading },
     name: 'welcome_push',                 // optional, shows in OneSignal dashboard
   };
 
   try {
-    const response = await fetch('https://onesignal.com/api/v1/notifications', {
+  const response = await fetch('https://onesignal.com/api/v1/notifications', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -54,17 +54,14 @@ export async function sendPushToUser(notificationId, heading, message, data = {}
 
   const payload = {
     app_id: ONESIGNAL_APP_ID,
-    target_channel: 'push',
-    include_subscription_ids: [notificationId],
+  include_player_ids: [notificationId],
     contents: { en: message },
     headings: { en: heading },
-    data: data,
-    isAndroid: true,
-    isIos: true
+  data: data
   };
 
   try {
-    const response = await fetch('https://api.onesignal.com/notifications', {
+  const response = await fetch('https://onesignal.com/api/v1/notifications', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -107,17 +104,14 @@ export async function sendPushToMultipleUsers(notificationIds, heading, message,
 
   const payload = {
     app_id: ONESIGNAL_APP_ID,
-    target_channel: 'push',
-    include_subscription_ids: validNotificationIds,
+  include_player_ids: validNotificationIds,
     contents: { en: message },
     headings: { en: heading },
-    data: data,
-    isAndroid: true,
-    isIos: true
+  data: data
   };
 
   try {
-    const response = await fetch('https://api.onesignal.com/notifications', {
+  const response = await fetch('https://onesignal.com/api/v1/notifications', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
