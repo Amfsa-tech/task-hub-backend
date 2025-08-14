@@ -11,7 +11,7 @@ import { ONESIGNAL_APP_ID, ONESIGNAL_REST_KEY } from '../config/envConfig.js';
 export async function sendWelcomePush(playerId, heading, message) {
   const payload = {
     app_id: ONESIGNAL_APP_ID,
-  include_player_ids: [playerId],
+    include_subscription_ids: [playerId],
     contents: { en: message },
     headings: { en: heading },
     name: 'welcome_push',                 // optional, shows in OneSignal dashboard
@@ -28,7 +28,11 @@ export async function sendWelcomePush(playerId, heading, message) {
     });
 
     if (!response.ok) {
-      throw new Error(`OneSignal API error: ${response.status} ${response.statusText}`);
+      let bodyText = '';
+      try {
+        bodyText = await response.text();
+      } catch {}
+      throw new Error(`OneSignal API error: ${response.status} ${response.statusText} - ${bodyText}`);
     }
 
     const result = await response.json();
@@ -54,7 +58,7 @@ export async function sendPushToUser(notificationId, heading, message, data = {}
 
   const payload = {
     app_id: ONESIGNAL_APP_ID,
-  include_player_ids: [notificationId],
+    include_subscription_ids: [notificationId],
     contents: { en: message },
     headings: { en: heading },
   data: data
@@ -71,7 +75,11 @@ export async function sendPushToUser(notificationId, heading, message, data = {}
     });
 
     if (!response.ok) {
-      throw new Error(`OneSignal API error: ${response.status} ${response.statusText}`);
+      let bodyText = '';
+      try {
+        bodyText = await response.text();
+      } catch {}
+      throw new Error(`OneSignal API error: ${response.status} ${response.statusText} - ${bodyText}`);
     }
 
     const result = await response.json();
@@ -104,7 +112,7 @@ export async function sendPushToMultipleUsers(notificationIds, heading, message,
 
   const payload = {
     app_id: ONESIGNAL_APP_ID,
-  include_player_ids: validNotificationIds,
+    include_subscription_ids: validNotificationIds,
     contents: { en: message },
     headings: { en: heading },
   data: data
@@ -121,7 +129,11 @@ export async function sendPushToMultipleUsers(notificationIds, heading, message,
     });
 
     if (!response.ok) {
-      throw new Error(`OneSignal API error: ${response.status} ${response.statusText}`);
+      let bodyText = '';
+      try {
+        bodyText = await response.text();
+      } catch {}
+      throw new Error(`OneSignal API error: ${response.status} ${response.statusText} - ${bodyText}`);
     }
 
     const result = await response.json();

@@ -1,6 +1,6 @@
 import Tasker from '../models/tasker.js';
 import User from '../models/user.js';
-import { calculateDistance, milesToMeters } from '../utils/locationUtils.js';
+import { calculateDistance, milesToMeters } from './locationUtils.js';
 import { sendPushToUser, sendPushToMultipleUsers, sendTaskNotification, sendBidNotification } from '../services/onesignal.js';
 
 // Notify taskers about new tasks matching their categories
@@ -21,7 +21,7 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
             return;
         }
 
-        console.log(`Found ${matchingTaskers.length} matching taskers for task: ${task.title}`);
+    console.log(`Found ${matchingTaskers.length} matching taskers for task: ${task.title}`);
         
         // Get category names for logging
         const Category = (await import('../models/category.js')).default;
@@ -86,7 +86,28 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
                 );
                 console.log(`✅ Push notifications sent to ${notificationIds.length} taskers`);
             } catch (pushError) {
-                console.error('Error sending push notifications:', pushError);
+                console.error('Batch push failed, will try single sends:', pushError);
+                // Fallback: try sending one by one to isolate issues
+                let successCount = 0;
+                for (const id of notificationIds) {
+                    try {
+                        await sendPushToUser(
+                            id,
+                            `New ${categoryNames} Task Available`,
+                            `"${task.title}" - ₦${task.budget}`,
+                            {
+                                type: 'new_task',
+                                taskId: task._id.toString(),
+                                categories: categoryNames,
+                                action: 'view_task'
+                            }
+                        );
+                        successCount++;
+                    } catch (singleErr) {
+                        console.error(`Single push failed for id ${id}:`, singleErr);
+                    }
+                }
+                console.log(`Single-send fallback complete. Success: ${successCount}/${notificationIds.length}`);
             }
         }
         
