@@ -1,10 +1,12 @@
 import Tasker from '../models/tasker.js';
 import User from '../models/user.js';
+import { calculateDistance, milesToMeters } from '../utils/locationUtils.js';
 import { sendPushToUser, sendPushToMultipleUsers, sendTaskNotification, sendBidNotification } from '../services/onesignal.js';
 
 // Notify taskers about new tasks matching their categories
-export const notifyMatchingTaskers = async (task) => {
+export const notifyMatchingTaskers = async (task, options = {}) => {
     try {
+    const defaultMaxDistanceMiles = typeof options.maxDistanceMiles === 'number' ? options.maxDistanceMiles : 200;
         // Find taskers who have ANY of the task's categories in their categories array
         const matchingTaskers = await Tasker.find({
             categories: { $in: task.categories },
@@ -25,11 +27,25 @@ export const notifyMatchingTaskers = async (task) => {
         const taskCategories = await Category.find({ _id: { $in: task.categories } });
         const categoryNames = taskCategories.map(cat => cat.displayName).join(', ');
         
-        // Collect notification IDs for batch sending
+        // Collect notification IDs for batch sending, with optional radius filtering
         const notificationIds = [];
         
         for (const tasker of matchingTaskers) {
             if (tasker.notificationId) {
+                // If both task and tasker have location, filter by distance
+                if (task.location?.latitude != null && task.location?.longitude != null &&
+                    tasker.location?.latitude != null && tasker.location?.longitude != null) {
+                    const distanceMeters = calculateDistance(
+                        task.location.latitude,
+                        task.location.longitude,
+                        tasker.location.latitude,
+                        tasker.location.longitude
+                    );
+                    const withinRadius = distanceMeters <= milesToMeters(defaultMaxDistanceMiles);
+                    if (!withinRadius) {
+                        continue; // skip notifying this tasker due to distance
+                    }
+                }
                 notificationIds.push(tasker.notificationId);
                 
                 // Find which categories match for this tasker
@@ -43,7 +59,7 @@ export const notifyMatchingTaskers = async (task) => {
         }
         
         // Send batch push notifications
-        if (notificationIds.length > 0) {
+    if (notificationIds.length > 0) {
             try {
                 await sendPushToMultipleUsers(
                     notificationIds,

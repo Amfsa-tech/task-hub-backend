@@ -2,6 +2,9 @@ import Task from '../models/task.js';
 import { Types } from 'mongoose';
 import { calculateDistance, milesToMeters } from '../utils/locationUtils.js';
 import Category from '../models/category.js';
+import Tasker from '../models/tasker.js';
+import Bid from '../models/bid.js';
+import { notifyMatchingTaskers } from '../utils/notificationUtils.js';
 
 // Helper function to check if ID is valid
 const isValidObjectId = (id) => {
@@ -138,9 +141,8 @@ const createTask = async (req, res) => {
         
         await task.save();
         
-        // Notify matching taskers about the new task
+        // Notify matching taskers about the new task (non-blocking)
         try {
-            const { notifyMatchingTaskers } = require('../utils/notificationUtils');
             await notifyMatchingTaskers(task);
         } catch (notificationError) {
             console.error('Error sending notifications:', notificationError);
@@ -191,10 +193,10 @@ const getAllTasks = async (req, res) => {
         }
         
         // Count total tasks matching the filter
-        const totalTasks = await countDocuments(filterOptions);
+    const totalTasks = await Task.countDocuments(filterOptions);
         
         // Get tasks with pagination
-        const tasks = await find(filterOptions)
+    const tasks = await Task.find(filterOptions)
             .populate('user', 'fullName profilePicture')
             .populate('assignedTasker', 'firstName lastName profilePicture')
             .populate('categories', 'name displayName description')
@@ -232,7 +234,7 @@ const getTaskById = async (req, res) => {
             });
         }
         
-        const task = await findById(id)
+    const task = await Task.findById(id)
             .populate('user', 'fullName profilePicture')
             .populate('assignedTasker', 'firstName lastName profilePicture')
             .populate('categories', 'name displayName description');
@@ -271,7 +273,7 @@ const updateTask = async (req, res) => {
             });
         }
         
-        const task = await findById(id);
+    const task = await Task.findById(id);
         
         if (!task) {
             return res.status(404).json({
@@ -318,7 +320,6 @@ const updateTask = async (req, res) => {
                 });
             }
             
-            const Category = require('../models/category');
             const categoryExists = await Category.findOne({ _id: req.body.category, isActive: true });
             
             if (!categoryExists) {
@@ -366,7 +367,7 @@ const updateTask = async (req, res) => {
         updateData.assignedTasker = task.assignedTasker;
         
         // Update the task
-        const updatedTask = await findByIdAndUpdate(
+    const updatedTask = await Task.findByIdAndUpdate(
             id,
             updateData,
             { new: true, runValidators: true }
@@ -400,7 +401,7 @@ const deleteTask = async (req, res) => {
             });
         }
         
-        const task = await findById(id);
+    const task = await Task.findById(id);
         
         if (!task) {
             return res.status(404).json({
@@ -425,7 +426,7 @@ const deleteTask = async (req, res) => {
             });
         }
         
-        await findByIdAndDelete(id);
+    await Task.findByIdAndDelete(id);
         
         res.status(200).json({
             status: "success",
@@ -457,10 +458,10 @@ const getUserTasks = async (req, res) => {
         }
         
         // Count total tasks matching the filter
-        const totalTasks = await countDocuments(filterOptions);
+    const totalTasks = await Task.countDocuments(filterOptions);
         
         // Get tasks with pagination
-        const tasks = await find(filterOptions)
+    const tasks = await Task.find(filterOptions)
             .populate('assignedTasker', 'firstName lastName profilePicture')
             .populate('categories', 'name displayName description')
             .sort({ createdAt: -1 })
@@ -497,7 +498,7 @@ const changeTaskStatus = async (req, res) => {
             });
         }
         
-        const task = await findById(id).populate('user');
+    const task = await Task.findById(id).populate('user');
         if (!task) {
             return res.status(404).json({
                 status: "error",
@@ -588,8 +589,7 @@ const getTaskerFeed = async (req, res) => {
         const skip = (page - 1) * limit;
         
         // Get tasker with categories
-        const Tasker = require('../models/tasker');
-        const tasker = await Tasker.findById(req.tasker._id).populate('categories');
+    const tasker = await Tasker.findById(req.tasker._id).populate('categories');
         
         if (!tasker) {
             return res.status(404).json({
@@ -665,11 +665,11 @@ const getTaskerFeed = async (req, res) => {
         }
         
         // Count total tasks matching the filter
-        const totalTasks = await countDocuments(filterOptions);
+    const totalTasks = await Task.countDocuments(filterOptions);
         const totalPages = Math.ceil(totalTasks / limit);
         
         // Get tasks with pagination
-        let tasks = await find(filterOptions)
+    let tasks = await Task.find(filterOptions)
             .populate('user', 'fullName profilePicture')
             .populate('categories', 'name displayName description')
             .select('-__v') // Exclude version field
@@ -714,9 +714,8 @@ const getTaskerFeed = async (req, res) => {
         }
         
         // Check if tasker has already bid on these tasks
-        const Bid = require('../models/bid');
         const taskIds = tasks.map(task => task._id);
-        const existingBids = await Bid.find({
+    const existingBids = await Bid.find({
             task: { $in: taskIds },
             tasker: req.tasker._id
         }).select('task amount bidType');

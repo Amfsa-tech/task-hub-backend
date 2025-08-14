@@ -4,8 +4,9 @@ import { QOREID_CLIENT_KEY, QOREID_SECRET_KEY } from '../config/envConfig.js';
 
 // QoreID API Configuration
 const QOREID_BASE_URL = 'https://api.qoreid.com';
-const CLIENT_ID = QOREID_CLIENT_KEY;
-const SECRET_KEY = QOREID_SECRET_KEY;
+// Ensure env values are strings and trimmed
+const CLIENT_ID = (QOREID_CLIENT_KEY ?? '').toString().trim();
+const SECRET_KEY = (QOREID_SECRET_KEY ?? '').toString().trim();
 
 /**
  * Service for verifying Nigerian National Identification Number (NIN) using QoreID API
@@ -29,10 +30,15 @@ class NINVerificationService {
         }
 
         try {
+            // Validate env configuration before making request
+            if (!CLIENT_ID || !SECRET_KEY) {
+                throw createError(500, 'QoreID credentials are missing. Please set QOREID_CLIENT_KEY and QOREID_SECRET_KEY in your .env');
+            }
+
             const response = await fetch(`${QOREID_BASE_URL}/token`, {
                 method: 'POST',
                 headers: {
-                    'Accept': 'text/plain',
+                    'Accept': 'application/json',
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({

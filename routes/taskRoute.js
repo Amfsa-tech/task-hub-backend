@@ -6,16 +6,18 @@ const router = Router();
 
 // Public routes
 router.get('/', getAllTasks);
-router.get('/:id', getTaskById);
 
-// User protected routes
+// Tasker protected routes (place before dynamic :id route)
+router.get('/tasker/feed', protectTasker, getTaskerFeed);
+
+// User protected routes (place before dynamic :id route)
+router.get('/user/tasks', protectUser, getUserTasks);
 router.post('/', protectUser, createTask);
 router.put('/:id', protectUser, updateTask);
 router.delete('/:id', protectUser, deleteTask);
-router.get('/user/tasks', protectUser, getUserTasks);
 
-// Tasker protected routes
-router.get('/tasker/feed', protectTasker, getTaskerFeed);
+// Dynamic route for getting a specific task must come after more specific routes
+router.get('/:id', getTaskById);
 
 // Task status routes
 router.patch('/:id/status', protectUser, changeTaskStatus); // For user to cancel task

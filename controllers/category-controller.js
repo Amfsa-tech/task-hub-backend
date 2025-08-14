@@ -1,5 +1,6 @@
-import e from 'express';
 import Category from '../models/category.js';
+import Task from '../models/task.js';
+import Tasker from '../models/tasker.js';
 import mongoose from 'mongoose';
 
 // Helper function to check if ID is valid
@@ -247,11 +248,8 @@ const deactivateCategory = async (req, res) => {
         }
         
         // Check if category is being used by any tasks or taskers
-        const Task = require('../models/task');
-        const Tasker = require('../models/tasker');
-        
-        const tasksUsingCategory = await Task.countDocuments({ categories: id });
-        const taskersUsingCategory = await Tasker.countDocuments({ categories: id });
+    const tasksUsingCategory = await Task.countDocuments({ categories: id });
+    const taskersUsingCategory = await Tasker.countDocuments({ categories: id });
         
         if (tasksUsingCategory > 0 || taskersUsingCategory > 0) {
             return res.status(400).json({
@@ -301,9 +299,6 @@ const getCategoryStats = async (req, res) => {
                 message: "Category not found"
             });
         }
-        
-        const Task = require('../models/task');
-        const Tasker = require('../models/tasker');
         
         const [tasksCount, taskersCount, recentTasks] = await Promise.all([
             Task.countDocuments({ categories: id }),
