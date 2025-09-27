@@ -34,7 +34,7 @@ export const hashToken = (token) => {
 export const createEmailTransporter = () => {
     return nodemailer.createTransport({
           host: "smtp.gmail.com",
-          port: 465,
+          port: 587,
           secure: true,
         auth: {
             user: 'taskhub866@gmail.com',
