@@ -35,11 +35,17 @@ export const createEmailTransporter = () => {
     return nodemailer.createTransport({
           host: "smtp.gmail.com",
           port: 587,
-          secure: true,
+          secure: false,
         auth: {
             user: 'taskhub866@gmail.com',
             pass: 'jyqn hbhf lljk wkgv'
         },
+        tls: {
+            rejectUnauthorized: false  // Helps with cert issues on some hosts
+         },
+      connectionTimeout: 60000,  // Increase from default 30s if needed (in ms)
+      greetingTimeout: 30000,
+      socketTimeout: 60000
         logger: true,
     });
 };
