@@ -45,7 +45,7 @@ export const createEmailTransporter = () => {
          },
       connectionTimeout: 60000,  // Increase from default 30s if needed (in ms)
       greetingTimeout: 30000,
-      socketTimeout: 60000
+      socketTimeout: 60000,
         logger: true,
     });
 };
