@@ -33,7 +33,9 @@ export const hashToken = (token) => {
 // Email configuration (you'll need to configure this with your email service)
 export const createEmailTransporter = () => {
     return nodemailer.createTransport({
-        service: "gmail",
+          host: "smtp.gmail.com",
+          port: 465,
+          secure: true
         auth: {
             user: 'taskhub866@gmail.com',
             pass: 'jyqn hbhf lljk wkgv'
