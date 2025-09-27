@@ -33,20 +33,22 @@ export const hashToken = (token) => {
 // Email configuration (you'll need to configure this with your email service)
 export const createEmailTransporter = () => {
     return nodemailer.createTransport({
-          host: "smtp.gmail.com",
+          host: "smtp.sendgrid.net",
           port: 587,
           secure: false,
         auth: {
-            user: 'taskhub866@gmail.com',
-            pass: 'jyqn hbhf lljk wkgv'
+            // user: 'taskhub866@gmail.com',
+            // pass: 'jyqn hbhf lljk wkgv'
+            user: 'apikey',
+            pass: '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'
         },
-        tls: {
-            rejectUnauthorized: false  // Helps with cert issues on some hosts
-         },
-      connectionTimeout: 60000,  // Increase from default 30s if needed (in ms)
-      greetingTimeout: 30000,
-      socketTimeout: 60000,
-        logger: true,
+      //   tls: {
+      //       rejectUnauthorized: false  // Helps with cert issues on some hosts
+      //    },
+      // connectionTimeout: 60000,  // Increase from default 30s if needed (in ms)
+      // greetingTimeout: 30000,
+      // socketTimeout: 60000,
+      //   logger: true,
     });
 };
 
