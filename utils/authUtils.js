@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
+import nodemailerSendgrid from 'nodemailer-sendgrid';
 import { JWT_SECRET_KEY } from '../config/envConfig.js';
 
 export const JWT_SECRET = JWT_SECRET_KEY;
@@ -32,14 +33,12 @@ export const hashToken = (token) => {
 
 // Email configuration (you'll need to configure this with your email service)
 export const createEmailTransporter = () => {
-    return nodemailer.createTransport({
-        host: "smtp.sendgrid.net",
-        auth: {
-            user: 'apikey',
-            pass: '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'
-        },
-        logger: true,
-    });
+ return nodemailer.createTransport(
+        nodemailerSendgrid({
+            apiKey: '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'  // Your key here, or better: process.env.SENDGRID_API_KEY
+        }),
+        { logger: true }  // Keep if you want logs
+    );
 };
 
 // Send email verification
