@@ -33,11 +33,10 @@ export const hashToken = (token) => {
 // Email configuration (you'll need to configure this with your email service)
 export const createEmailTransporter = () => {
     return nodemailer.createTransport({
-        host: "smtp.sendgrid.net",
-        port: 587,
+        service: "gmail",
         auth: {
-            user: 'apikey',
-            pass: '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'
+            user: 'taskhub866@gmail.com',
+            pass: 'jyqn hbhf lljk wkgv'
         },
         logger: true,
     });
