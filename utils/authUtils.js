@@ -35,7 +35,7 @@ export const hashToken = (token) => {
 export const createEmailTransporter = () => {
  return nodemailer.createTransport(
         nodemailerSendgrid({
-            apiKey: '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'  // Your key here, or better: process.env.SENDGRID_API_KEY
+            apiKey: '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'  // Your key here, or better: process.env.SENDGRID_API_KEY
         }),
         { logger: true }  // Keep if you want logs
     );
