@@ -2,7 +2,15 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
 import nodemailerSendgrid from 'nodemailer-sendgrid';
-import { JWT_SECRET_KEY } from '../config/envConfig.js';
+import {
+    JWT_SECRET_KEY,
+    SENDGRID_API_KEY,
+    EMAIL_HOST,
+    EMAIL_PORT,
+    EMAIL_USER,
+    EMAIL_PASS,
+    EMAIL_FROM
+} from '../config/envConfig.js';
 
 export const JWT_SECRET = JWT_SECRET_KEY;
 
@@ -33,12 +41,51 @@ export const hashToken = (token) => {
 
 // Email configuration (you'll need to configure this with your email service)
 export const createEmailTransporter = () => {
- return nodemailer.createTransport(
-        nodemailerSendgrid({
-            apiKey: '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'  // Your key here, or better: process.env.SENDGRID_API_KEY
-        }),
-        { logger: true }  // Keep if you want logs
-    );
+    // Prefer SendGrid if configured, otherwise fall back to SMTP.
+    if (SENDGRID_API_KEY) {
+        return nodemailer.createTransport(
+            nodemailerSendgrid({
+                apiKey: SENDGRID_API_KEY
+            })
+        );
+    }
+
+    if (!EMAIL_HOST || !EMAIL_PORT || !EMAIL_USER || !EMAIL_PASS) {
+        throw new Error('Email transport is not configured. Set SENDGRID_API_KEY or EMAIL_HOST/EMAIL_PORT/EMAIL_USER/EMAIL_PASS');
+    }
+
+    const portNumber = Number(EMAIL_PORT);
+    return nodemailer.createTransport({
+        host: EMAIL_HOST,
+        port: Number.isFinite(portNumber) ? portNumber : 587,
+        secure: portNumber === 465,
+        auth: {
+            user: EMAIL_USER,
+            pass: EMAIL_PASS
+        }
+    });
+};
+
+export const sendWaitlistWelcomeEmail = async (email) => {
+    const transporter = createEmailTransporter();
+
+    const fromAddress = EMAIL_FROM || 'hello@ngtaskhub.com';
+
+    const mailOptions = {
+        from: fromAddress,
+        to: email,
+        subject: 'Welcome to TaskHub',
+        text: `Welcome to TaskHub!\n\nThanks for joining our waitlist. We’ll keep you posted with updates.`,
+        html: `
+            <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
+                <h2 style="margin: 0 0 12px;">Welcome to TaskHub</h2>
+                <p style="margin: 0 0 12px;">Thanks for joining our waitlist.</p>
+                <p style="margin: 0;">We’ll keep you posted with updates.</p>
+            </div>
+        `
+    };
+
+    await transporter.sendMail(mailOptions);
 };
 
 // Send email verification
