@@ -67,25 +67,164 @@ export const createEmailTransporter = () => {
 };
 
 export const sendWaitlistWelcomeEmail = async (email) => {
-    const transporter = createEmailTransporter();
+    console.log("sending waitlist welcome email");
+    try {
+        const transporter = createEmailTransporter();
 
-    const fromAddress = EMAIL_FROM || 'hello@ngtaskhub.com';
-
-    const mailOptions = {
-        from: fromAddress,
-        to: email,
-        subject: 'Welcome to TaskHub',
-        text: `Welcome to TaskHub!\n\nThanks for joining our waitlist. We’ll keep you posted with updates.`,
-        html: `
-            <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
-                <h2 style="margin: 0 0 12px;">Welcome to TaskHub</h2>
-                <p style="margin: 0 0 12px;">Thanks for joining our waitlist.</p>
-                <p style="margin: 0;">We’ll keep you posted with updates.</p>
+        const mailOptions = {
+            from: 'hello@ngtaskhub.com',
+            to: email,
+            subject: 'Welcome to TaskHub',
+            html: `
+                <html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to TaskHub</title>
+    <style>
+        /* Base Styles */
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 0;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        /* Email Container */
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+        
+        /* Header */
+        .header {
+            background-color: white;
+            padding: 30px 20px;
+            text-align: center;
+            color: white;
+        }
+        
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        
+        /* Content */
+        .content {
+            padding: 30px;
+            color: #333;
+        }
+        
+        .highlight-box {
+            background-color: #f9f2fc;
+            border: 2px dashed #8600AF;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin: 25px 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: #8600AF;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background-color: #8600AF;
+            color: white;
+            text-decoration: none;
+            padding: 14px 28px;
+            border-radius: 50px;
+            font-weight: 600;
+            margin: 20px 0;
+            transition: all 0.3s ease;
+        }
+        
+        .cta-button:hover {
+            background-color: #6a0088;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(134, 0, 175, 0.3);
+        }
+        
+        /* Footer */
+        .footer {
+            background-color: #121212;
+            color: #aaa;
+            padding: 25px;
+            text-align: center;
+            font-size: 14px;
+        }
+        
+        .footer a {
+            color: #ddd;
+            text-decoration: none;
+        }
+        
+        /* Responsive */
+        @media screen and (max-width: 600px) {
+            .email-container {
+                border-radius: 0;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+            
+            .highlight-box {
+                font-size: 16px;
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <div class="logo"><img src="https://res.cloudinary.com/daf6mdwkh/image/upload/v1750868774/20250614_185641_iwuj1n.png" alt="TaskHub" style="width: 100px; height: 100px;"></div>
+            <h1>Welcome to TaskHub</h1>
+        </div>
+        
+        <div class="content">
+            <p>Hello,</p>
+            <p>Thanks for joining our waitlist.</p>
+            
+            <div class="highlight-box">
+                We’ll keep you posted with updates.
             </div>
-        `
-    };
+            
+            <p>We’re excited to have you with us and will share new features and launch updates soon.</p>
+            
+            <p>Best regards,<br>The TaskHub Team</p>
+        </div>
+        
+        <div class="footer">
+            <p>© 2025 TaskHub. All rights reserved.</p>
+            <p>TaskHub</p>
+        </div>
+    </div>
+</body>
+</html>
+            `
+        };
 
-    await transporter.sendMail(mailOptions);
+        await transporter.sendMail(mailOptions);
+        return true;
+    } catch (error) {
+        console.error('Waitlist welcome email error:', error);
+        return false;
+    }
 };
 
 // Send email verification

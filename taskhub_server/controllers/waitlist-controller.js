@@ -39,11 +39,10 @@ export const joinWaitlist = async (req, res) => {
 
         await WaitlistEmail.create({ emailAddress });
 
-        try {
-            await sendWaitlistWelcomeEmail(emailAddress);
-        } catch (emailError) {
+        const emailSent = await sendWaitlistWelcomeEmail(emailAddress);
+        if (!emailSent) {
             // Do not block waitlist signup if email fails.
-            console.error('Waitlist welcome email error:', emailError);
+            console.error('Waitlist welcome email failed to send');
         }
 
         return res.status(201).json({
