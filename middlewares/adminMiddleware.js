@@ -1,89 +1,39 @@
-import verify from 'jsonwebtoken';
-import User from '../models/user.js';
+import jwt from 'jsonwebtoken';
+import Admin from '../models/admin.js';
+import { JWT_SECRET } from '../utils/authUtils.js';
 
-// Middleware to protect admin routes
+// Protect admin-only routes
 export const protectAdmin = async (req, res, next) => {
     try {
         let token;
+        const authHeader = req.headers.authorization || '';
 
-        // Check for token in Authorization header
-        if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-            token = req.headers.authorization.split(' ')[1];
+        if (authHeader.toLowerCase().startsWith('bearer')) {
+            token = authHeader.split(' ')[1];
+        } else if (req.cookies && req.cookies.token) {
+            token = req.cookies.token;
         }
 
         if (!token) {
-            return res.status(401).json({
-                status: "error",
-                message: "Access denied. No token provided."
-            });
+            return res.status(401).json({ status: 'error', message: 'Admin access denied' });
         }
 
-        // Verify token
-        const decoded = verify(token, "admin");
-        
-        // Get user from database
-        const user = await findById(decoded.id);
-        
-        if (!user) {
-            return res.status(401).json({
-                status: "error",
-                message: "Access denied. User not found."
-            });
+        const decoded = jwt.verify(token, JWT_SECRET);
+
+        if (!decoded || !decoded.id) {
+            return res.status(401).json({ status: 'error', message: 'Invalid token payload' });
         }
 
-        // Check if user is active
-        if (!user.isActive) {
-            return res.status(401).json({
-                status: "error",
-                message: "Access denied. Account is deactivated."
-            });
+        const admin = await Admin.findById(decoded.id).select('-password');
+
+        if (!admin || !admin.isActive) {
+            return res.status(401).json({ status: 'error', message: 'Admin not authorized' });
         }
 
-        // Check if user is admin
-        if (!user.isAdmin) {
-            return res.status(403).json({
-                status: "error",
-                message: "Access denied. Admin privileges required."
-            });
-        }
-
-        // Check if account is locked
-        if (user.isLocked) {
-            return res.status(401).json({
-                status: "error",
-                message: "Access denied. Account is temporarily locked."
-            });
-        }
-
-        // Add user to request object
-        req.user = user;
+        req.admin = admin;
         next();
-        
+
     } catch (error) {
-        console.error("Admin middleware error:", error);
-        
-        if (error.name === 'JsonWebTokenError') {
-            return res.status(401).json({
-                status: "error",
-                message: "Access denied. Invalid token."
-            });
-        }
-        
-        if (error.name === 'TokenExpiredError') {
-            return res.status(401).json({
-                status: "error",
-                message: "Access denied. Token expired."
-            });
-        }
-        
-        res.status(500).json({
-            status: "error",
-            message: "Server error during authentication",
-            error: error.message
-        });
+        return res.status(401).json({ status: 'error', message: 'Invalid or expired admin token' });
     }
 };
-
-export default {
-    protectAdmin
-}; 

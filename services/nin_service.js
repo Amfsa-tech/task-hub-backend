@@ -23,16 +23,16 @@ class NINVerificationService {
      * Get access token from QoreID API
      * Reuses existing token if still valid
      */
-    async getAccessToken() {
-        // Return existing token if still valid
-        if (this.accessToken && this.tokenExpiry && new Date() < this.tokenExpiry) {
-            return this.accessToken;
-        }
+     async getAccessToken() {
+            if (this.accessToken && this.tokenExpiry && new Date() < this.tokenExpiry) {
+                return this.accessToken;
+            }
 
-        try {
-            // Validate env configuration before making request
             if (!CLIENT_ID || !SECRET_KEY) {
-                throw createError(500, 'QoreID credentials are missing. Please set QOREID_CLIENT_KEY and QOREID_SECRET_KEY in your .env');
+                throw createError(
+                    500,
+                    'QoreID credentials are missing'
+                );
             }
 
             const response = await fetch(`${QOREID_BASE_URL}/token`, {
@@ -48,30 +48,24 @@ class NINVerificationService {
             });
 
             if (!response.ok) {
-                let errorMessage = response.statusText;
-                try {
-                    const errorData = await response.json();
-                    errorMessage = errorData.message || errorMessage;
-                } catch {
-                    // Ignore parsing errors, use statusText
-                }
-                throw createError(response.status, `Token generation failed: ${errorMessage}`);
+                const error = await response.text();
+                throw createError(
+                    response.status,
+                    `Token generation failed: ${error}`
+                );
             }
 
             const data = await response.json();
-            
-            // Store token and calculate expiry time (subtract 30 seconds for safety margin)
+
             this.accessToken = data.accessToken;
-            this.tokenExpiry = new Date(Date.now() + ((data.expiresIn - 30) * 1000));
+            this.tokenExpiry = new Date(
+                Date.now() + ((data.expiresIn - 30) * 1000)
+            );
 
             return this.accessToken;
-        } catch (error) {
-            if (error instanceof Error && 'status' in error) {
-                throw error; // Re-throw HTTP errors
-            }
-            throw createError(500, `Failed to obtain access token: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
-    }
+
+
 
     /**
      * Verify NIN with QoreID API
@@ -243,3 +237,6 @@ class NINVerificationService {
 // Export singleton instance
 export const ninVerificationService = new NINVerificationService();
 export default ninVerificationService;
+
+
+

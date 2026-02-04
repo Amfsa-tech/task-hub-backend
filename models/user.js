@@ -33,6 +33,11 @@ const userSchema = new Schema({
     passwordResetExpires: { type: Date },
     
     isActive: { type: Boolean, default: true },
+    isDeleted: {type: Boolean,default: false},
+
+    isKYCVerified: { type: Boolean,default: false},
+    notificationId: {type: String},
+
     lastLogin: { type: Date },
     loginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date },

@@ -22,7 +22,8 @@ import {
     removeUserNotificationId,
     removeTaskerNotificationId,
     verifyTaskerIdentity,
-    getTaskerVerificationStatus
+    getTaskerVerificationStatus, 
+    getMe
 } from '../controllers/auth-controller.js';
 import { protectUser, protectTasker, protectAny } from '../middlewares/authMiddleware.js';
 
@@ -64,5 +65,8 @@ router.delete('/tasker/notification-id', protectTasker, removeTaskerNotification
 // NIN Identity Verification routes (tasker only)
 router.post('/verify-identity', protectTasker, verifyTaskerIdentity); 
 router.get('/verification-status', protectTasker, getTaskerVerificationStatus);
+
+router.get('/me', protectUser, getMe);
+
 
 export default router;

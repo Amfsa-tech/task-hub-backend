@@ -1304,5 +1304,23 @@ export const removeTaskerNotificationId = async (req, res) => {
     }
 };
 
+export const getMe = async (req, res) => {
+    const user = await User.findById(req.user._id).select(
+        'fullName email isKYCVerified'
+    );
+
+    const kyc = await KYCVerification.findOne({ user: req.user._id })
+        .sort({ createdAt: -1 });
+
+    res.json({
+        status: 'success',
+        data: {
+            user,
+            kycStatus: kyc ? kyc.status : 'none'
+        }
+    });
+};
+
+
 // Note: All handlers in this file are exported using `export const ...` above.
 // The explicit export block was removed to avoid duplicate export errors with ESM.

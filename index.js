@@ -6,6 +6,17 @@ import taskRoutes from './routes/taskRoute.js';
 import bidRoutes from './routes/bidRoute.js';
 import categoryRoutes from './routes/categoryRoute.js';
 import chatRoutes from './routes/chatRoute.js';
+import adminAuthRoutes from './routes/adminAuthRoute.js';
+import adminProtectedRoutes from './routes/adminProtectedRoute.js';
+import adminDashboardRoutes from './routes/adminDashboardRoute.js';
+import adminUserRoutes from './routes/adminUserRoute.js';
+import adminTaskRoutes from './routes/adminTaskRoutes.js';
+import adminReportRoutes from './routes/adminReportRoutes.js';
+import adminAuditRoutes from './routes/adminAuditRoutes.js';
+import adminKycRoutes from './routes/adminKycRoutes.js';
+import ninRoutes from './routes/ninRoutes.js';
+import adminTaskerRoutes from './routes/adminTaskerRoutes.js';
+import adminPaymentRoutes from './routes/adminPaymentRoutes.js';
 
 const app = express();
 
@@ -25,6 +36,19 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/bids', bidRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/admin/auth', adminAuthRoutes);
+app.use('/api/admin/me', adminProtectedRoutes); // ONLY for /me and system stuff
+app.use('/api/admin/dashboard', adminDashboardRoutes);
+app.use('/api/admin/users', adminUserRoutes);
+app.use('/api/admin/tasks', adminTaskRoutes);
+app.use('/api/admin/reports', adminReportRoutes);
+app.use('/api/admin/audit-logs', adminAuditRoutes);
+app.use('/api/admin/kyc', adminKycRoutes);
+app.use('/api/kyc', ninRoutes);
+app.use('/api/admin/taskers', adminTaskerRoutes);
+app.use('/api/admin/payments', adminPaymentRoutes);
+
+
 
 // Base route
 app.get('/', (req, res) => {

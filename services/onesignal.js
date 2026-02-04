@@ -180,3 +180,23 @@ export async function sendBidNotification(notificationId, title, message, bidId,
 
   return sendPushToUser(notificationId, title, message, data);
 }
+
+export async function sendKycNotification(notificationId, status, reason = '') {
+  if (!notificationId) return;
+
+  const heading =
+    status === 'approved'
+      ? 'KYC Approved'
+      : 'KYC Rejected';
+
+  const message =
+    status === 'approved'
+      ? 'Your identity verification was approved. You can now withdraw funds.'
+      : `Your KYC was rejected. Reason: ${reason}`;
+
+  return sendPushToUser(notificationId, heading, message, {
+    type: 'kyc',
+    status
+  });
+}
+

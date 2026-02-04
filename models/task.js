@@ -58,7 +58,19 @@ const taskSchema = new Schema({
     updatedAt: { 
         type: Date, 
         default: Date.now 
-    }
+    },
+    escrowStatus: {
+    type: String,
+    enum: [
+        'held',
+        'release_requested',
+        'released',
+        'refund_requested',
+        'refunded'
+    ],
+    default: 'held'
+}
+
 });
 
 // Add custom validation to ensure at least one category
