@@ -1,0 +1,24 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
+const { 
+  PORT, 
+  NODE_ENV, 
+  MONGO_URI,
+  QOREID_CLIENT_KEY,
+  QOREID_SECRET_KEY,
+  JWT_SECRET_KEY,
+  ONESIGNAL_APP_ID,
+  ONESIGNAL_REST_KEY
+} = process.env;
+
+export { 
+  PORT, 
+  NODE_ENV, 
+  MONGO_URI,
+  QOREID_CLIENT_KEY,
+  QOREID_SECRET_KEY,
+  JWT_SECRET_KEY,
+  ONESIGNAL_APP_ID,
+  ONESIGNAL_REST_KEY
+};
