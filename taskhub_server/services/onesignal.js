@@ -9,6 +9,11 @@ import { ONESIGNAL_APP_ID, ONESIGNAL_REST_KEY } from '../config/envConfig.js';
  * @param {string} message    – e.g. "Thanks for signing up, John"
  */
 export async function sendWelcomePush(playerId, heading, message) {
+  if (!playerId) {
+    console.log('sendWelcomePush skipped: no playerId provided');
+    return null;
+  }
+
   const payload = {
     app_id: ONESIGNAL_APP_ID,
     include_subscription_ids: [playerId],
