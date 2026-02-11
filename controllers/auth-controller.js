@@ -18,8 +18,6 @@ import {
 
 } from '../utils/authUtils.js';
 
-import { sendWelcomePush } from '../services/onesignal.js';
-
 // Helper function to handle login attempts and account locking
 const handleLoginAttempt = async (user, isValidPassword) => {
     // If password is correct and account is not locked
@@ -227,12 +225,6 @@ export const getUser = async (req, res) => {
             createdAt: req.user.createdAt
         };
 
- await sendWelcomePush(
-            req.user.notificationId,
-            'Welcome aboard!',
-            'You can now start using TaskHub. Your account is ready 🎉'
-        );
-
         return res.status(200).json({
             status: "success",
             message: 'User fetched successfully',
@@ -409,12 +401,6 @@ export const getTasker = async (req, res) => {
             lastLogin: tasker.lastLogin,
             createdAt: tasker.createdAt
         };
-
-         await sendWelcomePush(
-            req.tasker.notificationId,
-            'Welcome aboard!',
-            'You can now start using TaskHub. Your account is ready 🎉'
-        );
 
         return res.status(200).json({
             status: "success",
