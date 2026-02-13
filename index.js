@@ -17,6 +17,8 @@ import adminKycRoutes from './routes/adminKycRoutes.js';
 import ninRoutes from './routes/ninRoutes.js';
 import adminTaskerRoutes from './routes/adminTaskerRoutes.js';
 import adminPaymentRoutes from './routes/adminPaymentRoutes.js';
+import adminStaffRoutes from './routes/adminStaffRoutes.js'; // Staff Management
+import adminChatRoutes from './routes/adminChatRoutes.js';   // Admin Messages/Support
 
 const app = express();
 
@@ -47,7 +49,8 @@ app.use('/api/admin/kyc', adminKycRoutes);
 app.use('/api/kyc', ninRoutes);
 app.use('/api/admin/taskers', adminTaskerRoutes);
 app.use('/api/admin/payments', adminPaymentRoutes);
-
+app.use('/api/admin/staff', adminStaffRoutes);       // Staff Management
+app.use('/api/admin/messages', adminChatRoutes);     // Support Chat
 
 
 // Base route

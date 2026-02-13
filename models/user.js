@@ -38,7 +38,7 @@ const userSchema = new Schema({
     isKYCVerified: { type: Boolean,default: false},
     notificationId: {type: String},
 
-    lastLogin: { type: Date },
+    lastLoginAt: { type: Date },
     loginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date },
     

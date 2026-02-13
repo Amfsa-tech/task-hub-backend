@@ -3,8 +3,17 @@ import mongoose from 'mongoose';
 const kycVerificationSchema = new mongoose.Schema({
     user: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
+        required: true,
+        // This tells Mongoose to look at the 'userType' field to decide 
+        // which collection to use for population.
+        refPath: 'userType' 
+    },
+
+    // New field to distinguish between User and Tasker
+    userType: {
+        type: String,
+        required: true,
+        enum: ['User', 'Tasker'] // These must match your model names exactly
     },
 
     nin: {

@@ -4,6 +4,7 @@ import { allowAdminRoles } from '../middlewares/adminRoleGuard.js';
 import {
     getAllUsers,
     getUserById,
+    getUserStats, // <--- 1. IMPORT THIS
     activateUser,
     deactivateUser,
     lockUser,
@@ -16,13 +17,22 @@ const router = express.Router();
 
 router.use(protectAdmin);
 
-// View users
+// --- 2. ADD THIS ROUTE BEFORE /:id ---
+// Get User Statistics (Top Cards)
+router.get(
+    '/stats',
+    allowAdminRoles('super_admin', 'trust_safety'),
+    getUserStats
+);
+
+// View users (List)
 router.get(
     '/',
     allowAdminRoles('super_admin', 'trust_safety'),
     getAllUsers
 );
 
+// Get specific user (Detail)
 router.get(
     '/:id',
     allowAdminRoles('super_admin', 'trust_safety'),
@@ -67,6 +77,5 @@ router.patch(
     allowAdminRoles('super_admin'),
     restoreUser
 );
-
 
 export default router;

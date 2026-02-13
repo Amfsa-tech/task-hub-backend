@@ -1,104 +1,85 @@
-
 import User from '../models/user.js';
 import Task from '../models/task.js';
 import Report from '../models/report.js';
 import Tasker from '../models/tasker.js';
 import KYCVerification from '../models/kycVerification.js';
+import AuditLog from '../models/adminAuditLog.js';
 
 export const getDashboardStats = async (req, res) => {
   try {
-    // USERS
+    // 1. RAW COUNTS
     const totalUsers = await User.countDocuments();
     const activeUsers = await User.countDocuments({ isActive: true });
-
-    // TASKERS
+    
     const totalTaskers = await Tasker.countDocuments();
-    const activeTaskers = await Tasker.countDocuments({ isActive: true });
-
-    // TASKS
+    
+    // 2. TASK METRICS
     const totalTasks = await Task.countDocuments();
-
     const tasksByStatusAgg = await Task.aggregate([
       { $group: { _id: '$status', count: { $sum: 1 } } }
     ]);
+    
+    const taskStatus = { open: 0, assigned: 0, 'in-progress': 0, completed: 0, cancelled: 0 };
+    tasksByStatusAgg.forEach(item => { taskStatus[item._id] = item.count; });
 
-    const taskStatus = {
-      open: 0,
-      assigned: 0,
-      'in-progress': 0,
-      completed: 0,
-      cancelled: 0
-    };
-
-    tasksByStatusAgg.forEach(item => {
-      taskStatus[item._id] = item.count;
-    });
-
-    // REPORTS
-    const pendingReports = await Report.countDocuments({ status: 'pending' });
-    const resolvedReports = await Report.countDocuments({ status: 'resolved' });
-
-    // ESCROW (READ-ONLY)
-    const escrowAgg = await Task.aggregate([
-      { $match: { isEscrowHeld: true } },
-      { $group: { _id: null, total: { $sum: '$escrowAmount' } } }
-    ]);
-    const escrowHeld = escrowAgg[0]?.total || 0;
-
-    // TOTAL REVENUE
+    // 3. FINANCIALS
     const revenueAgg = await Task.aggregate([
-      { $match: { status: 'completed' } },
-      { $group: { _id: null, total: { $sum: '$budget' } } }
+      { $match: { status: 'completed' } }, // Revenue comes from completed tasks
+      { $group: { _id: null, total: { $sum: '$budget' } } } // Summing budget as proxy for value
     ]);
     const totalRevenue = revenueAgg[0]?.total || 0;
 
-    // RECENT ACTIVITY
-    const recentTasks = await Task.find()
-      .populate('user', 'fullName')
-      .sort({ createdAt: -1 })
-      .limit(5);
-
-    const recentReports = await Report.find()
-      .populate('reporter', 'fullName')
-      .sort({ createdAt: -1 })
-      .limit(5);
-
-    // TASKS BY CATEGORY
-    const tasksByCategory = await Task.aggregate([
-      { $unwind: '$categories' },
-      { $group: { _id: '$categories', count: { $sum: 1 } } }
+    // 4. RECENT ACTIVITY (Feeds the Timeline)
+    // We fetch these separately, frontend can merge them for the "Activity Feed"
+    const [recentTasks, recentKyc, recentAudit] = await Promise.all([
+        Task.find().populate('user', 'fullName').sort({ createdAt: -1 }).limit(5),
+        KYCVerification.find({ status: 'pending' }).populate('user', 'fullName').sort({ createdAt: -1 }).limit(5),
+        AuditLog.find().populate('admin', 'email').sort({ createdAt: -1 }).limit(5)
     ]);
 
-    // KYC STATS
-    const kycAgg = await KYCVerification.aggregate([
-      { $group: { _id: '$status', count: { $sum: 1 } } }
-    ]);
+    // 5. KYC COUNTS
+    const pendingKyc = await KYCVerification.countDocuments({ status: 'pending' });
 
-    const kycStats = { pending: 0, approved: 0, rejected: 0 };
-    kycAgg.forEach(k => {
-      kycStats[k._id] = k.count;
-    });
+    // --- NEW: QUICK STATS CALCULATIONS (Matches Figma Bottom Right Widget) ---
+    
+    // Ratio: e.g. "0.2" (1 Tasker for every 5 Users)
+    const userToTaskerRatio = totalTaskers > 0 ? (totalUsers / totalTaskers).toFixed(2) : 0;
+    
+    // Completion Rate: e.g. "85.5" (%)
+    const completionRate = totalTasks > 0 ? ((taskStatus.completed / totalTasks) * 100).toFixed(1) : 0;
+    
+    // Avg Task Value: e.g. "20000" (Naira)
+    const avgTaskValue = taskStatus.completed > 0 ? (totalRevenue / taskStatus.completed).toFixed(0) : 0;
+
 
     res.json({
       status: 'success',
       data: {
+        // Top Cards
         users: { total: totalUsers, active: activeUsers },
-        taskers: { total: totalTaskers, active: activeTaskers },
-        tasks: { total: totalTasks, byStatus: taskStatus },
-        reports: { pending: pendingReports, resolved: resolvedReports },
-        escrow: { held: escrowHeld },
+        taskers: { total: totalTaskers },
+        tasks: { total: totalTasks, ...taskStatus }, // includes active/completed/cancelled
         revenue: { total: totalRevenue },
-        recentActivity: { tasks: recentTasks, reports: recentReports },
-        charts: { tasksByCategory },
-        kyc: kycStats
+        kyc: { pending: pendingKyc },
+
+        // Bottom Right Widget (Calculated for UI)
+        quickStats: {
+            userToTaskerRatio,
+            completionRate,
+            avgTaskValue
+        },
+
+        // Feeds
+        recentActivity: { 
+            tasks: recentTasks, 
+            kyc: recentKyc,
+            audit: recentAudit
+        }
       }
     });
 
   } catch (error) {
     console.error('Dashboard error:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to fetch dashboard stats'
-    });
+    res.status(500).json({ status: 'error', message: 'Failed to fetch stats' });
   }
 };

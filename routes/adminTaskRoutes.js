@@ -4,6 +4,7 @@ import { allowAdminRoles } from '../middlewares/adminRoleGuard.js';
 import {
     getAllTasks,
     getTaskById,
+    getTaskStats,
     forceCancelTask,
     forceCompleteTask
 } from '../controllers/adminTaskController.js';
@@ -11,6 +12,10 @@ import {
 const router = express.Router();
 
 // All admins
+router.get('/stats',
+     protectAdmin, 
+     getTaskStats);
+     
 router.get(
     '/',
     protectAdmin,
