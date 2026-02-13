@@ -1,4 +1,5 @@
 import Task from '../models/task.js';
+import User from '../models/user.js';
 
 // GET /api/admin/payments/stats
 export const getPaymentStats = async (req, res) => {

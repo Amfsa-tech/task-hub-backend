@@ -107,6 +107,7 @@ export const getAllTasks = async (req, res) => {
 
 // ... (Your existing functions kept exactly as is below) ...
 
+// GET /api/admin/tasks/:id
 export const getTaskById = async (req, res) => {
     try {
         const taskId = req.params.id;
@@ -121,10 +122,17 @@ export const getTaskById = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Task not found' });
         }
 
-        // 2. Fetch Bids (Using your specific Bid model structure)
-        const bids = await Bid.find({ task: taskId })
-            .populate('tasker', 'firstName lastName profilePicture emailAddress') // Get Tasker details
-            .sort({ createdAt: -1 }); // Newest bids first
+        // 2. Fetch Bids (Safe check if Bid model exists, if not return empty array)
+        // If you haven't created the Bid model yet, comment out the Bid lines below
+        let bids = [];
+        try {
+            const Bid = (await import('../models/bid.js')).default;
+            bids = await Bid.find({ task: taskId })
+                .populate('tasker', 'firstName lastName profilePicture emailAddress')
+                .sort({ createdAt: -1 });
+        } catch (e) {
+            console.log("Bid model not found or error fetching bids, skipping...");
+        }
 
         // 3. Construct Response
         res.json({
@@ -137,24 +145,28 @@ export const getTaskById = async (req, res) => {
                     budget: task.budget,
                     status: task.status,
                     negotiable: task.budgetType === 'negotiable' ? 'YES' : 'NO',
-                    category: task.categories[0]?.name || 'General',
+                    
+                    // --- THE FIX IS HERE ---
+                    // We use '?.' to check if categories exists before trying to read [0]
+                    category: task.categories?.[0]?.name || 'General', 
+                    // -----------------------
+
                     createdAt: task.createdAt,
-                    deadline: task.date, // or task.deadline depending on your Task model
+                    deadline: task.date, 
                     lastUpdated: task.updatedAt,
                     postedBy: task.user, 
                     assignedTo: task.assignedTasker || null
                 },
-                // 4. Map Bids to UI (Matches your Bid model fields)
                 bids: bids.map(bid => ({
                     id: bid._id,
-                    amount: bid.amount,          // Matches 'amount' in your Schema
-                    message: bid.message || '',  // Matches 'message' in your Schema
-                    status: bid.status,          // 'pending', 'accepted', etc.
-                    bidType: bid.bidType,        // 'fixed' or 'custom'
+                    amount: bid.amount,
+                    message: bid.message || '',
+                    status: bid.status,
+                    bidType: bid.bidType,
                     date: bid.createdAt,
-                    taskerName: `${bid.tasker.firstName} ${bid.tasker.lastName}`,
-                    taskerImage: bid.tasker.profilePicture,
-                    taskerEmail: bid.tasker.emailAddress
+                    taskerName: bid.tasker ? `${bid.tasker.firstName} ${bid.tasker.lastName}` : 'Unknown',
+                    taskerImage: bid.tasker?.profilePicture,
+                    taskerEmail: bid.tasker?.emailAddress
                 }))
             }
         });

@@ -6,7 +6,7 @@ const router = express.Router();
 
 router.use(protectAdmin);
 
-router.get('/stats', getPaymentStats);      // The Cards/Widgets
+router.get('/', getPaymentStats);      // The Cards/Widgets
 router.get('/history', getAllPayments);  // The Table/List
 router.get('/:id', getPaymentById);
 export default router;
