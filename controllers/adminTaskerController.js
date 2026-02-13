@@ -2,6 +2,7 @@ import Tasker from '../models/tasker.js';
 import Task from '../models/task.js';
 import Category from '../models/category.js';
 import Report from '../models/report.js';
+import KYCVerification from '../models/kycVerification.js'; // Add this!
 import { logAdminAction } from '../utils/auditLogger.js';
 
 // GET /api/admin/taskers/stats
