@@ -19,6 +19,8 @@ import adminTaskerRoutes from './routes/adminTaskerRoutes.js';
 import adminPaymentRoutes from './routes/adminPaymentRoutes.js';
 import adminStaffRoutes from './routes/adminStaffRoutes.js'; // Staff Management
 import adminChatRoutes from './routes/adminChatRoutes.js';   // Admin Messages/Support
+import adminReportRoutes from './routes/adminReportRoutes.js'; // This now includes Logs & Exports
+import adminSettingsRoutes from './routes/adminSettingsRoutes.js';
 
 const app = express();
 
@@ -51,6 +53,17 @@ app.use('/api/admin/taskers', adminTaskerRoutes);
 app.use('/api/admin/payments', adminPaymentRoutes);
 app.use('/api/admin/staff', adminStaffRoutes);       // Staff Management
 app.use('/api/admin/messages', adminChatRoutes);     // Support Chat
+// 1. Dashboard & Reports (Includes Exports and Activity Logs)
+// This powers the "Dashboard", "Payments", and "Report & Logs" pages
+app.use('/api/admin/reports', adminReportRoutes);
+
+// 2. Messages & Conversations
+// This powers the "Messages" page for monitoring user chats
+app.use('/api/admin/messages', adminChatRoutes);
+
+// 3. System Settings
+// This powers the "Settings" page for maintenance mode and global toggles
+app.use('/api/admin/settings', adminSettingsRoutes);
 
 
 // Base route

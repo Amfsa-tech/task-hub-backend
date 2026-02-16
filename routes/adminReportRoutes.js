@@ -30,7 +30,8 @@ router.patch(
     allowAdminRoles('super_admin', 'trust_safety'),
     resolveReport
 );
-
+router.get('/activity-logs', getAllActivityLogs); // <--- New: Activity Log Page
+router.get('/:id', getReportDetails);
 
 
 // --- SECTION 2: SYSTEM DATA EXPORTS (Super Admin Only) ---

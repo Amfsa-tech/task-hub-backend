@@ -9,9 +9,9 @@ import {
 const router = express.Router();
 
 router.use(protectAdmin);
-
+router.get('/stats', getChatStats); // Add this at the top
 router.get('/', getAllConversations);
-router.get('/:id', getChatHistory); // :id is the Conversation ID
+router.get('/:id', getChatHistory);
 router.post('/:id', sendAdminMessage);
 
 export default router;

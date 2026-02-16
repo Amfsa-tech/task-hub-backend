@@ -4,6 +4,8 @@ import User from '../models/user.js';
 import Tasker from '../models/tasker.js';
 import KYCVerification from '../models/kycVerification.js';
 import { logAdminAction } from '../utils/auditLogger.js';
+import AuditLog from '../models/adminAuditLog.js'; 
+
 
 // --- SECTION 1: MODERATION REPORTS (User Disputes/Spam) ---
 
@@ -248,5 +250,68 @@ export const exportTaskerReport = async (req, res) => {
         res.json({ status: 'success', data: reportData });
     } catch (error) {
         res.status(500).json({ status: 'error', message: 'Tasker export failed' });
+    }
+};
+// 1. Add this import at the top of your file
+
+// --- SECTION 3: ACTIVITY LOGS & SYSTEM AUDITS ---
+
+/**
+ * GET /api/admin/reports/activity-logs
+ * Powers the main "Activity Log" timeline in image_88562b.jpg
+ */
+export const getAllActivityLogs = async (req, res) => {
+    try {
+        const { page = 1, limit = 20, action, adminId } = req.query;
+        const filter = {};
+
+        // Filter by specific action (e.g., 'VERIFY_TASKER') if provided
+        if (action) filter.action = action;
+        if (adminId) filter.admin = adminId;
+
+        const logs = await AuditLog.find(filter)
+            .populate('admin', 'firstName lastName email')
+            .sort({ createdAt: -1 })
+            .limit(limit * 1)
+            .skip((page - 1) * limit);
+
+        const total = await AuditLog.countDocuments(filter);
+
+        res.json({
+            status: 'success',
+            totalRecords: total,
+            totalPages: Math.ceil(total / limit),
+            currentPage: Number(page),
+            logs
+        });
+    } catch (error) {
+        console.error('Fetch activity logs error:', error);
+        res.status(500).json({ status: 'error', message: 'Failed to fetch activity logs' });
+    }
+};
+
+/**
+ * GET /api/admin/reports/:id
+ * Powers the "Report Details" drill-down view in image_88564e.jpg
+ */
+export const getReportDetails = async (req, res) => {
+    try {
+        const report = await Report.findById(req.params.id)
+            .populate('reporter', 'fullName emailAddress profilePicture phone')
+            .populate('reportedUser', 'fullName emailAddress profilePicture phone')
+            .populate('task', 'title description budget status')
+            .populate('reviewedBy', 'firstName lastName');
+
+        if (!report) {
+            return res.status(404).json({ status: 'error', message: 'Report not found' });
+        }
+
+        res.json({
+            status: 'success',
+            data: report
+        });
+    } catch (error) {
+        console.error('Fetch report details error:', error);
+        res.status(500).json({ status: 'error', message: 'Failed to fetch report details' });
     }
 };
