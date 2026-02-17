@@ -56,3 +56,4 @@ export const getAuditFilters = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Failed to fetch filters' });
     }
 };
+

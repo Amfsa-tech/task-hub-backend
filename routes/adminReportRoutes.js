@@ -4,11 +4,13 @@ import { allowAdminRoles } from '../middlewares/adminRoleGuard.js';
 import {
     getAllReports,
     resolveReport,
-    exportTaskReport,      // New Export
-    exportPaymentReport,   // New Export
-    exportDashboardSummary, // New Export
-    exportUserReport,      // New Export
-    exportTaskerReport     // New Export
+    exportTaskReport,      
+    exportPaymentReport,   
+    exportDashboardSummary, 
+    exportUserReport,     
+    exportTaskerReport,
+    getAllActivityLogs,
+    getReportDetails   
 } from '../controllers/adminReportController.js';
 
 const router = express.Router();

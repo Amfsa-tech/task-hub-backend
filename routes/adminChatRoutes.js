@@ -3,7 +3,8 @@ import { protectAdmin } from '../middlewares/adminMiddleware.js';
 import { 
     getAllConversations, 
     getChatHistory, 
-    sendAdminMessage 
+    sendAdminMessage,
+    getChatStats
 } from '../controllers/adminChatController.js';
 
 const router = express.Router();
