@@ -20,6 +20,12 @@ import adminPaymentRoutes from './routes/adminPaymentRoutes.js';
 
 const app = express();
 
+const allowedOrigins = [
+    'https://www.ngtaskhub.com',
+    'http://localhost:3000',
+    'http://localhost:5173'
+];
+
 // Setup database connection handlers
 setupConnectionHandlers();
 
@@ -27,7 +33,14 @@ setupConnectionHandlers();
 await connectDB();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        return callback(new Error('Not allowed by CORS'));
+    }
+}));
 app.use(express.json());
 
 // Routes
