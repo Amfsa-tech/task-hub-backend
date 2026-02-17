@@ -51,6 +51,9 @@ const taskSchema = new Schema({
         type: Schema.Types.ObjectId, 
         ref: 'Tasker' 
     },
+    // Add these to your Task Schema:
+    rating: { type: Number, min: 1, max: 5 },
+    reviewText: { type: String },
     createdAt: { 
         type: Date, 
         default: Date.now 

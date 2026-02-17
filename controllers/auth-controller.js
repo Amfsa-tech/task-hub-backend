@@ -125,6 +125,7 @@ export const userRegister = async (req, res) => {
             residentState,
             address,
             password: hashedPassword,
+            userType: 'User',
             wallet: 0,
             dateOfBirth,
             emailVerificationToken: hashToken(emailToken),
@@ -976,11 +977,8 @@ export const updateTaskerLocation = async (req, res) => {
 export const verifyTaskerIdentity = async (req, res) => {
     try {
         const { nin, firstName, lastName, dateOfBirth, gender, phoneNumber, email } = req.body;
-
-        // Get tasker ID from auth middleware
         const taskerId = req.tasker.id;
 
-        // Validate required fields
         if (!nin || !firstName || !lastName || !dateOfBirth || !gender) {
             return res.status(400).json({
                 status: 'error',
@@ -988,86 +986,65 @@ export const verifyTaskerIdentity = async (req, res) => {
             });
         }
 
-        // Find the tasker
         const tasker = await Tasker.findById(taskerId);
         if (!tasker) {
-            return res.status(404).json({
-                status: 'error',
-                message: 'Tasker not found'
-            });
+            return res.status(404).json({ status: 'error', message: 'Tasker not found' });
         }
 
-        // Check if already verified
         if (tasker.verifyIdentity) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Identity already verified for this tasker'
-            });
+            return res.status(400).json({ status: 'error', message: 'Identity already verified' });
         }
 
-        // Prepare user details for verification
         const userDetails = {
             firstName: firstName.trim(),
             lastName: lastName.trim(),
-            dob: dateOfBirth, // Should be in YYYY-MM-DD format
+            dob: dateOfBirth,
             gender: gender.toLowerCase(),
             phoneNumber: phoneNumber || tasker.phoneNumber,
             email: email || tasker.emailAddress
         };
 
-        // Verify identity using NIN service
         const verificationResult = await ninVerificationService.verifyUserIdentity(nin, userDetails);
 
-        if (verificationResult.isVerified) {
-            // Update tasker verification status
-            tasker.verifyIdentity = true;
-            tasker.updatedAt = new Date();
-            await tasker.save();
+        // CREATE KYC RECORD FOR ADMIN DASHBOARD
+        // This ensures the admin sees the request and the userType is 'Tasker'
+        const kycRecord = await KYCVerification.create({
+            user: tasker._id,
+            userType: 'Tasker', // <--- CRITICAL: Set userType explicitly for the Admin logic
+            nin: nin,
+            status: verificationResult.isVerified ? 'pending' : 'rejected', // Usually remains 'pending' for manual admin approval
+            verificationSummary: {
+                matchStatus: verificationResult.validationResult.matchStatus,
+                mismatches: verificationResult.validationResult.mismatches
+            },
+            createdAt: new Date()
+        });
 
+        if (verificationResult.isVerified) {
+            // NOTE: We don't set tasker.verifyIdentity = true here yet 
+            // if you want the ADMIN to press the "Approve" button first.
             return res.status(200).json({
                 status: 'success',
-                message: 'Identity verification successful',
+                message: 'Identity details submitted for admin review',
                 data: {
                     isVerified: true,
-                    matchStatus: verificationResult.validationResult.matchStatus,
-                    verificationId: verificationResult.verificationResult.id,
-                    tasker: {
-                        id: tasker._id,
-                        firstName: tasker.firstName,
-                        lastName: tasker.lastName,
-                        verifyIdentity: tasker.verifyIdentity
-                    }
+                    kycId: kycRecord._id
                 }
             });
         } else {
             return res.status(400).json({
                 status: 'error',
-                message: 'Identity verification failed',
+                message: 'Identity verification failed validation',
                 data: {
                     isVerified: false,
-                    matchStatus: verificationResult.validationResult.matchStatus,
-                    mismatches: verificationResult.validationResult.mismatches,
-                    verificationId: verificationResult.verificationResult.id
+                    mismatches: verificationResult.validationResult.mismatches
                 }
             });
         }
 
     } catch (error) {
         console.error('NIN verification error:', error);
-
-        // Handle specific error types
-        if (error.status) {
-            return res.status(error.status).json({
-                status: 'error',
-                message: error.message
-            });
-        }
-
-        return res.status(500).json({
-            status: 'error',
-            message: 'Internal server error during identity verification',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
+        return res.status(500).json({ status: 'error', message: 'Internal server error' });
     }
 };
 

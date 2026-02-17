@@ -33,8 +33,11 @@ const adminSchema = new mongoose.Schema({
     isLocked: {
         type: Boolean,
         default: false
-    }
-
+    },
+    lastLogin: { type: Date },
+    phoneNumber: { type: String },
+    location: { type: String },
+    
 }, { timestamps: true });
 
 adminSchema.pre('save', async function (next) {

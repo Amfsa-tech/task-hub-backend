@@ -17,14 +17,28 @@ import adminKycRoutes from './routes/adminKycRoutes.js';
 import ninRoutes from './routes/ninRoutes.js';
 import adminTaskerRoutes from './routes/adminTaskerRoutes.js';
 import adminPaymentRoutes from './routes/adminPaymentRoutes.js';
+import adminStaffRoutes from './routes/adminStaffRoutes.js'; 
+import adminChatRoutes from './routes/adminChatRoutes.js';   
+import adminSettingsRoutes from './routes/adminSettingsRoutes.js';
+import { checkMaintenanceMode } from './middlewares/maintenanceMiddleware.js';
 
 const app = express();
 
+<<<<<<< HEAD
 const allowedOrigins = [
     'https://www.ngtaskhub.com',
     'http://localhost:3000',
     'http://localhost:5173'
 ];
+=======
+app.get('/health', (req, res) => {
+    res.status(200).json({ 
+        status: 'UP', 
+        timestamp: new Date(),
+        version: '1.0.0' 
+    });
+});
+>>>>>>> 994bf26a11787cb001592f0536153f2905e7609f
 
 // Setup database connection handlers
 setupConnectionHandlers();
@@ -43,12 +57,6 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/tasks', taskRoutes);
-app.use('/api/bids', bidRoutes);
-app.use('/api/categories', categoryRoutes);
-app.use('/api/chat', chatRoutes);
 app.use('/api/admin/auth', adminAuthRoutes);
 app.use('/api/admin/me', adminProtectedRoutes); // ONLY for /me and system stuff
 app.use('/api/admin/dashboard', adminDashboardRoutes);
@@ -57,9 +65,22 @@ app.use('/api/admin/tasks', adminTaskRoutes);
 app.use('/api/admin/reports', adminReportRoutes);
 app.use('/api/admin/audit-logs', adminAuditRoutes);
 app.use('/api/admin/kyc', adminKycRoutes);
-app.use('/api/kyc', ninRoutes);
 app.use('/api/admin/taskers', adminTaskerRoutes);
 app.use('/api/admin/payments', adminPaymentRoutes);
+app.use('/api/admin/staff', adminStaffRoutes);       // Staff Management
+app.use('/api/admin/messages', adminChatRoutes);     // Support Chat
+app.use('/api/admin/settings', adminSettingsRoutes);
+
+
+app.use(checkMaintenanceMode);
+
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/tasks',  taskRoutes);
+app.use('/api/bids', bidRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/kyc', ninRoutes);
 
 
 

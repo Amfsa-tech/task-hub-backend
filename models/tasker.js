@@ -18,6 +18,8 @@ const taskerSchema = new Schema({
         longitude: { type: Number },
         lastUpdated: { type: Date }
     },
+    // Add this line to your Schema if you want the Rating feature to work in the future:
+    averageRating: { type: Number, default: 0, index: true },
     
     password: { type: String, required: true, unique: true },
     wallet: { type: Number, default: 0 },
