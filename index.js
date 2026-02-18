@@ -24,13 +24,6 @@ import { checkMaintenanceMode } from './middlewares/maintenanceMiddleware.js';
 
 const app = express();
 
-<<<<<<< HEAD
-const allowedOrigins = [
-    'https://www.ngtaskhub.com',
-    'http://localhost:3000',
-    'http://localhost:5173'
-];
-=======
 app.get('/health', (req, res) => {
     res.status(200).json({ 
         status: 'UP', 
@@ -38,7 +31,36 @@ app.get('/health', (req, res) => {
         version: '1.0.0' 
     });
 });
->>>>>>> 994bf26a11787cb001592f0536153f2905e7609f
+
+const defaultAllowedOrigins = [
+    'https://www.ngtaskhub.com',
+    'http://localhost:3000',
+    'http://localhost:5173'
+];
+
+const configuredAllowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || process.env.FRONTEND_URL || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...configuredAllowedOrigins]));
+
+const wildcardOriginSuffixes = allowedOrigins
+    .filter((origin) => origin.startsWith('*.'))
+    .map((origin) => origin.slice(1).toLowerCase());
+
+const isAllowedOrigin = (origin) => {
+    if (!origin) {
+        return true;
+    }
+
+    if (allowedOrigins.includes(origin)) {
+        return true;
+    }
+
+    const normalizedOrigin = origin.toLowerCase();
+    return wildcardOriginSuffixes.some((suffix) => normalizedOrigin.endsWith(suffix));
+};
 
 // Setup database connection handlers
 setupConnectionHandlers();
@@ -49,11 +71,12 @@ await connectDB();
 // Middleware
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
+        if (isAllowedOrigin(origin)) {
             return callback(null, true);
         }
         return callback(new Error('Not allowed by CORS'));
-    }
+    },
+    credentials: true
 }));
 app.use(express.json());
 
