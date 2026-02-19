@@ -422,9 +422,12 @@ const acceptBid = async (req, res) => {
         
         // Start a session for the transaction
         const session = await startSession();
-        session.startTransaction();
+        let committed = false;
+        let otherBids = [];
         
         try {
+            session.startTransaction();
+            
             // Update bid status
             bid.status = 'accepted';
             await bid.save({ session });
@@ -456,9 +459,9 @@ const acceptBid = async (req, res) => {
             );
             
             // Pre-fetch other bids before updating them to rejected (for notifications after commit)
-            const otherBids = await Bid.find({
+            otherBids = await Bid.find({
                 task: bid.task._id,
-                _id: { $ne: id }
+                _id: { $ne: bid._id }
             })
             .select('_id tasker amount')
             .session(session);
@@ -467,7 +470,7 @@ const acceptBid = async (req, res) => {
             await Bid.updateMany(
                 {
                     task: bid.task._id,
-                    _id: { $ne: id }
+                    _id: { $ne: bid._id }
                 },
                 {
                     status: 'rejected'
@@ -477,56 +480,12 @@ const acceptBid = async (req, res) => {
             
             // Commit the transaction
             await session.commitTransaction();
-            session.endSession();
-            
-            // Ensure a conversation exists and add a system message about acceptance
-            try {
-                let convo = await Conversation.findOne({ task: bid.task._id, user: bid.task.user, tasker: bid.tasker });
-                if (!convo) {
-                    convo = await Conversation.create({ task: bid.task._id, bid: bid._id, user: bid.task.user, tasker: bid.tasker });
-                } else if (!convo.bid) {
-                    convo.bid = bid._id;
-                }
-                const systemText = `Your bid was accepted. Task is now assigned.`;
-                await Message.create({
-                    conversation: convo._id,
-                    senderType: 'system',
-                    text: systemText,
-                });
-                convo.lastMessage = systemText;
-                convo.lastMessageAt = new Date();
-                // Increment unread for tasker so they see the update in chat list
-                convo.unread.tasker = (convo.unread.tasker || 0) + 1;
-                await convo.save();
-            } catch (convoErr) {
-                console.error('Error creating system message after acceptance:', convoErr);
-            }
-
-            // Fire-and-forget notifications after successful commit
-            try {
-                notifyTaskerAboutBidAcceptance(bid.tasker, bid.task, bid).catch((e) => {
-                    console.error('notifyTaskerAboutBidAcceptance error:', e);
-                });
-                if (Array.isArray(otherBids) && otherBids.length > 0) {
-                    for (const ob of otherBids) {
-                        notifyTaskerAboutBidRejection(ob.tasker, bid.task, ob).catch((e) => {
-                            console.error('notifyTaskerAboutBidRejection error:', e);
-                        });
-                    }
-                }
-            } catch (nErr) {
-                console.error('Post-commit bid notifications error:', nErr);
-            }
-
-            res.status(200).json({
-                status: "success",
-                message: "Bid accepted successfully",
-                bid
-            });
+            committed = true;
         } catch (error) {
-            // Abort the transaction on error
-            await session.abortTransaction();
-            session.endSession();
+            // Only abort if not yet committed
+            if (!committed) {
+                try { await session.abortTransaction(); } catch (_) { /* already aborted or ended */ }
+            }
             if (error && error.message === 'INSUFFICIENT_WALLET_BALANCE') {
                 return res.status(402).json({
                     status: "error",
@@ -534,7 +493,56 @@ const acceptBid = async (req, res) => {
                 });
             }
             throw error;
+        } finally {
+            session.endSession();
         }
+
+        // --- Post-commit operations (outside transaction) ---
+
+        // Ensure a conversation exists and add a system message about acceptance
+        try {
+            let convo = await Conversation.findOne({ task: bid.task._id, user: bid.task.user, tasker: bid.tasker });
+            if (!convo) {
+                convo = await Conversation.create({ task: bid.task._id, bid: bid._id, user: bid.task.user, tasker: bid.tasker });
+            } else if (!convo.bid) {
+                convo.bid = bid._id;
+            }
+            const systemText = `Your bid was accepted. Task is now assigned.`;
+            await Message.create({
+                conversation: convo._id,
+                senderType: 'system',
+                text: systemText,
+            });
+            convo.lastMessage = systemText;
+            convo.lastMessageAt = new Date();
+            // Increment unread for tasker so they see the update in chat list
+            convo.unread.tasker = (convo.unread.tasker || 0) + 1;
+            await convo.save();
+        } catch (convoErr) {
+            console.error('Error creating system message after acceptance:', convoErr);
+        }
+
+        // Fire-and-forget notifications after successful commit
+        try {
+            notifyTaskerAboutBidAcceptance(bid.tasker, bid.task, bid).catch((e) => {
+                console.error('notifyTaskerAboutBidAcceptance error:', e);
+            });
+            if (Array.isArray(otherBids) && otherBids.length > 0) {
+                for (const ob of otherBids) {
+                    notifyTaskerAboutBidRejection(ob.tasker, bid.task, ob).catch((e) => {
+                        console.error('notifyTaskerAboutBidRejection error:', e);
+                    });
+                }
+            }
+        } catch (nErr) {
+            console.error('Post-commit bid notifications error:', nErr);
+        }
+
+        res.status(200).json({
+            status: "success",
+            message: "Bid accepted successfully",
+            bid
+        });
     } catch (error) {
         console.error("Accept bid error:", error);
         res.status(500).json({
