@@ -428,9 +428,10 @@ const acceptBid = async (req, res) => {
         try {
             session.startTransaction();
             
-            // Update bid status
-            bid.status = 'accepted';
-            await bid.save({ session });
+            // Update bid status (use updateOne to avoid Mongoose 8 validation
+            // issues with the populated 'task' field inside a transaction)
+            await Bid.updateOne({ _id: bid._id }, { status: 'accepted' }, { session });
+            bid.status = 'accepted'; // update in-memory copy for the response
             
             // Hold user funds at acceptance using bid amount
             const amountToHold = bid.amount;
