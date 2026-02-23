@@ -8,12 +8,15 @@ import { notifyOnNewChatMessage } from '../utils/notificationUtils.js';
 const isValidId = (id) => Types.ObjectId.isValid(id);
 
 // Ensure the current principal is a participant in the conversation
+// Handles both populated (full document) and unpopulated (ObjectId) fields
 const ensureParticipant = (conversation, req) => {
   const id = req.user._id.toString();
   if (req.userType === 'user') {
-    return conversation.user.toString() === id;
+    const convUserId = conversation.user._id ? conversation.user._id.toString() : conversation.user.toString();
+    return convUserId === id;
   } else {
-    return conversation.tasker.toString() === id;
+    const convTaskerId = conversation.tasker._id ? conversation.tasker._id.toString() : conversation.tasker.toString();
+    return convTaskerId === id;
   }
 };
 

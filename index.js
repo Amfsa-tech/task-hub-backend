@@ -32,6 +32,36 @@ app.get('/health', (req, res) => {
     });
 });
 
+const defaultAllowedOrigins = [
+    'https://www.ngtaskhub.com',
+    'http://localhost:3000',
+    'http://localhost:5173'
+];
+
+const configuredAllowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || process.env.FRONTEND_URL || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...configuredAllowedOrigins]));
+
+const wildcardOriginSuffixes = allowedOrigins
+    .filter((origin) => origin.startsWith('*.'))
+    .map((origin) => origin.slice(1).toLowerCase());
+
+const isAllowedOrigin = (origin) => {
+    if (!origin) {
+        return true;
+    }
+
+    if (allowedOrigins.includes(origin)) {
+        return true;
+    }
+
+    const normalizedOrigin = origin.toLowerCase();
+    return wildcardOriginSuffixes.some((suffix) => normalizedOrigin.endsWith(suffix));
+};
+
 // Setup database connection handlers
 setupConnectionHandlers();
 
@@ -39,7 +69,15 @@ setupConnectionHandlers();
 await connectDB();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: (origin, callback) => {
+        if (isAllowedOrigin(origin)) {
+            return callback(null, true);
+        }
+        return callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true
+}));
 app.use(express.json());
 
 app.use('/api/admin/auth', adminAuthRoutes);
