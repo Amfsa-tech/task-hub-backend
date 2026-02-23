@@ -1,262 +1,167 @@
-AUTHENTICATION (GLOBAL)
+Here is the raw Markdown block. You can click the "Copy" button in the top right corner of the block and paste it directly into an `API_DOCUMENTATION.md` file in your `docs` folder.
 
-All admin endpoints require:
+```markdown
+# TaskHub Admin Dashboard: REST API Documentation
 
-Authorization: Bearer <ADMIN_JWT_TOKEN>
+This documentation provides the frontend team with the complete, fully-mapped backend endpoints for the TaskHub Admin Panel.
 
-Admin Roles
+## 1. Global Specifications
 
-super_admin → full access
+### Authentication
+All admin endpoints require a valid JWT passed in the Authorization header.
+* **Header:** `Authorization: Bearer <ADMIN_JWT_TOKEN>`
 
-admin → limited access (no approvals)
+### Role-Based Access Control (RBAC)
+The API strictly enforces role-based access. Attempting to access an endpoint without the required role will return a `403 Forbidden` error.
+* `super_admin`: Full system access, required for exports, settings, and staff management.
+* `operations`: Task moderation, tasker approvals.
+* `trust_safety`: User moderation, dispute resolution, read-only system stats.
 
-If token is missing or invalid:
-
-401 Unauthorized
-
-
-If role is insufficient:
-
-403 Forbidden
-
-DASHBOARD
-GET Admin Dashboard Statistics
-
-Endpoint
-
-GET /api/admin/dashboard
-
-
-Description
-Returns high-level platform statistics for admin homepage.
-
-Response – 200
-
-{
-  "status": "success",
-  "data": {
-    "users": {
-      "total": 1200,
-      "active": 980
-    },
-    "tasks": {
-      "total": 450,
-      "open": 120,
-      "completed": 280,
-      "cancelled": 50
-    },
-    "reports": {
-      "pending": 12,
-      "resolved": 40,
-      "dismissed": 8
-    },
-    "escrow": {
-      "totalHeld": 250000
-    },
-    "kyc": {
-      "total": 300,
-      "pending": 45,
-      "approved": 230,
-      "rejected": 25
-    }
-  }
-}
-
-KYC MANAGEMENT
-GET All KYC Requests
-
-Endpoint
-
-GET /api/admin/kyc
-
-
-Query Params
-
-Name	Type	Description
-status	string	pending, approved, rejected
-
-Response – 200
-
-{
-  "status": "success",
-  "count": 2,
-  "records": [
-    {
-      "_id": "65fabc...",
-      "user": {
-        "_id": "64de...",
-        "fullName": "John Doe",
-        "emailAddress": "john@email.com"
-      },
-      "nin": "***********",
-      "status": "pending",
-      "createdAt": "2025-02-01T10:22:00Z"
-    }
-  ]
-}
-
-
-NIN must always be masked
-
-PATCH Approve KYC
-
-Endpoint
-
-PATCH /api/admin/kyc/:id/approve
-
-
-Role Required
-
-super_admin
-
-
-Response – 200
-
-{
-  "status": "success",
-  "message": "KYC approved successfully"
-}
-
-
-Side Effects
-
-User isKYCVerified = true
-
-Push notification sent
-
-In-app notification saved
-
-Admin action logged
-
-PATCH Reject KYC
-
-Endpoint
-
-PATCH /api/admin/kyc/:id/reject
-
-
-Request Body
-
-{
-  "reason": "Document mismatch"
-}
-
-
-Response – 200
-
-{
-  "status": "success",
-  "message": "KYC rejected"
-}
-
-
-Side Effects
-
-Rejection reason saved
-
-User notified
-
-Admin action logged
-
-KYC STATISTICS
-GET KYC Stats (Dashboard Widget)
-
-Endpoint
-
-GET /api/admin/kyc/stats
-
-
-Response – 200
-
-{
-  "status": "success",
-  "data": {
-    "total": 300,
-    "pending": 45,
-    "approved": 230,
-    "rejected": 25
-  }
-}
-
-USER MANAGEMENT (READ-ONLY)
-GET All Users
-
-Endpoint
-
-GET /api/admin/users
-
-
-Response – 200
-
-{
-  "status": "success",
-  "count": 2,
-  "users": [
-    {
-      "_id": "64de...",
-      "fullName": "Jane Doe",
-      "email": "jane@email.com",
-      "role": "user",
-      "isKYCVerified": true,
-      "createdAt": "2024-12-10T09:00:00Z"
-    }
-  ]
-}
-
-REPORTS & MODERATION
-GET Reports
-
-Endpoint
-
-GET /api/admin/reports?status=pending
-
-
-Response – 200
-
-{
-  "status": "success",
-  "count": 5,
-  "reports": [
-    {
-      "_id": "77ab...",
-      "type": "task_abuse",
-      "status": "pending",
-      "createdAt": "2025-01-30T18:00:00Z"
-    }
-  ]
-}
-
-ERROR RESPONSE FORMAT (GLOBAL)
-
-All errors follow this structure:
-
+### Standard Error Response
+```json
 {
   "status": "error",
   "message": "Human-readable explanation"
 }
 
-NOTIFICATIONS (USER-FACING)
+```
 
-Triggered automatically on:
+---
 
-KYC approval
+## 2. Authentication & Profile (`/api/admin/auth` & `/api/admin/me`)
 
-KYC rejection
+| Method | Endpoint | Description | Roles |
+| --- | --- | --- | --- |
+| **POST** | `/api/admin/auth/login` | Admin login | None |
+| **GET** | `/api/admin/me` | Get current admin profile | All Admins |
+| **GET** | `/api/admin/me/system-stats` | Get high-level system checks | `super_admin` |
 
-Task cancellation
+---
 
-Task completion disputes
+## 3. Dashboard (`/api/admin/dashboard`)
 
-Admin does not receive push notifications.
+| Method | Endpoint | Description | Roles |
+| --- | --- | --- | --- |
+| **GET** | `/api/admin/dashboard/stats` | Fetches aggregate data for homepage cards (Users, Tasks, Escrow, KYC). | `super_admin`, `operations`, `trust_safety` |
 
-SECURITY RULES
+---
 
-No raw NIN returned
+## 4. User Management (`/api/admin/users`)
 
-No sensitive tokens exposed
+| Method | Endpoint | Description | Roles |
+| --- | --- | --- | --- |
+| **GET** | `/api/admin/users/stats` | Get top-level user statistics. | `super_admin`, `trust_safety` |
+| **GET** | `/api/admin/users` | List all users (supports pagination/search). | `super_admin`, `trust_safety` |
+| **GET** | `/api/admin/users/:id` | View specific user details. | `super_admin`, `trust_safety` |
+| **PATCH** | `/api/admin/users/:id/activate` | Mark user as active. | `super_admin` |
+| **PATCH** | `/api/admin/users/:id/deactivate` | Mark user as inactive. | `super_admin` |
+| **PATCH** | `/api/admin/users/:id/lock` | Temporarily lock account. | `super_admin`, `trust_safety` |
+| **PATCH** | `/api/admin/users/:id/unlock` | Remove account lock. | `super_admin`, `trust_safety` |
+| **DELETE** | `/api/admin/users/:id` | Soft delete user account. | `super_admin` |
+| **PATCH** | `/api/admin/users/:id/restore` | Restore soft-deleted account. | `super_admin` |
 
-All admin actions logged
+---
 
-Role guards enforced at route level
+## 5. Tasker Management (`/api/admin/taskers`)
 
+| Method | Endpoint | Description | Roles |
+| --- | --- | --- | --- |
+| **GET** | `/api/admin/taskers` | List all taskers. | All Admins |
+| **GET** | `/api/admin/taskers/:id` | View specific tasker details. | All Admins |
+| **PATCH** | `/api/admin/taskers/:id/verify` | Manually verify tasker profile. | `super_admin`, `operations` |
+| **PATCH** | `/api/admin/taskers/:id/suspend` | Suspend tasker. | `super_admin`, `operations` |
+| **PATCH** | `/api/admin/taskers/:id/activate` | Activate suspended tasker. | `super_admin`, `operations` |
 
+---
+
+## 6. KYC Verification (`/api/admin/kyc`)
+
+| Method | Endpoint | Description | Roles |
+| --- | --- | --- | --- |
+| **GET** | `/api/admin/kyc/stats` | Get KYC aggregate statistics. | `super_admin` |
+| **GET** | `/api/admin/kyc` | List KYC requests (Query: `?status=pending`). | `super_admin` |
+| **PATCH** | `/api/admin/kyc/:id/approve` | Approve KYC document. | `super_admin` |
+| **PATCH** | `/api/admin/kyc/:id/reject` | Reject KYC (Requires `{"reason": "string"}` body). | `super_admin` |
+
+*Note: The frontend must ensure NINs and sensitive data are never rendered raw without masking.*
+
+---
+
+## 7. Task Management (`/api/admin/tasks`)
+
+| Method | Endpoint | Description | Roles |
+| --- | --- | --- | --- |
+| **GET** | `/api/admin/tasks/stats` | Get task analytics. | All Admins |
+| **GET** | `/api/admin/tasks` | List all tasks. | All Admins |
+| **GET** | `/api/admin/tasks/:id` | Get specific task details. | All Admins |
+| **PATCH** | `/api/admin/tasks/:id/cancel` | Force cancel a task. | `super_admin`, `operations` |
+| **PATCH** | `/api/admin/tasks/:id/complete` | Force complete a task (escrow release). | `super_admin`, `operations` |
+
+---
+
+## 8. Financials & Payments (`/api/admin/payments`)
+
+| Method | Endpoint | Description | Roles |
+| --- | --- | --- | --- |
+| **GET** | `/api/admin/payments` | Get payment/escrow stats (Cards/Widgets). | All Admins |
+| **GET** | `/api/admin/payments/history` | List all financial transactions. | All Admins |
+| **GET** | `/api/admin/payments/:id` | Get specific transaction receipt. | All Admins |
+
+---
+
+## 9. Moderation, Reports & Activity Logs (`/api/admin/reports`)
+
+| Method | Endpoint | Description | Roles |
+| --- | --- | --- | --- |
+| **GET** | `/api/admin/reports` | List all user disputes/reports. | `super_admin`, `trust_safety` |
+| **GET** | `/api/admin/reports/activity-logs` | Fetch system-wide activity timeline. | All Admins |
+| **GET** | `/api/admin/reports/:id` | Get dispute details. | All Admins |
+| **PATCH** | `/api/admin/reports/:id/resolve` | Mark report as resolved. | `super_admin`, `trust_safety` |
+
+### System Data Exports (CSV Preparation)
+
+*Returns data formatted for CSV generation on the frontend.*
+
+* `GET /api/admin/reports/export/dashboard` (`super_admin`)
+* `GET /api/admin/reports/export/tasks` (`super_admin`)
+* `GET /api/admin/reports/export/payments` (`super_admin`)
+* `GET /api/admin/reports/export/users` (`super_admin`)
+* `GET /api/admin/reports/export/taskers` (`super_admin`)
+
+---
+
+## 10. Messages & Support (`/api/admin/messages`)
+
+| Method | Endpoint | Description | Roles |
+| --- | --- | --- | --- |
+| **GET** | `/api/admin/messages/stats` | Get chat volume and unread stats. | All Admins |
+| **GET** | `/api/admin/messages` | List all monitored conversations. | All Admins |
+| **GET** | `/api/admin/messages/:id` | View chat history for a specific conversation. | All Admins |
+| **POST** | `/api/admin/messages/:id` | Send an Admin System message (Requires `{"text": "string"}`). | All Admins |
+
+---
+
+## 11. System Settings (`/api/admin/settings`)
+
+| Method | Endpoint | Description | Roles |
+| --- | --- | --- | --- |
+| **GET** | `/api/admin/settings` | Fetch global toggles (Maintenance mode, etc.). | `super_admin` |
+| **PATCH** | `/api/admin/settings` | Update settings (e.g., `{"system.maintenanceMode": true}`). | `super_admin` |
+
+---
+
+## 12. Staff Management (`/api/admin/staff`)
+
+| Method | Endpoint | Description | Roles |
+| --- | --- | --- | --- |
+| **GET** | `/api/admin/staff/stats` | Staff hierarchy and count. | `super_admin` |
+| **GET** | `/api/admin/staff` | List all admin/staff accounts. | `super_admin` |
+| **POST** | `/api/admin/staff` | Create a new staff account. | `super_admin` |
+| **GET** | `/api/admin/staff/:id` | Get specific staff member details. | `super_admin` |
+| **PATCH** | `/api/admin/staff/:id/status` | Change staff active/inactive status. | `super_admin` |
+
+```
+
+This acts as a solid contract between you and your frontend team. Would you like me to draft a quick email template or handover message you can send to them alongside this file?
+
+```
