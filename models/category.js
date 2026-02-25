@@ -38,7 +38,12 @@ const categorySchema = new Schema({
     updatedAt: {
         type: Date,
         default: Date.now
-    }
+    },
+    // Add this inside your categorySchema definition
+    minimumPrice: {
+        type: Number,
+        default: 0
+    },
 });
 
 // Index for better query performance

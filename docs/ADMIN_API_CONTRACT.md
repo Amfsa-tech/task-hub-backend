@@ -1,4 +1,6 @@
-Here is the raw Markdown block. You can click the "Copy" button in the top right corner of the block and paste it directly into an `API_DOCUMENTATION.md` file in your `docs` folder.
+Here is the updated Markdown block containing the new **Category Management** section.
+
+I have added it as Section 13. You can either copy this entire block and replace your current `API_DOCUMENTATION.md` file, or just copy Section 13 and paste it at the bottom of your existing file.
 
 ```markdown
 # TaskHub Admin Dashboard: REST API Documentation
@@ -14,7 +16,7 @@ All admin endpoints require a valid JWT passed in the Authorization header.
 ### Role-Based Access Control (RBAC)
 The API strictly enforces role-based access. Attempting to access an endpoint without the required role will return a `403 Forbidden` error.
 * `super_admin`: Full system access, required for exports, settings, and staff management.
-* `operations`: Task moderation, tasker approvals.
+* `operations`: Task moderation, tasker approvals, category management.
 * `trust_safety`: User moderation, dispute resolution, read-only system stats.
 
 ### Standard Error Response
@@ -32,7 +34,7 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 
 | Method | Endpoint | Description | Roles |
 | --- | --- | --- | --- |
-| **POST** | `/api/admin/auth/login` | Admin login | None |
+| **POST** | `/api/admin/auth/login` | Admin login (Requires `{"email": "...", "password": "..."}`) | None |
 | **GET** | `/api/admin/me` | Get current admin profile | All Admins |
 | **GET** | `/api/admin/me/system-stats` | Get high-level system checks | `super_admin` |
 
@@ -83,8 +85,6 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 | **PATCH** | `/api/admin/kyc/:id/approve` | Approve KYC document. | `super_admin` |
 | **PATCH** | `/api/admin/kyc/:id/reject` | Reject KYC (Requires `{"reason": "string"}` body). | `super_admin` |
 
-*Note: The frontend must ensure NINs and sensitive data are never rendered raw without masking.*
-
 ---
 
 ## 7. Task Management (`/api/admin/tasks`)
@@ -118,9 +118,7 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 | **GET** | `/api/admin/reports/:id` | Get dispute details. | All Admins |
 | **PATCH** | `/api/admin/reports/:id/resolve` | Mark report as resolved. | `super_admin`, `trust_safety` |
 
-### System Data Exports (CSV Preparation)
-
-*Returns data formatted for CSV generation on the frontend.*
+### System Data Exports
 
 * `GET /api/admin/reports/export/dashboard` (`super_admin`)
 * `GET /api/admin/reports/export/tasks` (`super_admin`)
@@ -160,8 +158,22 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 | **GET** | `/api/admin/staff/:id` | Get specific staff member details. | `super_admin` |
 | **PATCH** | `/api/admin/staff/:id/status` | Change staff active/inactive status. | `super_admin` |
 
+---
+
+## 13. Category Management (`/api/admin/categories`)
+
+| Method | Endpoint | Description | Roles |
+| --- | --- | --- | --- |
+| **GET** | `/api/admin/categories` | Get top-level category stats (active/closed) and list of all categories with service counts. | `super_admin`, `operations`, `trust_safety` |
+| **GET** | `/api/admin/categories/:id` | Get category drill-down details (revenue stats, list of recent tasks, and taskers). | `super_admin`, `operations`, `trust_safety` |
+| **POST** | `/api/admin/categories` | Create a new category. Payload must include: `name`, `displayName`, `description`, `minimumPrice`. | `super_admin`, `operations` |
+| **PATCH** | `/api/admin/categories/:id` | Update or toggle active status of a category. | `super_admin`, `operations` |
+
 ```
 
-This acts as a solid contract between you and your frontend team. Would you like me to draft a quick email template or handover message you can send to them alongside this file?
+
+> *"Hey! I've updated the API documentation with the new **Category Management** routes (Section 13). You can use `GET /api/admin/categories/:id` to fetch the Revenue, Tasks, and Taskers all in a single request for the details page. **Important:** Make sure you pass `minimumPrice` in the JSON body when hitting the POST or PATCH endpoints for the Add/Edit modals, as I've updated the backend to support that new field from the Figma design!"*
+
+
 
 ```
