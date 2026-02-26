@@ -1,3 +1,4 @@
+import adminAuditLog from '../models/adminAuditLog.js'; 
 import Admin from '../models/admin.js';
 import bcrypt from 'bcryptjs';
 import { logAdminAction } from '../utils/auditLogger.js';
@@ -152,7 +153,7 @@ export const getStaffById = async (req, res) => {
         }
 
         // 2. Fetch Recent Activities (Audit Logs for this specific admin)
-        const activities = await AuditLog.find({ admin: staffId })
+        const activities = await adminAuditLog.find({ admin: staffId })
             .sort({ createdAt: -1 })
             .limit(10);
 

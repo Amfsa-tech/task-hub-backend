@@ -20,8 +20,8 @@ import adminPaymentRoutes from './routes/adminPaymentRoutes.js';
 import adminStaffRoutes from './routes/adminStaffRoutes.js'; 
 import adminChatRoutes from './routes/adminChatRoutes.js';   
 import adminSettingsRoutes from './routes/adminSettingsRoutes.js';
-import { checkMaintenanceMode } from './middlewares/maintenanceMiddleware.js';
 import adminCategoryRoutes from './routes/adminCategoryRoutes.js';
+import { checkMaintenanceMode } from './middlewares/maintenanceMiddleware.js';
 
 const app = express();
 
