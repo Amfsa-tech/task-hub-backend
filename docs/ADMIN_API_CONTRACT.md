@@ -159,15 +159,15 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 | **PATCH** | `/api/admin/staff/:id/status` | Change staff active/inactive status. | `super_admin` |
 
 ---
-
 ## 13. Category Management (`/api/admin/categories`)
 
 | Method | Endpoint | Description | Roles |
-| --- | --- | --- | --- |
+| :--- | :--- | :--- | :--- |
 | **GET** | `/api/admin/categories` | Get top-level category stats (active/closed) and list of all categories with service counts. | `super_admin`, `operations`, `trust_safety` |
 | **GET** | `/api/admin/categories/:id` | Get category drill-down details (revenue stats, list of recent tasks, and taskers). | `super_admin`, `operations`, `trust_safety` |
 | **POST** | `/api/admin/categories` | Create a new category. Payload must include: `name`, `displayName`, `description`, `minimumPrice`. | `super_admin`, `operations` |
 | **PATCH** | `/api/admin/categories/:id` | Update or toggle active status of a category. | `super_admin`, `operations` |
+| **DELETE** | `/api/admin/categories/:id` | Delete a category. **Note:** Returns a `400` error if the category is actively assigned to any tasks or taskers. | `super_admin`, `operations` |
 
 ```
 

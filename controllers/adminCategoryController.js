@@ -6,20 +6,18 @@ import { logAdminAction } from '../utils/auditLogger.js';
 // --- 1. MAIN CATEGORY PAGE (List & Top Stats) ---
 export const getAdminCategoriesDashboard = async (req, res) => {
     try {
-        // Fetch top-level stats
         const activeCategories = await Category.countDocuments({ isActive: true });
         const closedCategories = await Category.countDocuments({ isActive: false });
-        const totalServices = await Task.countDocuments(); // 'Services' in UI equates to Tasks
+        const totalServices = await Task.countDocuments(); 
 
-        // Fetch categories for the table and manually count services per category
         const categories = await Category.find().sort({ createdAt: -1 });
         
-        // Count tasks (services) for each category to display in the table
         const categoriesWithStats = await Promise.all(categories.map(async (cat) => {
             const serviceCount = await Task.countDocuments({ categories: cat._id });
             return {
                 _id: cat._id,
-                name: cat.displayName || cat.name,
+                name: cat.name, 
+                displayName: cat.displayName, // Applied the display name fix here
                 description: cat.description,
                 services: serviceCount,
                 isActive: cat.isActive
@@ -52,32 +50,27 @@ export const getAdminCategoryDetails = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Category not found' });
         }
 
-        // Calculate Stats for the top cards
         const totalServices = await Task.countDocuments({ categories: categoryId });
         const totalTaskers = await Tasker.countDocuments({ categories: categoryId });
         const activeTaskers = await Tasker.countDocuments({ categories: categoryId, isActive: true });
 
-        // Calculate total revenue (Sum of budgets for 'completed' tasks in this category)
         const revenueAgg = await Task.aggregate([
             { $match: { categories: category._id, status: 'completed' } },
             { $group: { _id: null, total: { $sum: '$budget' } } }
         ]);
         const revenue = revenueAgg[0]?.total || 0;
 
-        // Fetch Tasks list for the table
         const tasks = await Task.find({ categories: categoryId })
             .populate('user', 'fullName')
             .select('title budget status createdAt user')
             .sort({ createdAt: -1 })
-            .limit(20); // Pagination can be added later
+            .limit(20); 
 
-        // Fetch Taskers list for the table
         const taskers = await Tasker.find({ categories: categoryId })
             .select('firstName lastName emailAddress isActive verifyIdentity updatedAt profilePicture')
             .sort({ updatedAt: -1 })
             .limit(20);
 
-        // Explicitly map taskers to prevent the profilePicture crash we fixed earlier
         const mappedTaskers = taskers.map(t => ({
             _id: t._id,
             fullName: `${t.firstName} ${t.lastName}`,
@@ -93,10 +86,11 @@ export const getAdminCategoryDetails = async (req, res) => {
             data: {
                 category: {
                     _id: category._id,
-                    name: category.displayName || category.name,
+                    name: category.name,
+                    displayName: category.displayName, // Applied the display name fix here
                     description: category.description,
                     isActive: category.isActive,
-                    minimumPrice: category.minimumPrice || 0 // Remember to add this to your schema!
+                    minimumPrice: category.minimumPrice || 0 
                 },
                 stats: {
                     totalServices,
@@ -138,7 +132,7 @@ export const createAdminCategory = async (req, res) => {
             description,
             minimumPrice: minimumPrice || 0,
             isActive: isActive !== undefined ? isActive : true,
-            createdBy: req.admin._id // Uses the admin token from protectAdmin
+            createdBy: req.admin._id 
         });
 
         await logAdminAction({ adminId: req.admin._id, action: 'CREATE_CATEGORY', resourceType: 'Category', resourceId: category._id, req });
@@ -170,5 +164,42 @@ export const updateAdminCategory = async (req, res) => {
         res.status(200).json({ status: 'success', category });
     } catch (error) {
         res.status(500).json({ status: 'error', message: 'Failed to update category' });
+    }
+};
+
+// --- 5. DELETE CATEGORY (Admin Action) ---
+export const deleteAdminCategory = async (req, res) => {
+    try {
+        const categoryId = req.params.id;
+        const category = await Category.findById(categoryId);
+
+        if (!category) {
+            return res.status(404).json({ status: 'error', message: 'Category not found' });
+        }
+
+        // Safety check: Prevent deletion if tasks or taskers are actively using it
+        const tasksUsingCategory = await Task.countDocuments({ categories: categoryId });
+        const taskersUsingCategory = await Tasker.countDocuments({ categories: categoryId });
+
+        if (tasksUsingCategory > 0 || taskersUsingCategory > 0) {
+            return res.status(400).json({ 
+                status: 'error', 
+                message: `Cannot delete category. It is used by ${tasksUsingCategory} tasks and ${taskersUsingCategory} taskers. Please reassign them or deactivate the category instead.` 
+            });
+        }
+
+        await Category.findByIdAndDelete(categoryId);
+
+        await logAdminAction({ 
+            adminId: req.admin._id, 
+            action: 'DELETE_CATEGORY', 
+            resourceType: 'Category', 
+            resourceId: categoryId, 
+            req 
+        });
+
+        res.status(200).json({ status: 'success', message: 'Category deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: 'Failed to delete category' });
     }
 };
