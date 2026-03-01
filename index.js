@@ -20,7 +20,7 @@ import adminPaymentRoutes from './routes/adminPaymentRoutes.js';
 import adminStaffRoutes from './routes/adminStaffRoutes.js'; 
 import adminChatRoutes from './routes/adminChatRoutes.js';   
 import adminSettingsRoutes from './routes/adminSettingsRoutes.js';
-import waitlistRoutes from './routes/waitlistRoute.js';
+import adminCategoryRoutes from './routes/adminCategoryRoutes.js';
 import { checkMaintenanceMode } from './middlewares/maintenanceMiddleware.js';
 
 const app = express();
@@ -94,7 +94,7 @@ app.use('/api/admin/payments', adminPaymentRoutes);
 app.use('/api/admin/staff', adminStaffRoutes);       // Staff Management
 app.use('/api/admin/messages', adminChatRoutes);     // Support Chat
 app.use('/api/admin/settings', adminSettingsRoutes);
-app.use('/api/waitlist', waitlistRoutes);
+app.use('/api/admin/categories', adminCategoryRoutes);
 
 
 app.use(checkMaintenanceMode);

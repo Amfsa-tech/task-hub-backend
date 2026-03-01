@@ -2,7 +2,7 @@ import Tasker from '../models/tasker.js';
 import Task from '../models/task.js';
 import Category from '../models/category.js';
 import Report from '../models/report.js';
-import KYCVerification from '../models/kycVerification.js'; // Add this!
+import KYCVerification from '../models/kycVerification.js';
 import { logAdminAction } from '../utils/auditLogger.js';
 
 // GET /api/admin/taskers/stats
@@ -20,16 +20,14 @@ export const getTaskerStats = async (req, res) => {
         ] = await Promise.all([
             Tasker.countDocuments(),
             Tasker.countDocuments({ isActive: true }),
-            Tasker.countDocuments({ verifyIdentity: true }), // Matched your model
-            Tasker.countDocuments({ verifyIdentity: false }), // Matched your model
+            Tasker.countDocuments({ verifyIdentity: true }), 
+            Tasker.countDocuments({ verifyIdentity: false }), 
             Tasker.countDocuments({ isActive: false }), 
             Task.countDocuments({ status: 'completed' }),
             Category.countDocuments(),
             Report.countDocuments({ status: 'pending' })
         ]);
 
-        // Calculate Average Rating (If you add the field later)
-        // Currently defaults to 0 to prevent crash since field is missing in schema
         const ratingAgg = await Tasker.aggregate([
             { $match: { averageRating: { $exists: true } } }, 
             { $group: { _id: null, avg: { $avg: '$averageRating' } } }
@@ -68,12 +66,12 @@ export const getAllTaskers = async (req, res) => {
             query.$or = [
                 { firstName: { $regex: search, $options: 'i' } },
                 { lastName: { $regex: search, $options: 'i' } },
-                { emailAddress: { $regex: search, $options: 'i' } } // Fixed: emailAddress
+                { emailAddress: { $regex: search, $options: 'i' } } 
             ];
         }
 
         // Filters
-        if (verified) query.verifyIdentity = verified === 'true'; // Fixed: verifyIdentity
+        if (verified) query.verifyIdentity = verified === 'true'; 
         if (status === 'active') query.isActive = true;
         if (status === 'suspended') query.isActive = false;
 
@@ -83,20 +81,34 @@ export const getAllTaskers = async (req, res) => {
 
         const taskers = await Tasker.find(query)
             .select('-password') 
-            .populate('categories', 'name') // <--- CRITICAL: Fetches category names for the UI table
+            .populate('categories', 'name') 
             .sort(sortOption)
             .limit(limit * 1)
             .skip((page - 1) * limit);
+
+        // --- THE FIX: Explicitly map the response to guarantee the profilePicture field exists ---
+        const formattedTaskers = taskers.map(t => ({
+            _id: t._id,
+            firstName: t.firstName,
+            lastName: t.lastName,
+            emailAddress: t.emailAddress,
+            profilePicture: t.profilePicture || '', // <--- Always returns at least an empty string
+            categories: t.categories,
+            isActive: t.isActive,
+            verifyIdentity: t.verifyIdentity,
+            updatedAt: t.updatedAt,
+            averageRating: t.averageRating || 0
+        }));
 
         const total = await Tasker.countDocuments(query);
 
         res.json({
             status: 'success',
-            results: taskers.length,
+            results: formattedTaskers.length,
             totalRecords: total,
             totalPages: Math.ceil(total / limit),
             currentPage: Number(page),
-            taskers
+            taskers: formattedTaskers // Return the mapped data
         });
     } catch (error) {
         console.error(error);
@@ -109,7 +121,6 @@ export const getTaskerById = async (req, res) => {
     try {
         const taskerId = req.params.id;
 
-        // 1. Fetch Tasker Profile & Categories
         const tasker = await Tasker.findById(taskerId)
             .select('-password')
             .populate('categories', 'name');
@@ -118,39 +129,32 @@ export const getTaskerById = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Tasker not found' });
         }
 
-        // 2. Fetch KYC Details
         const kycRecord = await KYCVerification.findOne({ user: taskerId })
             .select('idType idNumber status');
 
-        // 3. Calculate Statistics
         const totalAssigned = await Task.countDocuments({ assignedTasker: tasker._id });
         const completedCount = await Task.countDocuments({ assignedTasker: tasker._id, status: 'completed' });
         
-        // Completion Rate
         const completionRate = totalAssigned > 0 
             ? Math.round((completedCount / totalAssigned) * 100) 
             : 0;
 
-        // Total Transaction (Revenue)
         const revenueAgg = await Task.aggregate([
             { $match: { assignedTasker: tasker._id, status: 'completed' } },
             { $group: { _id: null, total: { $sum: '$budget' } } }
         ]);
         const totalTransaction = revenueAgg[0]?.total || 0;
 
-        // 4. Fetch Recent Reviews (FROM TASKS)
-        // We look for completed tasks that have a 'rating' field
         const recentReviews = await Task.find({ 
                 assignedTasker: tasker._id, 
                 status: 'completed',
-                rating: { $exists: true } // Only fetch tasks that have been rated
+                rating: { $exists: true } 
             })
-            .populate('user', 'fullName profilePicture') // Get the reviewer (Client) details
-            .select('rating reviewText createdAt user') // Ensure your Task model has these fields!
+            .populate('user', 'fullName profilePicture') 
+            .select('rating reviewText createdAt user') 
             .sort({ createdAt: -1 })
             .limit(5);
 
-        // Format reviews for UI
         const reviewsFormatted = recentReviews.map(r => ({
             id: r._id,
             reviewerName: r.user?.fullName || 'Anonymous',
@@ -163,14 +167,11 @@ export const getTaskerById = async (req, res) => {
         res.json({
             status: 'success',
             data: {
-                // Section 1: KYC
                 kyc: {
                     type: kycRecord?.idType || 'N/A',
                     number: kycRecord?.idNumber || 'Not Submitted',
                     status: kycRecord?.status || 'unverified'
                 },
-
-                // Section 2: Statistics
                 stats: {
                     rating: tasker.averageRating || 0,
                     completionRate: `${completionRate}%`,
@@ -178,19 +179,15 @@ export const getTaskerById = async (req, res) => {
                     totalTransaction, 
                     currentBalance: tasker.wallet || 0 
                 },
-
-                // Section 3: Account Info
                 account: {
                     userId: tasker._id,
                     role: 'Tasker',
                     fullName: `${tasker.firstName} ${tasker.lastName}`,
+                    emailAddress: tasker.emailAddress, // Added to match list view
+                    profilePicture: tasker.profilePicture || '', // <--- THE FIX for Details Page
                     lastUpdated: tasker.updatedAt
                 },
-
-                // Section 4: Categories
                 categories: tasker.categories.map(c => c.name),
-
-                // Section 5: Recent Reviews
                 reviews: reviewsFormatted
             }
         });
@@ -204,7 +201,7 @@ export const getTaskerById = async (req, res) => {
 // ACTIONS
 export const verifyTasker = async (req, res) => {
     try {
-        const tasker = await Tasker.findByIdAndUpdate(req.params.id, { verifyIdentity: true }, { new: true }); // Fixed: verifyIdentity
+        const tasker = await Tasker.findByIdAndUpdate(req.params.id, { verifyIdentity: true }, { new: true }); 
         if (!tasker) return res.status(404).json({ message: 'Tasker not found' });
         
         await logAdminAction({ 
