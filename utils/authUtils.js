@@ -31,13 +31,12 @@ export const hashToken = (token) => {
     return crypto.createHash('sha256').update(token).digest('hex');
 };
 
-// Email configuration (you'll need to configure this with your email service)
+// Email configuration
 export const createEmailTransporter = () => {
- return nodemailer.createTransport(
+    return nodemailer.createTransport(
         nodemailerSendgrid({
-            apiKey: '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'  // Your key here, or better: process.env.SENDGRID_API_KEY
-        }),
-        { logger: true }  // Keep if you want logs
+            apiKey: process.env.SENDGRID_API_KEY
+        })
     );
 };
 

@@ -21,6 +21,7 @@ import adminStaffRoutes from './routes/adminStaffRoutes.js';
 import adminChatRoutes from './routes/adminChatRoutes.js';   
 import adminSettingsRoutes from './routes/adminSettingsRoutes.js';
 import adminCategoryRoutes from './routes/adminCategoryRoutes.js';
+import waitlistRoutes from './routes/waitlistRoute.js';
 import { checkMaintenanceMode } from './middlewares/maintenanceMiddleware.js';
 
 const app = express();
@@ -106,6 +107,7 @@ app.use('/api/bids', bidRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/kyc', ninRoutes);
+app.use('/api/waitlist', waitlistRoutes);
 
 
 
