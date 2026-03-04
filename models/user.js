@@ -36,6 +36,7 @@ const userSchema = new Schema({
     isDeleted: {type: Boolean,default: false},
 
     isKYCVerified: { type: Boolean,default: false},
+    verifyIdentity: { type: Boolean, default: false },
     notificationId: {type: String},
 
     lastLoginAt: { type: Date },

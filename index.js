@@ -15,6 +15,7 @@ import adminReportRoutes from './routes/adminReportRoutes.js';
 import adminAuditRoutes from './routes/adminAuditRoutes.js';
 import adminKycRoutes from './routes/adminKycRoutes.js';
 import ninRoutes from './routes/ninRoutes.js';
+import kycRoute from './routes/kycRoute.js';
 import adminTaskerRoutes from './routes/adminTaskerRoutes.js';
 import adminPaymentRoutes from './routes/adminPaymentRoutes.js';
 import adminStaffRoutes from './routes/adminStaffRoutes.js'; 
@@ -106,7 +107,8 @@ app.use('/api/tasks',  taskRoutes);
 app.use('/api/bids', bidRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/chat', chatRoutes);
-app.use('/api/kyc', ninRoutes);
+app.use('/api/kyc', ninRoutes);          // Legacy NIN routes (QoreID)
+app.use('/api/v1/kyc', kycRoute);          // Didit identity verification
 app.use('/api/waitlist', waitlistRoutes);
 
 
