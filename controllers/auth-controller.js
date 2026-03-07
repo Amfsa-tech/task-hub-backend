@@ -3,9 +3,9 @@ import Tasker from "../models/tasker.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
-import ninVerificationService from "../services/nin_service.js";
 import mongoose from "mongoose";
 import Category from "../models/category.js";
+import KYCVerification from "../models/kycVerification.js";
 import {
   generateToken,
   generateRandomToken,
@@ -1060,96 +1060,13 @@ export const updateTaskerLocation = async (req, res) => {
   }
 };
 
-// Verify Tasker Identity using NIN
+// Verify Tasker Identity — now handled via Didit webhook (/api/v1/kyc/didit-webhook)
 export const verifyTaskerIdentity = async (req, res) => {
-  try {
-    const {
-      nin,
-      firstName,
-      lastName,
-      dateOfBirth,
-      gender,
-      phoneNumber,
-      email,
-    } = req.body;
-    const taskerId = req.tasker.id;
-
-    if (!nin || !firstName || !lastName || !dateOfBirth || !gender) {
-      return res.status(400).json({
-        status: "error",
-        message:
-          "Missing required fields: nin, firstName, lastName, dateOfBirth, and gender are required",
-      });
-    }
-
-    const tasker = await Tasker.findById(taskerId);
-    if (!tasker) {
-      return res
-        .status(404)
-        .json({ status: "error", message: "Tasker not found" });
-    }
-
-    if (tasker.verifyIdentity) {
-      return res
-        .status(400)
-        .json({ status: "error", message: "Identity already verified" });
-    }
-
-    const userDetails = {
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      dob: dateOfBirth,
-      gender: gender.toLowerCase(),
-      phoneNumber: phoneNumber || tasker.phoneNumber,
-      email: email || tasker.emailAddress,
-    };
-
-    const verificationResult = await ninVerificationService.verifyUserIdentity(
-      nin,
-      userDetails,
-    );
-
-    // CREATE KYC RECORD FOR ADMIN DASHBOARD
-    // This ensures the admin sees the request and the userType is 'Tasker'
-    const kycRecord = await KYCVerification.create({
-      user: tasker._id,
-      userType: "Tasker", // <--- CRITICAL: Set userType explicitly for the Admin logic
-      nin: nin,
-      status: verificationResult.isVerified ? "pending" : "rejected", // Usually remains 'pending' for manual admin approval
-      verificationSummary: {
-        matchStatus: verificationResult.validationResult.matchStatus,
-        mismatches: verificationResult.validationResult.mismatches,
-      },
-      createdAt: new Date(),
-    });
-
-    if (verificationResult.isVerified) {
-      // NOTE: We don't set tasker.verifyIdentity = true here yet
-      // if you want the ADMIN to press the "Approve" button first.
-      return res.status(200).json({
-        status: "success",
-        message: "Identity details submitted for admin review",
-        data: {
-          isVerified: true,
-          kycId: kycRecord._id,
-        },
-      });
-    } else {
-      return res.status(400).json({
-        status: "error",
-        message: "Identity verification failed validation",
-        data: {
-          isVerified: false,
-          mismatches: verificationResult.validationResult.mismatches,
-        },
-      });
-    }
-  } catch (error) {
-    console.error("NIN verification error:", error);
-    return res
-      .status(500)
-      .json({ status: "error", message: "Internal server error" });
-  }
+  return res.status(410).json({
+    status: "error",
+    message:
+      "NIN verification via this endpoint has been deprecated. Please use the Didit identity verification flow instead.",
+  });
 };
 
 // Get Tasker Verification Status

@@ -1,4 +1,5 @@
 import KYCVerification from '../models/kycVerification.js';
+import DiditSession from '../models/diditSession.js';
 import User from '../models/user.js';
 import Tasker from '../models/tasker.js';
 
@@ -14,80 +15,116 @@ const maskNin = (nin) => {
 };
 
 /**
- * Extracts the NIN from the Didit verification response.
- * Didit returns identity data from the ID document scan.
+ * Extracts the NIN (document_number) from the Didit decision payload.
+ *
+ * Actual Didit structure:
+ *   decision.id_verifications[0].document_number → "34577667839"
  */
-const extractNinFromVerification = (webhookData) => {
-  const documentData =
-    webhookData?.document_data ||
-    webhookData?.ocr_data ||
-    webhookData?.identity_data ||
-    {};
-
-  return (
-    documentData.document_number ||
-    documentData.national_id ||
-    documentData.nin ||
-    documentData.id_number ||
-    null
-  );
+const extractNinFromDecision = (decision) => {
+  const idVerification = decision?.id_verifications?.[0];
+  return idVerification?.document_number || null;
 };
 
 /**
  * POST /api/v1/kyc/didit-webhook
  *
  * Webhook handler for Didit identity verification callbacks.
- * Didit sends this POST after an identity check is analyzed.
+ * Didit sends multiple webhook POSTs per session as status changes:
+ *   "Not Started" → "In Progress" → "Approved" / "Declined"
  *
- * Flow:
- *  1. Extract userId from vendor_data
- *  2. Normalise status (Approved / Rejected)
- *  3. Extract & mask NIN (raw NIN is NEVER persisted)
- *  4. Upsert KYCVerification record
- *  5. If Approved → set verifyIdentity & isKYCVerified on user record
+ * Only the final webhook (with a `decision` object) carries the full data.
+ * Intermediate status updates are acknowledged but ignored.
+ *
+ * Actual Didit payload structure:
+ *   {
+ *     session_id, status, webhook_type, workflow_id,
+ *     decision: {
+ *       vendor_data,          ← userId (set when session was created)
+ *       status,               ← "Approved" | "Declined"
+ *       id_verifications: [{ document_number, first_name, ... }]
+ *     }
+ *   }
  */
 export const handleDiditWebhook = async (req, res) => {
   try {
     const webhookData = req.body;
+    const topStatus = webhookData?.status;
+    const decision = webhookData?.decision;
 
-    console.log('[Didit Webhook] Received payload:', JSON.stringify(webhookData, null, 2));
+    console.log('[Didit Webhook] Received:', JSON.stringify({
+      session_id: webhookData?.session_id,
+      status: topStatus,
+      webhook_type: webhookData?.webhook_type,
+      has_decision: !!decision,
+      vendor_data: decision?.vendor_data ?? null,
+    }));
 
-    // --- 1. Extract userId from vendor_data ---
-    const userId = webhookData?.vendor_data;
-    const sessionId = webhookData?.session_id || webhookData?.id;
-    const status = webhookData?.status;
-
-    if (!userId) {
-      console.error('[Didit Webhook] Missing vendor_data (userId) in webhook payload');
-      return res.status(400).json({
-        success: false,
-        message: 'Missing vendor_data in webhook payload',
+    // --- Ignore intermediate status webhooks (Not Started, In Progress) ---
+    if (!decision) {
+      console.log(`[Didit Webhook] Intermediate status "${topStatus}" — no decision yet, acknowledging`);
+      return res.status(200).json({
+        success: true,
+        message: `Intermediate status "${topStatus}" acknowledged`,
       });
     }
 
-    // --- 2. Normalise status ---
+    // --- Resolve userId: try vendor_data first, then fall back to session lookup ---
+    const sessionId = webhookData?.session_id || decision?.session_id;
+    let userId = decision.vendor_data;
+    let userType = null;
+    let userRecord = null;
+
+    if (!userId && sessionId) {
+      console.log(`[Didit Webhook] vendor_data is null — looking up session ${sessionId}`);
+      const sessionMapping = await DiditSession.findOne({ sessionId });
+      if (sessionMapping) {
+        userId = sessionMapping.userId.toString();
+        userType = sessionMapping.userType;
+        console.log(`[Didit Webhook] Found session mapping: userId=${userId}, userType=${userType}`);
+      }
+    }
+
+    if (!userId) {
+      console.error('[Didit Webhook] Cannot resolve userId — vendor_data is null and no session mapping found');
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot resolve userId from webhook payload',
+      });
+    }
+
+    const decisionStatus = decision.status || topStatus;
+
+    // --- Normalise status ---
     let normalizedStatus;
-    if (/^approved$/i.test(status)) {
+    if (/^approved$/i.test(decisionStatus)) {
       normalizedStatus = 'Approved';
     } else {
       normalizedStatus = 'Rejected';
     }
 
-    // --- 3. Extract & mask NIN ---
-    const rawNin = extractNinFromVerification(webhookData);
+    // --- Extract & mask NIN ---
+    const rawNin = extractNinFromDecision(decision);
     const maskedNin = rawNin ? maskNin(rawNin) : null;
 
-    // --- 4. Determine user type ---
-    let userRecord = null;
-    let userType = null;
+    console.log(`[Didit Webhook] Processing: userId=${userId}, status=${normalizedStatus}, nin=${maskedNin || 'N/A'}`);
 
-    userRecord = await Tasker.findById(userId);
-    if (userRecord) {
-      userType = 'Tasker';
-    } else {
-      userRecord = await User.findById(userId);
-      if (userRecord) {
-        userType = 'User';
+    // --- Determine user type (use session mapping if available, otherwise check both) ---
+    if (!userRecord) {
+      if (userType === 'Tasker') {
+        userRecord = await Tasker.findById(userId);
+      } else if (userType === 'User') {
+        userRecord = await User.findById(userId);
+      } else {
+        // No hint from session mapping — check both collections
+        userRecord = await Tasker.findById(userId);
+        if (userRecord) {
+          userType = 'Tasker';
+        } else {
+          userRecord = await User.findById(userId);
+          if (userRecord) {
+            userType = 'User';
+          }
+        }
       }
     }
 
@@ -99,7 +136,11 @@ export const handleDiditWebhook = async (req, res) => {
       });
     }
 
-    // --- 5. Upsert KYC record (masked NIN only) ---
+    // --- Build non-PII verification metadata ---
+    const idVerification = decision.id_verifications?.[0];
+    const warnings = idVerification?.warnings || [];
+
+    // --- Upsert KYC record (only masked NIN is stored) ---
     await KYCVerification.findOneAndUpdate(
       { user: userId, provider: 'didit' },
       {
@@ -111,31 +152,33 @@ export const handleDiditWebhook = async (req, res) => {
         diditSessionId: sessionId,
         verificationData: {
           sessionId,
-          statusRaw: status,
+          statusRaw: decisionStatus,
           processedAt: new Date().toISOString(),
           hasDocumentData: !!rawNin,
+          documentType: idVerification?.document_type || null,
+          issuingState: idVerification?.issuing_state_name || null,
+          warningCount: warnings.length,
         },
         rejectionReasons:
           normalizedStatus === 'Rejected'
-            ? webhookData?.rejection_reasons || webhookData?.errors || ['Verification failed']
+            ? warnings.map(w => w.short_description || w.risk || 'Unknown')
             : [],
         verifiedAt: normalizedStatus === 'Approved' ? new Date() : undefined,
       },
       { upsert: true, new: true }
     );
 
-    // --- 6. If approved, flip verification flags ---
+    // --- If approved, flip verification flags on the user record ---
     if (normalizedStatus === 'Approved') {
       userRecord.verifyIdentity = true;
       userRecord.isKYCVerified = true;
       await userRecord.save();
 
-      console.log(`[Didit Webhook] ${userType} ${userId} identity verified successfully`);
+      console.log(`[Didit Webhook] ✓ ${userType} ${userId} identity verified successfully`);
     } else {
-      console.log(`[Didit Webhook] ${userType} ${userId} identity verification rejected`);
+      console.log(`[Didit Webhook] ✗ ${userType} ${userId} identity verification rejected`);
     }
 
-    // Always respond 200 to acknowledge the webhook
     return res.status(200).json({
       success: true,
       message: `Webhook processed. Status: ${normalizedStatus}`,
@@ -190,6 +233,68 @@ export const getVerificationStatus = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch verification status',
+    });
+  }
+};
+
+/**
+ * POST /api/v1/kyc/register-session
+ *
+ * Called by the frontend after creating a Didit verification session.
+ * Stores the session_id → userId mapping so the webhook can resolve the user
+ * (Didit v3 does not pass vendor_data back in the webhook).
+ *
+ * Body: { sessionId: string }
+ * Auth: JWT required (userId comes from the token)
+ */
+export const registerSession = async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    const userId = req.user._id || req.user.id;
+
+    if (!sessionId) {
+      return res.status(400).json({
+        success: false,
+        message: 'sessionId is required',
+      });
+    }
+
+    // Determine user type
+    let userType = null;
+    const tasker = await Tasker.findById(userId);
+    if (tasker) {
+      userType = 'Tasker';
+    } else {
+      const user = await User.findById(userId);
+      if (user) {
+        userType = 'User';
+      }
+    }
+
+    if (!userType) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    await DiditSession.findOneAndUpdate(
+      { sessionId },
+      { sessionId, userId, userType },
+      { upsert: true, new: true }
+    );
+
+    console.log(`[KYC] Registered Didit session ${sessionId} for ${userType} ${userId}`);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Session registered',
+    });
+  } catch (error) {
+    console.error('[KYC] Error registering session:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to register session',
     });
   }
 };
