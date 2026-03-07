@@ -1,4 +1,5 @@
 import KYCVerification from '../models/kycVerification.js';
+import DiditSession from '../models/diditSession.js';
 import User from '../models/user.js';
 import Tasker from '../models/tasker.js';
 
@@ -67,18 +68,31 @@ export const handleDiditWebhook = async (req, res) => {
       });
     }
 
-    // --- Extract fields from the decision object ---
-    const userId = decision.vendor_data;
+    // --- Resolve userId: try vendor_data first, then fall back to session lookup ---
     const sessionId = webhookData?.session_id || decision?.session_id;
-    const decisionStatus = decision.status || topStatus;
+    let userId = decision.vendor_data;
+    let userType = null;
+    let userRecord = null;
+
+    if (!userId && sessionId) {
+      console.log(`[Didit Webhook] vendor_data is null — looking up session ${sessionId}`);
+      const sessionMapping = await DiditSession.findOne({ sessionId });
+      if (sessionMapping) {
+        userId = sessionMapping.userId.toString();
+        userType = sessionMapping.userType;
+        console.log(`[Didit Webhook] Found session mapping: userId=${userId}, userType=${userType}`);
+      }
+    }
 
     if (!userId) {
-      console.error('[Didit Webhook] vendor_data is null in decision — cannot match to a user. Make sure vendor_data is set when creating the Didit session.');
+      console.error('[Didit Webhook] Cannot resolve userId — vendor_data is null and no session mapping found');
       return res.status(400).json({
         success: false,
-        message: 'Missing vendor_data (userId) in webhook decision payload',
+        message: 'Cannot resolve userId from webhook payload',
       });
     }
+
+    const decisionStatus = decision.status || topStatus;
 
     // --- Normalise status ---
     let normalizedStatus;
@@ -94,17 +108,23 @@ export const handleDiditWebhook = async (req, res) => {
 
     console.log(`[Didit Webhook] Processing: userId=${userId}, status=${normalizedStatus}, nin=${maskedNin || 'N/A'}`);
 
-    // --- Determine user type (Tasker first, then User) ---
-    let userRecord = null;
-    let userType = null;
-
-    userRecord = await Tasker.findById(userId);
-    if (userRecord) {
-      userType = 'Tasker';
-    } else {
-      userRecord = await User.findById(userId);
-      if (userRecord) {
-        userType = 'User';
+    // --- Determine user type (use session mapping if available, otherwise check both) ---
+    if (!userRecord) {
+      if (userType === 'Tasker') {
+        userRecord = await Tasker.findById(userId);
+      } else if (userType === 'User') {
+        userRecord = await User.findById(userId);
+      } else {
+        // No hint from session mapping — check both collections
+        userRecord = await Tasker.findById(userId);
+        if (userRecord) {
+          userType = 'Tasker';
+        } else {
+          userRecord = await User.findById(userId);
+          if (userRecord) {
+            userType = 'User';
+          }
+        }
       }
     }
 
@@ -213,6 +233,68 @@ export const getVerificationStatus = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch verification status',
+    });
+  }
+};
+
+/**
+ * POST /api/v1/kyc/register-session
+ *
+ * Called by the frontend after creating a Didit verification session.
+ * Stores the session_id → userId mapping so the webhook can resolve the user
+ * (Didit v3 does not pass vendor_data back in the webhook).
+ *
+ * Body: { sessionId: string }
+ * Auth: JWT required (userId comes from the token)
+ */
+export const registerSession = async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    const userId = req.user._id || req.user.id;
+
+    if (!sessionId) {
+      return res.status(400).json({
+        success: false,
+        message: 'sessionId is required',
+      });
+    }
+
+    // Determine user type
+    let userType = null;
+    const tasker = await Tasker.findById(userId);
+    if (tasker) {
+      userType = 'Tasker';
+    } else {
+      const user = await User.findById(userId);
+      if (user) {
+        userType = 'User';
+      }
+    }
+
+    if (!userType) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    await DiditSession.findOneAndUpdate(
+      { sessionId },
+      { sessionId, userId, userType },
+      { upsert: true, new: true }
+    );
+
+    console.log(`[KYC] Registered Didit session ${sessionId} for ${userType} ${userId}`);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Session registered',
+    });
+  } catch (error) {
+    console.error('[KYC] Error registering session:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to register session',
     });
   }
 };
