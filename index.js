@@ -22,6 +22,7 @@ import adminChatRoutes from './routes/adminChatRoutes.js';
 import adminSettingsRoutes from './routes/adminSettingsRoutes.js';
 import adminCategoryRoutes from './routes/adminCategoryRoutes.js';
 import waitlistRoutes from './routes/waitlistRoute.js';
+import walletRoutes from './routes/walletRoute.js';
 import { checkMaintenanceMode } from './middlewares/maintenanceMiddleware.js';
 
 const app = express();
@@ -80,6 +81,10 @@ app.use(cors({
     },
     credentials: true
 }));
+
+// Paystack webhook needs raw body for HMAC signature verification — must come before express.json()
+app.use('/api/wallet/paystack-webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json());
 
 app.use('/api/admin/auth', adminAuthRoutes);
@@ -107,6 +112,7 @@ app.use('/api/bids', bidRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/v1/kyc', kycRoute);          // Didit identity verification
+app.use('/api/wallet', walletRoutes);        // Wallet funding (Paystack)
 app.use('/api/waitlist', waitlistRoutes);
 
 

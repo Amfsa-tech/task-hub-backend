@@ -13,21 +13,51 @@ const transactionSchema = new mongoose.Schema({
     },
     type: { 
         type: String, 
-        enum: ['credit', 'debit'], // Matches the Green/Red badges in UI
+        enum: ['credit', 'debit'],
         required: true 
     },
     description: { 
         type: String, 
-        required: true // e.g., "Payment for Design Company..."
+        required: true
     },
     status: { 
         type: String, 
         enum: ['success', 'pending', 'failed'], 
-        default: 'success' 
+        default: 'pending' 
     },
     reference: { 
         type: String, 
-        unique: true 
+        unique: true,
+        required: true
+    },
+    provider: {
+        type: String,
+        enum: ['paystack', 'system'],
+        default: 'system'
+    },
+    paymentPurpose: {
+        type: String,
+        enum: ['wallet_funding', 'escrow_hold', 'escrow_release', 'escrow_refund', 'other'],
+        default: 'other'
+    },
+    currency: {
+        type: String,
+        default: 'NGN'
+    },
+    providerTransactionId: {
+        type: String
+    },
+    gatewayResponse: {
+        type: String
+    },
+    metadata: {
+        type: mongoose.Schema.Types.Mixed
+    },
+    verifiedAt: {
+        type: Date
+    },
+    creditedAt: {
+        type: Date
     }
 }, { timestamps: true });
 
