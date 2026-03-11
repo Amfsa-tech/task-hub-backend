@@ -1,5 +1,5 @@
 import Task from '../models/task.js';
-import { Types, startSession } from 'mongoose';
+import { Types } from 'mongoose';
 import { calculateDistance, milesToMeters } from '../utils/locationUtils.js';
 import Category from '../models/category.js';
 import Tasker from '../models/tasker.js';
@@ -581,31 +581,24 @@ const changeTaskStatus = async (req, res) => {
 
         // Special handling: in-progress -> completed (release escrow to tasker)
         if (isTasker && currentStatus === 'in-progress' && status === 'completed') {
-            const session = await startSession();
-            session.startTransaction();
             try {
                 if (task.isEscrowHeld && task.escrowAmount > 0) {
                     await Tasker.updateOne(
                         { _id: task.assignedTasker },
-                        { $inc: { wallet: task.escrowAmount } },
-                        { session }
+                        { $inc: { wallet: task.escrowAmount } }
                     );
                     task.isEscrowHeld = false;
                     task.escrowAmount = 0;
                 }
                 task.status = 'completed';
                 task.updatedAt = new Date();
-                await task.save({ session });
-                await session.commitTransaction();
-                session.endSession();
+                await task.save();
                 return res.json({
                     status: 'success',
                     message: 'Task completed and payout released',
                     task
                 });
             } catch (err) {
-                await session.abortTransaction();
-                session.endSession();
                 console.error('Payout release error:', err);
                 return res.status(500).json({
                     status: 'error',
@@ -617,31 +610,24 @@ const changeTaskStatus = async (req, res) => {
 
         // Special handling: user cancels from 'assigned' -> refund escrow
         if (isUser && status === 'cancelled' && currentStatus === 'assigned') {
-            const session = await startSession();
-            session.startTransaction();
             try {
                 if (task.isEscrowHeld && task.escrowAmount > 0) {
                     await User.updateOne(
                         { _id: task.user._id },
-                        { $inc: { wallet: task.escrowAmount } },
-                        { session }
+                        { $inc: { wallet: task.escrowAmount } }
                     );
                     task.isEscrowHeld = false;
                     task.escrowAmount = 0;
                 }
                 task.status = 'cancelled';
                 task.updatedAt = new Date();
-                await task.save({ session });
-                await session.commitTransaction();
-                session.endSession();
+                await task.save();
                 return res.json({
                     status: 'success',
                     message: 'Task cancelled and funds refunded',
                     task
                 });
             } catch (err) {
-                await session.abortTransaction();
-                session.endSession();
                 console.error('Refund on cancel error:', err);
                 return res.status(500).json({
                     status: 'error',

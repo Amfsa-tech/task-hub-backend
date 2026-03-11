@@ -4,7 +4,7 @@ import User from '../models/user.js';
 import { notifyUserAboutNewBid, notifyTaskerAboutBidAcceptance, notifyTaskerAboutBidRejection } from '../utils/notificationUtils.js';
 import Conversation from '../models/conversation.js';
 import Message from '../models/message.js';
-import { Types, startSession } from 'mongoose';
+import { Types } from 'mongoose';
 
 // Helper function to check if ID is valid
 const isValidObjectId = (id) => {
@@ -420,83 +420,62 @@ const acceptBid = async (req, res) => {
             });
         }
         
-        // Start a session for the transaction
-        const session = await startSession();
-        let committed = false;
-        let otherBids = [];
-        
-        try {
-            session.startTransaction();
-            
-            // Update bid status (use updateOne to avoid Mongoose 8 validation
-            // issues with the populated 'task' field inside a transaction)
-            await Bid.updateOne({ _id: bid._id }, { status: 'accepted' }, { session });
-            bid.status = 'accepted'; // update in-memory copy for the response
-            
-            // Hold user funds at acceptance using bid amount
-            const amountToHold = bid.amount;
-            const walletUpdate = await User.updateOne(
-                { _id: bid.task.user, wallet: { $gte: amountToHold } },
-                { $inc: { wallet: -amountToHold } },
-                { session }
-            );
+        // Use atomic operations instead of a multi-document transaction.
+        // Step 1: Atomically claim the bid (pending → accepted). Only one caller can win.
+        const claimResult = await Bid.updateOne(
+            { _id: bid._id, status: 'pending' },
+            { status: 'accepted' }
+        );
+        if (!claimResult.modifiedCount) {
+            return res.status(400).json({
+                status: "error",
+                message: "Bid was already processed by another request"
+            });
+        }
+        bid.status = 'accepted'; // update in-memory copy for the response
 
-            if (!walletUpdate.matchedCount || !walletUpdate.modifiedCount) {
-                throw new Error('INSUFFICIENT_WALLET_BALANCE');
+        // Step 2: Atomically deduct wallet balance (with sufficiency check)
+        const amountToHold = bid.amount;
+        const walletUpdate = await User.updateOne(
+            { _id: bid.task.user, wallet: { $gte: amountToHold } },
+            { $inc: { wallet: -amountToHold } }
+        );
+
+        if (!walletUpdate.matchedCount || !walletUpdate.modifiedCount) {
+            // Revert bid status since wallet deduction failed
+            await Bid.updateOne({ _id: bid._id }, { status: 'pending' });
+            return res.status(402).json({
+                status: "error",
+                message: "Insufficient wallet balance to accept this bid"
+            });
+        }
+
+        // Step 3: Update task — assign tasker and set escrow fields
+        await Task.findByIdAndUpdate(
+            bid.task._id,
+            {
+                status: 'assigned',
+                assignedTasker: bid.tasker,
+                isEscrowHeld: true,
+                escrowAmount: amountToHold,
+                escrowAt: new Date(),
+                updatedAt: Date.now()
             }
+        );
 
-            // Update task: assign tasker and set escrow fields
-            await Task.findByIdAndUpdate(
-                bid.task._id,
-                {
-                    status: 'assigned',
-                    assignedTasker: bid.tasker,
-                    isEscrowHeld: true,
-                    escrowAmount: amountToHold,
-                    escrowAt: new Date(),
-                    updatedAt: Date.now()
-                },
-                { session }
-            );
-            
-            // Pre-fetch other bids before updating them to rejected (for notifications after commit)
-            otherBids = await Bid.find({
+        // Step 4: Fetch other bids (for notifications) then reject them
+        const otherBids = await Bid.find({
+            task: bid.task._id,
+            _id: { $ne: bid._id }
+        }).select('_id tasker amount');
+
+        await Bid.updateMany(
+            {
                 task: bid.task._id,
                 _id: { $ne: bid._id }
-            })
-            .select('_id tasker amount')
-            .session(session);
-
-            // Reject all other bids for this task
-            await Bid.updateMany(
-                {
-                    task: bid.task._id,
-                    _id: { $ne: bid._id }
-                },
-                {
-                    status: 'rejected'
-                },
-                { session }
-            );
-            
-            // Commit the transaction
-            await session.commitTransaction();
-            committed = true;
-        } catch (error) {
-            // Only abort if not yet committed
-            if (!committed) {
-                try { await session.abortTransaction(); } catch (_) { /* already aborted or ended */ }
-            }
-            if (error && error.message === 'INSUFFICIENT_WALLET_BALANCE') {
-                return res.status(402).json({
-                    status: "error",
-                    message: "Insufficient wallet balance to accept this bid"
-                });
-            }
-            throw error;
-        } finally {
-            session.endSession();
-        }
+            },
+            { status: 'rejected' }
+        );
 
         // --- Post-commit operations (outside transaction) ---
 
