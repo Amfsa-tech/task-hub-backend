@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import { startSession } from 'mongoose';
 import Transaction from '../models/transaction.js';
 import User from '../models/user.js';
 import paystackService from '../services/paystack_service.js';
@@ -172,8 +171,8 @@ export const verifyFunding = async (req, res) => {
 };
 
 /**
- * Credits the user's wallet atomically inside a MongoDB session.
- * Idempotent — if the transaction is already 'success', it returns immediately.
+ * Credits the user's wallet atomically using findOneAndUpdate for idempotency.
+ * If the transaction is already 'success', it returns immediately.
  */
 export const creditWallet = async (transaction, paystackData) => {
     // Idempotency: skip if already credited
@@ -181,49 +180,34 @@ export const creditWallet = async (transaction, paystackData) => {
         return;
     }
 
-    const session = await startSession();
-    session.startTransaction();
-
-    try {
-        // Re-fetch inside session to ensure consistency
-        const txn = await Transaction.findOneAndUpdate(
-            { _id: transaction._id, status: 'pending' },
-            {
-                status: 'success',
-                providerTransactionId: String(paystackData.id),
-                gatewayResponse: paystackData.gateway_response,
-                verifiedAt: new Date(),
-                creditedAt: new Date(),
-                metadata: {
-                    ...transaction.metadata,
-                    paystackChannel: paystackData.channel,
-                    paystackPaidAt: paystackData.paid_at,
-                },
+    // Atomically mark the transaction as success only if still pending
+    const txn = await Transaction.findOneAndUpdate(
+        { _id: transaction._id, status: 'pending' },
+        {
+            status: 'success',
+            providerTransactionId: String(paystackData.id),
+            gatewayResponse: paystackData.gateway_response,
+            verifiedAt: new Date(),
+            creditedAt: new Date(),
+            metadata: {
+                ...transaction.metadata,
+                paystackChannel: paystackData.channel,
+                paystackPaidAt: paystackData.paid_at,
             },
-            { session, new: true }
-        );
+        },
+        { new: true }
+    );
 
-        if (!txn) {
-            // Already processed by another path (webhook vs verify race)
-            await session.abortTransaction();
-            session.endSession();
-            return;
-        }
-
-        // Credit the user's wallet
-        await User.updateOne(
-            { _id: txn.user },
-            { $inc: { wallet: txn.amount } },
-            { session }
-        );
-
-        await session.commitTransaction();
-        session.endSession();
-
-        console.log(`[Wallet Fund] ✓ Credited ₦${txn.amount} to user ${txn.user} (ref: ${txn.reference})`);
-    } catch (error) {
-        await session.abortTransaction();
-        session.endSession();
-        throw error;
+    if (!txn) {
+        // Already processed by another path (webhook vs verify race)
+        return;
     }
+
+    // Credit the user's wallet
+    await User.updateOne(
+        { _id: txn.user },
+        { $inc: { wallet: txn.amount } }
+    );
+
+    console.log(`[Wallet Fund] ✓ Credited ₦${txn.amount} to user ${txn.user} (ref: ${txn.reference})`);
 };
