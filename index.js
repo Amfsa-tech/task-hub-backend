@@ -35,6 +35,17 @@ app.get('/health', (req, res) => {
     });
 });
 
+// TEMPORARY: remove after confirming Render outbound IP for Paystack whitelist
+app.get('/debug/outbound-ip', async (req, res) => {
+    try {
+        const response = await fetch('https://api.ipify.org?format=json');
+        const data = await response.json();
+        res.status(200).json({ outboundIp: data.ip });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 const defaultAllowedOrigins = [
     'https://www.ngtaskhub.com',
     'http://localhost:3000',
