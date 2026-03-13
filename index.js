@@ -14,13 +14,15 @@ import adminTaskRoutes from './routes/adminTaskRoutes.js';
 import adminReportRoutes from './routes/adminReportRoutes.js';
 import adminAuditRoutes from './routes/adminAuditRoutes.js';
 import adminKycRoutes from './routes/adminKycRoutes.js';
-import ninRoutes from './routes/ninRoutes.js';
+import kycRoute from './routes/kycRoute.js';
 import adminTaskerRoutes from './routes/adminTaskerRoutes.js';
 import adminPaymentRoutes from './routes/adminPaymentRoutes.js';
 import adminStaffRoutes from './routes/adminStaffRoutes.js'; 
 import adminChatRoutes from './routes/adminChatRoutes.js';   
 import adminSettingsRoutes from './routes/adminSettingsRoutes.js';
 import adminCategoryRoutes from './routes/adminCategoryRoutes.js';
+import waitlistRoutes from './routes/waitlistRoute.js';
+import walletRoutes from './routes/walletRoute.js';
 import { checkMaintenanceMode } from './middlewares/maintenanceMiddleware.js';
 
 const app = express();
@@ -31,6 +33,17 @@ app.get('/health', (req, res) => {
         timestamp: new Date(),
         version: '1.0.0' 
     });
+});
+
+// TEMPORARY: remove after confirming Render outbound IP for Paystack whitelist
+app.get('/debug/outbound-ip', async (req, res) => {
+    try {
+        const response = await fetch('https://api.ipify.org?format=json');
+        const data = await response.json();
+        res.status(200).json({ outboundIp: data.ip });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 const defaultAllowedOrigins = [
@@ -79,6 +92,10 @@ app.use(cors({
     },
     credentials: true
 }));
+
+// Paystack webhook needs raw body for HMAC signature verification — must come before express.json()
+app.use('/api/wallet/paystack-webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json());
 
 app.use('/api/admin/auth', adminAuthRoutes);
@@ -105,7 +122,9 @@ app.use('/api/tasks',  taskRoutes);
 app.use('/api/bids', bidRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/chat', chatRoutes);
-app.use('/api/kyc', ninRoutes);
+app.use('/api/v1/kyc', kycRoute);          // Didit identity verification
+app.use('/api/wallet', walletRoutes);        // Wallet funding (Paystack)
+app.use('/api/waitlist', waitlistRoutes);
 
 
 

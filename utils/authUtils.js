@@ -1,7 +1,5 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import nodemailer from 'nodemailer';
-import nodemailerSendgrid from 'nodemailer-sendgrid';
 import { JWT_SECRET_KEY } from '../config/envConfig.js';
 
 export const JWT_SECRET = JWT_SECRET_KEY;
@@ -31,29 +29,40 @@ export const hashToken = (token) => {
     return crypto.createHash('sha256').update(token).digest('hex');
 };
 
-// Email configuration (you'll need to configure this with your email service)
-export const createEmailTransporter = () => {
- return nodemailer.createTransport(
-        nodemailerSendgrid({
-            apiKey: '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'  // Your key here, or better: process.env.SENDGRID_API_KEY
+// Send email via Resend REST API
+export const sendEmail = async ({ to, subject, html }) => {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) {
+        throw new Error('RESEND_API_KEY is not configured');
+    }
+
+    const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            from: 'TaskHub <hello@ngtaskhub.com>',
+            to,
+            subject,
+            html,
         }),
-        { logger: true }  // Keep if you want logs
-    );
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(`Resend API error ${response.status}: ${data?.message || JSON.stringify(data)}`);
+    }
+
+    return data;
 };
 
 // Send email verification
 export const sendVerificationEmail = async (email, token, userType = 'user') => {
     console.log("sending verification email");
-    try {
-        const transporter = createEmailTransporter();
-        
-        const verificationUrl = `${token}`;
-        
-        const mailOptions = {
-            from: 'hello@ngtaskhub.com',
-            to: email,
-            subject: 'Verify Your Email - TaskHub',
-            html: `
+    const html = `
                 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -207,28 +216,16 @@ export const sendVerificationEmail = async (email, token, userType = 'user') => 
     </div>
 </body>
 </html>
-            `
-        };
-        
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        console.error('Email sending error:', error);
-        return false;
-    }
+    `;
+
+    await sendEmail({ to: email, subject: 'Verify Your Email - TaskHub', html });
+    return true;
 };
 
 // Send password reset email
 export const sendPasswordResetEmail = async (email, token, userType = 'user') => {
     console.log("sending password reset email");
-    try {
-        const transporter = createEmailTransporter();
-        
-        const mailOptions = {
-            from: 'hello@ngtaskhub.com',
-            to: email,
-            subject: 'Password Reset - TaskHub',
-            html: `
+    const html = `
                 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -383,15 +380,10 @@ export const sendPasswordResetEmail = async (email, token, userType = 'user') =>
     </div>
 </body>
 </html>
-            `
-        };
-        
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        console.error('Email sending error:', error);
-        return false;
-    }
+    `;
+
+    await sendEmail({ to: email, subject: 'Password Reset - TaskHub', html });
+    return true;
 };
 
 // Account lockout constants
@@ -404,6 +396,7 @@ export default {
     generateVerificationCode,
     generatePasswordResetCode,
     hashToken,
+    sendEmail,
     sendVerificationEmail,
     sendPasswordResetEmail,
     MAX_LOGIN_ATTEMPTS,

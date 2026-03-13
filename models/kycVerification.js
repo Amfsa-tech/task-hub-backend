@@ -4,32 +4,47 @@ const kycVerificationSchema = new mongoose.Schema({
     user: {
         type: mongoose.Schema.Types.ObjectId,
         required: true,
-        // This tells Mongoose to look at the 'userType' field to decide 
-        // which collection to use for population.
         refPath: 'userType' 
     },
 
-    // New field to distinguish between User and Tasker
     userType: {
         type: String,
         required: true,
-        enum: ['User', 'Tasker'] // These must match your model names exactly
+        enum: ['User', 'Tasker']
     },
 
-    nin: {
+    // Masked NIN only — raw NIN is never stored (PII protection)
+    maskedNin: {
         type: String,
-        required: true
+        default: null
+    },
+
+    provider: {
+        type: String,
+        enum: ['didit', 'qoreid'],
+        default: 'didit'
     },
 
     status: {
         type: String,
-        enum: ['pending', 'approved', 'rejected'],
-        default: 'pending'
+        enum: ['Pending', 'Approved', 'Rejected'],
+        default: 'Pending'
     },
 
-    verificationSummary: {
-        matchStatus: String,
-        mismatches: [String]
+    diditSessionId: {
+        type: String,
+        default: null
+    },
+
+    // Non-PII verification metadata
+    verificationData: {
+        type: mongoose.Schema.Types.Mixed,
+        default: null
+    },
+
+    rejectionReasons: {
+        type: [String],
+        default: []
     },
 
     verifiedAt: Date,
@@ -39,9 +54,7 @@ const kycVerificationSchema = new mongoose.Schema({
         ref: 'Admin'
     },
 
-    reviewedAt: Date,
-
-    rejectionReason: String
+    reviewedAt: Date
 
 }, { timestamps: true });
 
