@@ -1,5 +1,5 @@
 import Waitlist from '../models/waitlist.js';
-import { createEmailTransporter } from '../utils/authUtils.js';
+import { sendEmail } from '../utils/authUtils.js';
 
 // POST /api/waitlist — public
 export const joinWaitlist = async (req, res) => {
@@ -25,9 +25,7 @@ export const joinWaitlist = async (req, res) => {
 
         // Send confirmation email (non-blocking — don't fail the request if mail fails)
         try {
-            const transporter = createEmailTransporter();
-            await transporter.sendMail({
-                from: 'hello@ngtaskhub.com',
+            await sendEmail({
                 to: trimmedEmail,
                 subject: "You're on the TaskHub Waitlist!",
                 html: `
@@ -36,7 +34,7 @@ export const joinWaitlist = async (req, res) => {
                             <h1 style="margin:0;font-size:28px;font-weight:700;">TaskHub</h1>
                         </div>
                         <div style="padding:30px 24px;">
-                            <h2 style="color:#333;font-size:22px;margin-top:0;">You're on the list! 🎉</h2>
+                            <h2 style="color:#333;font-size:22px;margin-top:0;">You're on the list!</h2>
                             <p style="color:#555;font-size:16px;line-height:1.6;">
                                 Thanks for joining the TaskHub waitlist. We'll notify you as soon as we're ready to welcome you aboard.
                             </p>
