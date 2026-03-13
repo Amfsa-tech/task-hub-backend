@@ -2,6 +2,25 @@ import { PAYSTACK_SECRET_KEY, PAYSTACK_CALLBACK_URL } from '../config/envConfig.
 
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
 
+class PaystackRequestError extends Error {
+    constructor(message, statusCode, details, publicMessage) {
+        super(message);
+        this.name = 'PaystackRequestError';
+        this.statusCode = statusCode;
+        this.details = details;
+        this.publicMessage = publicMessage || 'Payment service error';
+    }
+}
+
+const isIpWhitelistError = (message) => {
+    if (!message) {
+        return false;
+    }
+
+    const normalized = String(message).toLowerCase();
+    return normalized.includes('ip address') && normalized.includes('not allowed');
+};
+
 class PaystackService {
     constructor() {
         this.secretKey = PAYSTACK_SECRET_KEY;
@@ -42,8 +61,16 @@ class PaystackService {
 
         const data = await response.json();
 
-        if (!data.status) {
-            throw new Error(data.message || 'Failed to initialize Paystack transaction');
+        if (!response.ok || !data.status) {
+            const publicMessage = isIpWhitelistError(data?.message)
+                ? 'Payment service configuration error. Please try again later.'
+                : 'Failed to initialize payment.';
+            throw new PaystackRequestError(
+                data.message || 'Failed to initialize Paystack transaction',
+                response.status,
+                { data, status: response.status },
+                publicMessage
+            );
         }
 
         return data.data;
@@ -65,8 +92,16 @@ class PaystackService {
 
         const data = await response.json();
 
-        if (!data.status) {
-            throw new Error(data.message || 'Failed to verify Paystack transaction');
+        if (!response.ok || !data.status) {
+            const publicMessage = isIpWhitelistError(data?.message)
+                ? 'Payment service configuration error. Please try again later.'
+                : 'Failed to verify payment.';
+            throw new PaystackRequestError(
+                data.message || 'Failed to verify Paystack transaction',
+                response.status,
+                { data, status: response.status },
+                publicMessage
+            );
         }
 
         return data.data;

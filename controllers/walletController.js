@@ -61,6 +61,18 @@ export const initializeFunding = async (req, res) => {
             },
         });
     } catch (error) {
+        if (error?.name === 'PaystackRequestError') {
+            console.error('[Wallet Fund] Initialize error:', {
+                message: error.message,
+                statusCode: error.statusCode,
+                details: error.details,
+            });
+            return res.status(502).json({
+                status: 'error',
+                message: error.publicMessage,
+            });
+        }
+
         console.error('[Wallet Fund] Initialize error:', error);
         return res.status(500).json({
             status: 'error',
@@ -162,6 +174,18 @@ export const verifyFunding = async (req, res) => {
             },
         });
     } catch (error) {
+        if (error?.name === 'PaystackRequestError') {
+            console.error('[Wallet Fund] Verify error:', {
+                message: error.message,
+                statusCode: error.statusCode,
+                details: error.details,
+            });
+            return res.status(502).json({
+                status: 'error',
+                message: error.publicMessage,
+            });
+        }
+
         console.error('[Wallet Fund] Verify error:', error);
         return res.status(500).json({
             status: 'error',

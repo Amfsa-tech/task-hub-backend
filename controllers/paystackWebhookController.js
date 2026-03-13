@@ -53,7 +53,21 @@ async function handleChargeSuccess(data) {
     }
 
     // Verify with Paystack as an extra safety check
-    const paystackData = await paystackService.verifyTransaction(reference);
+    let paystackData;
+    try {
+        paystackData = await paystackService.verifyTransaction(reference);
+    } catch (error) {
+        if (error?.name === 'PaystackRequestError') {
+            console.error('[Paystack Webhook] Verification error:', {
+                message: error.message,
+                statusCode: error.statusCode,
+                details: error.details,
+            });
+            return;
+        }
+
+        throw error;
+    }
 
     if (paystackData.status !== 'success') {
         console.warn(`[Paystack Webhook] Verification returned status "${paystackData.status}" for ${reference}`);
