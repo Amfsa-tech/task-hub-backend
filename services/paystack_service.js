@@ -106,6 +106,62 @@ class PaystackService {
 
         return data.data;
     }
+
+    /**
+     * List available banks for transfers.
+     * @returns {Promise<Array>} Array of bank objects { name, code, ... }
+     */
+    async listBanks() {
+        const response = await fetch(
+            `${this.baseUrl}/bank?country=nigeria&perPage=100`,
+            {
+                method: 'GET',
+                headers: this.headers,
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.status) {
+            throw new PaystackRequestError(
+                data.message || 'Failed to fetch banks',
+                response.status,
+                { data, status: response.status },
+                'Could not fetch bank list.'
+            );
+        }
+
+        return data.data;
+    }
+
+    /**
+     * Resolve a bank account number to get the account name.
+     * @param {string} accountNumber - The account number to resolve
+     * @param {string} bankCode - The bank code
+     * @returns {Promise<Object>} { account_number, account_name, bank_id }
+     */
+    async resolveAccountNumber(accountNumber, bankCode) {
+        const response = await fetch(
+            `${this.baseUrl}/bank/resolve?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`,
+            {
+                method: 'GET',
+                headers: this.headers,
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.status) {
+            throw new PaystackRequestError(
+                data.message || 'Failed to resolve account',
+                response.status,
+                { data, status: response.status },
+                'Could not verify bank account.'
+            );
+        }
+
+        return data.data;
+    }
 }
 
 export default new PaystackService();

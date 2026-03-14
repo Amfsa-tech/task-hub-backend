@@ -5,7 +5,10 @@ const transactionSchema = new mongoose.Schema({
     user: { 
         type: mongoose.Schema.Types.ObjectId, 
         ref: 'User', 
-        required: true 
+    },
+    tasker: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Tasker'
     },
     amount: { 
         type: Number, 
@@ -37,7 +40,7 @@ const transactionSchema = new mongoose.Schema({
     },
     paymentPurpose: {
         type: String,
-        enum: ['wallet_funding', 'escrow_hold', 'escrow_release', 'escrow_refund', 'other'],
+        enum: ['wallet_funding', 'escrow_hold', 'escrow_release', 'escrow_refund', 'withdrawal', 'platform_fee', 'other'],
         default: 'other'
     },
     currency: {

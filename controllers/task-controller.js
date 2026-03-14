@@ -1,5 +1,6 @@
 import Task from '../models/task.js';
 import { Types } from 'mongoose';
+import crypto from 'crypto';
 import { calculateDistance, milesToMeters } from '../utils/locationUtils.js';
 import Category from '../models/category.js';
 import Tasker from '../models/tasker.js';
@@ -567,31 +568,62 @@ const changeTaskStatus = async (req, res) => {
             });
         }
         
-        // Special handling: assigned -> in-progress (escrow already held at acceptance)
+        // Special handling: assigned -> in-progress (generate completion code)
         if (isTasker && currentStatus === 'assigned' && status === 'in-progress') {
+            // Generate a 6-digit completion code for the user to give the tasker
+            const completionCode = crypto.randomInt(100000, 999999).toString();
+            task.completionCode = completionCode;
             task.status = 'in-progress';
             task.updatedAt = new Date();
             await task.save();
             return res.json({
                 status: 'success',
-                message: 'Task started',
-                task
+                message: 'Task started. A completion code has been sent to the task poster.',
+                task: {
+                    ...task.toObject(),
+                    completionCode: undefined // Don't expose code to tasker
+                }
             });
         }
 
-        // Special handling: in-progress -> completed (release escrow to tasker)
+        // Special handling: in-progress -> completed (require completion code, release escrow with platform fee)
         if (isTasker && currentStatus === 'in-progress' && status === 'completed') {
+            const { completionCode } = req.body;
+
+            if (!completionCode) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Completion code is required to complete a task'
+                });
+            }
+
+            if (task.completionCode !== completionCode) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Invalid completion code'
+                });
+            }
+
             try {
                 if (task.isEscrowHeld && task.escrowAmount > 0) {
+                    // Calculate 15% platform fee
+                    const platformFeeRate = 0.15;
+                    const platformFee = Math.round(task.escrowAmount * platformFeeRate);
+                    const taskerPayout = task.escrowAmount - platformFee;
+
                     await Tasker.updateOne(
                         { _id: task.assignedTasker },
-                        { $inc: { wallet: task.escrowAmount } }
+                        { $inc: { wallet: taskerPayout } }
                     );
                     task.isEscrowHeld = false;
-                    task.escrowAmount = 0;
+                    task.platformFee = platformFee;
+                    task.taskerPayout = taskerPayout;
+                    task.escrowStatus = 'released';
+                    task.completedAt = new Date();
                 }
                 task.status = 'completed';
                 task.updatedAt = new Date();
+                task.completionCode = undefined; // Clear sensitive code
                 await task.save();
                 return res.json({
                     status: 'success',
@@ -617,7 +649,7 @@ const changeTaskStatus = async (req, res) => {
                         { $inc: { wallet: task.escrowAmount } }
                     );
                     task.isEscrowHeld = false;
-                    task.escrowAmount = 0;
+                    task.escrowStatus = 'refunded';
                 }
                 task.status = 'cancelled';
                 task.updatedAt = new Date();
@@ -873,6 +905,65 @@ const getTaskerFeed = async (req, res) => {
     }
 };
 
+// Get completion code for a task (task poster only)
+const getCompletionCode = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (!isValidObjectId(id)) {
+            return res.status(400).json({
+                status: "error",
+                message: "Invalid task ID format"
+            });
+        }
+
+        const task = await Task.findById(id);
+        if (!task) {
+            return res.status(404).json({
+                status: "error",
+                message: "Task not found"
+            });
+        }
+
+        // Only the task poster can view the completion code
+        if (task.user.toString() !== req.user._id.toString()) {
+            return res.status(403).json({
+                status: "error",
+                message: "Not authorized to view this completion code"
+            });
+        }
+
+        if (task.status !== 'in-progress') {
+            return res.status(400).json({
+                status: "error",
+                message: "Completion code is only available for in-progress tasks"
+            });
+        }
+
+        if (!task.completionCode) {
+            return res.status(404).json({
+                status: "error",
+                message: "No completion code generated for this task"
+            });
+        }
+
+        return res.json({
+            status: 'success',
+            data: {
+                taskId: task._id,
+                completionCode: task.completionCode
+            }
+        });
+    } catch (error) {
+        console.error("Get completion code error:", error);
+        res.status(500).json({
+            status: "error",
+            message: "Error fetching completion code",
+            error: error.message
+        });
+    }
+};
+
 export  {
     createTask,
     getAllTasks,
@@ -881,5 +972,6 @@ export  {
     deleteTask,
     getUserTasks,
     changeTaskStatus,
-    getTaskerFeed
+    getTaskerFeed,
+    getCompletionCode
 }; 

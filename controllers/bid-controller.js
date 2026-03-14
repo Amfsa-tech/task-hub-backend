@@ -459,6 +459,7 @@ const acceptBid = async (req, res) => {
                 isEscrowHeld: true,
                 escrowAmount: amountToHold,
                 escrowAt: new Date(),
+                escrowStatus: 'held',
                 updatedAt: Date.now()
             }
         );

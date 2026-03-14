@@ -1,8 +1,16 @@
 import { Router } from 'express';
-import { protectUser } from '../middlewares/authMiddleware.js';
+import { protectUser, protectTasker } from '../middlewares/authMiddleware.js';
 import { initializeFunding, verifyFunding } from '../controllers/walletController.js';
 import { handlePaystackWebhook } from '../controllers/paystackWebhookController.js';
 import { verifyPaystackSignature } from '../middlewares/paystackWebhookAuth.js';
+import {
+    getTaskerBalance,
+    setBankAccount,
+    getBankAccount,
+    requestWithdrawal,
+    getWithdrawalHistory,
+    listBanks
+} from '../controllers/withdrawalController.js';
 
 const router = Router();
 
@@ -11,8 +19,16 @@ router.post('/fund/initialize', protectUser, initializeFunding);
 router.get('/fund/verify', protectUser, verifyFunding);
 
 // Paystack webhook — no JWT auth, verified by HMAC signature
-// NOTE: This route expects raw body (Buffer). The raw body parser is applied
-// at the app level in index.js before express.json() kicks in.
 router.post('/paystack-webhook', verifyPaystackSignature, handlePaystackWebhook);
+
+// Bank list (tasker auth required)
+router.get('/banks', protectTasker, listBanks);
+
+// Tasker wallet & withdrawal endpoints
+router.get('/tasker/balance', protectTasker, getTaskerBalance);
+router.get('/tasker/bank-account', protectTasker, getBankAccount);
+router.post('/tasker/bank-account', protectTasker, setBankAccount);
+router.post('/tasker/withdraw', protectTasker, requestWithdrawal);
+router.get('/tasker/withdrawals', protectTasker, getWithdrawalHistory);
 
 export default router;

@@ -42,6 +42,10 @@ const taskSchema = new Schema({
     escrowAmount: { type: Number, default: 0 },
     isEscrowHeld: { type: Boolean, default: false },
     escrowAt: { type: Date },
+    platformFee: { type: Number, default: 0 },
+    taskerPayout: { type: Number, default: 0 },
+    completionCode: { type: String },
+    completedAt: { type: Date },
     user: { 
         type: Schema.Types.ObjectId, 
         ref: 'User',

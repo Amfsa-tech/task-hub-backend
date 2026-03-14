@@ -21,6 +21,7 @@ import adminStaffRoutes from './routes/adminStaffRoutes.js';
 import adminChatRoutes from './routes/adminChatRoutes.js';   
 import adminSettingsRoutes from './routes/adminSettingsRoutes.js';
 import adminCategoryRoutes from './routes/adminCategoryRoutes.js';
+import adminWithdrawalRoutes from './routes/adminWithdrawalRoutes.js';
 import waitlistRoutes from './routes/waitlistRoute.js';
 import walletRoutes from './routes/walletRoute.js';
 import { checkMaintenanceMode } from './middlewares/maintenanceMiddleware.js';
@@ -112,6 +113,7 @@ app.use('/api/admin/staff', adminStaffRoutes);       // Staff Management
 app.use('/api/admin/messages', adminChatRoutes);     // Support Chat
 app.use('/api/admin/settings', adminSettingsRoutes);
 app.use('/api/admin/categories', adminCategoryRoutes);
+app.use('/api/admin/withdrawals', adminWithdrawalRoutes);
 
 
 app.use(checkMaintenanceMode);

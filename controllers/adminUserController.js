@@ -175,7 +175,7 @@ export const getUserById = async (req, res) => {
             data: {
                 user, // The main profile info
                 wallet: {
-                    balance: user.walletBalance || 0, // Ensure field exists in User model
+                    balance: user.wallet || 0,
                     escrow: escrowBalance
                 },
                 verification: {

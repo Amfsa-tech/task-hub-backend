@@ -1,40 +1,49 @@
 import Task from '../models/task.js';
 import User from '../models/user.js';
 
+const PLATFORM_FEE_RATE = 0.15;
+
 // GET /api/admin/payments/stats
 export const getPaymentStats = async (req, res) => {
     try {
-        // --- ADAPTING TASK DATA TO FIT "CREDIT/DEBIT" UI ---
-
-        // 1. "Total Credits" (Money In)
-        // We assume any task where money was held counts as money entering the system.
+        // 1. "Total Credits" (Money In) — escrow currently held
         const creditAgg = await Task.aggregate([
             { $match: { isEscrowHeld: true } },
             { $group: { _id: null, total: { $sum: '$escrowAmount' } } }
         ]);
         const totalCredits = creditAgg[0]?.total || 0;
 
-        // 2. "Total Debits" (Money Out)
-        // We assume money released to a Tasker counts as money leaving the system bucket.
+        // 2. "Total Debits" (Money Out) — escrow released to taskers
         const debitAgg = await Task.aggregate([
             { $match: { escrowStatus: 'released' } },
-            { $group: { _id: null, total: { $sum: '$escrowAmount' } } }
+            { $group: { _id: null, total: { $sum: '$taskerPayout' } } }
         ]);
         const totalDebits = debitAgg[0]?.total || 0;
 
-        // 3. "Net Flow"
+        // 3. Platform fees earned
+        const feeAgg = await Task.aggregate([
+            { $match: { escrowStatus: 'released', platformFee: { $gt: 0 } } },
+            { $group: { _id: null, total: { $sum: '$platformFee' } } }
+        ]);
+        const totalPlatformFees = feeAgg[0]?.total || 0;
+
+        // 4. "Net Flow"
         const netFlow = totalCredits - totalDebits;
 
-        // 4. "Total Transactions"
-        const totalTransactions = await Task.countDocuments({ isEscrowHeld: true });
+        // 5. "Total Transactions"
+        const totalTransactions = await Task.countDocuments({ 
+            $or: [{ isEscrowHeld: true }, { escrowStatus: 'released' }, { escrowStatus: 'refunded' }]
+        });
 
         res.json({
             status: 'success',
             data: {
                 totalTransactions,
-                totalCredits, // Matches UI Card 2
-                totalDebits,  // Matches UI Card 3
-                netFlow       // Matches UI Card 4
+                totalCredits,
+                totalDebits,
+                netFlow,
+                totalPlatformFees,
+                platformFeeRate: `${PLATFORM_FEE_RATE * 100}%`
             }
         });
     } catch (error) {
@@ -116,7 +125,7 @@ export const getPaymentById = async (req, res) => {
 
         // 1. Fetch the "Transaction" (Task)
         const task = await Task.findById(transactionId)
-            .populate('user', 'emailAddress walletBalance'); // Fetch user's email & current balance
+            .populate('user', 'emailAddress wallet'); // Fetch user's email & current balance
 
         if (!task) {
             return res.status(404).json({ status: 'error', message: 'Transaction not found' });
@@ -130,7 +139,7 @@ export const getPaymentById = async (req, res) => {
 
         // 3. Calculate "Snapshot" Balances (Estimation)
         // Since we don't have a real ledger, we estimate "Previous Balance" based on current wallet.
-        const currentBalance = task.user.walletBalance || 0; // "Balance After Transaction"
+        const currentBalance = task.user.wallet || 0;
         
         // If it was a Debit (User spent money), Previous was likely Higher.
         // If it was a Credit (User refunded), Previous was likely Lower.

@@ -24,6 +24,14 @@ const taskerSchema = new Schema({
     password: { type: String, required: true, unique: true },
     wallet: { type: Number, default: 0 },
     
+    // Bank account for withdrawals
+    bankAccount: {
+        bankName: { type: String },
+        bankCode: { type: String },
+        accountNumber: { type: String },
+        accountName: { type: String }
+    },
+    
     // Push notification configuration
     notificationId: { 
         type: String, 
