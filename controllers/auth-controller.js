@@ -329,14 +329,14 @@ export const taskerRegister = async (req, res) => {
       missingFields: missingFields,
     });
   }
-  // --- ADD THIS AGE CHECK ---
+  
   if (calculateAge(dateOfBirth) < 16) {
     return res.status(400).json({
       status: "error",
       message: "You must be at least 16 years old to register on TaskHub.",
     });
   }
-  // --------------------------
+  
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
 
