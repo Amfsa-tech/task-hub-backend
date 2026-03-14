@@ -169,6 +169,8 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 | **PATCH** | `/api/admin/categories/:id` | Update or toggle active status of a category. | `super_admin`, `operations` |
 | **DELETE** | `/api/admin/categories/:id` | Delete a category. **Note:** Returns a `400` error if the category is actively assigned to any tasks or taskers. | `super_admin`, `operations` |
 
+
+
 ```
 
 

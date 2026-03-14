@@ -17,6 +17,21 @@ import {
   LOCK_TIME,
 } from "../utils/authUtils.js";
 
+// Helper to calculate exact age
+const calculateAge = (dobString) => {
+    const dob = new Date(dobString);
+    const today = new Date();
+    let age = today.getFullYear() - dob.getFullYear();
+    const monthDiff = today.getMonth() - dob.getMonth();
+    
+    // If the birth month hasn't happened yet this year, or it's the birth month but the day hasn't happened, subtract 1
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+        age--;
+    }
+    return age;
+};
+
+
 // Helper function to handle login attempts and account locking
 const handleLoginAttempt = async (user, isValidPassword) => {
   // If password is correct and account is not locked
@@ -112,7 +127,14 @@ export const userRegister = async (req, res) => {
       missingFields: missingFields,
     });
   }
-
+   // --- ADD THIS AGE CHECK ---
+  if (calculateAge(dateOfBirth) < 16) {
+    return res.status(400).json({
+      status: "error",
+      message: "You must be at least 16 years old to register on TaskHub.",
+    });
+  }
+  // --------------------------
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -307,7 +329,14 @@ export const taskerRegister = async (req, res) => {
       missingFields: missingFields,
     });
   }
-
+  
+  if (calculateAge(dateOfBirth) < 16) {
+    return res.status(400).json({
+      status: "error",
+      message: "You must be at least 16 years old to register on TaskHub.",
+    });
+  }
+  
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
 
