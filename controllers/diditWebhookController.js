@@ -170,9 +170,12 @@ export const handleDiditWebhook = async (req, res) => {
 
     // --- If approved, flip verification flags on the user record ---
     if (normalizedStatus === 'Approved') {
-      userRecord.verifyIdentity = true;
-      userRecord.isKYCVerified = true;
-      await userRecord.save();
+      const updateFields = { verifyIdentity: true, isKYCVerified: true };
+      if (userType === 'Tasker') {
+        await Tasker.findByIdAndUpdate(userId, { $set: updateFields });
+      } else {
+        await User.findByIdAndUpdate(userId, { $set: updateFields });
+      }
 
       console.log(`[Didit Webhook] ✓ ${userType} ${userId} identity verified successfully`);
     } else {

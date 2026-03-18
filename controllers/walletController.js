@@ -235,3 +235,83 @@ export const creditWallet = async (transaction, paystackData) => {
 
     console.log(`[Wallet Fund] ✓ Credited ₦${txn.amount} to user ${txn.user} (ref: ${txn.reference})`);
 };
+
+/**
+ * GET /api/wallet/user/balance
+ * Returns the user's wallet balance and escrow summary.
+ */
+export const getUserBalance = async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id).select('wallet');
+        if (!user) {
+            return res.status(404).json({ status: 'error', message: 'User not found' });
+        }
+
+        // Sum of all funds currently held in escrow for this user's tasks
+        const escrowResult = await (await import('../models/task.js')).default.aggregate([
+            { $match: { user: user._id, isEscrowHeld: true } },
+            { $group: { _id: null, totalEscrow: { $sum: '$escrowAmount' } } }
+        ]);
+        const totalEscrow = escrowResult.length > 0 ? escrowResult[0].totalEscrow : 0;
+
+        return res.json({
+            status: 'success',
+            data: {
+                walletBalance: user.wallet,
+                totalInEscrow: totalEscrow,
+                availableBalance: user.wallet
+            }
+        });
+    } catch (error) {
+        console.error('Get user balance error:', error);
+        return res.status(500).json({
+            status: 'error',
+            message: 'Could not fetch balance'
+        });
+    }
+};
+
+/**
+ * GET /api/wallet/user/transactions?page=1&limit=10
+ * Returns the user's transaction history (wallet funding, escrow holds, releases, refunds).
+ */
+export const getUserTransactions = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        const filter = { user: userId };
+
+        // Optional: filter by paymentPurpose
+        if (req.query.purpose) {
+            const validPurposes = ['wallet_funding', 'escrow_hold', 'escrow_release', 'escrow_refund', 'platform_fee'];
+            if (validPurposes.includes(req.query.purpose)) {
+                filter.paymentPurpose = req.query.purpose;
+            }
+        }
+
+        const total = await Transaction.countDocuments(filter);
+        const transactions = await Transaction.find(filter)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .select('amount type description status reference paymentPurpose createdAt metadata');
+
+        return res.json({
+            status: 'success',
+            results: transactions.length,
+            totalRecords: total,
+            totalPages: Math.ceil(total / limit),
+            currentPage: page,
+            transactions
+        });
+    } catch (error) {
+        console.error('Get user transactions error:', error);
+        return res.status(500).json({
+            status: 'error',
+            message: 'Could not fetch transactions'
+        });
+    }
+};

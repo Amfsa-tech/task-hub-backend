@@ -5,7 +5,8 @@ import { calculateDistance, milesToMeters } from '../utils/locationUtils.js';
 import Category from '../models/category.js';
 import Tasker from '../models/tasker.js';
 import Bid from '../models/bid.js';
-import { notifyMatchingTaskers } from '../utils/notificationUtils.js';
+import Transaction from '../models/transaction.js';
+import { notifyMatchingTaskers, notifyUserAboutTaskCompletion, notifyTaskerAboutTaskCancellation } from '../utils/notificationUtils.js';
 import User from '../models/user.js';
 
 // Helper function to check if ID is valid
@@ -536,7 +537,7 @@ const changeTaskStatus = async (req, res) => {
         
         if (isUser) {
             // Users can cancel only before work starts
-            if (['open', 'assigned'].includes(currentStatus)) {
+            if (['open', 'assigned', 'in-progress'].includes(currentStatus)) {
                 allowedTransitions = ['cancelled'];
                 if (currentStatus === 'open') {
                     allowedTransitions.push('open'); // Allow status refresh
@@ -620,11 +621,61 @@ const changeTaskStatus = async (req, res) => {
                     task.taskerPayout = taskerPayout;
                     task.escrowStatus = 'released';
                     task.completedAt = new Date();
+
+                    // Record escrow_release transaction (tasker payout)
+                    try {
+                        await Transaction.create({
+                            user: task.user._id,
+                            tasker: task.assignedTasker,
+                            amount: taskerPayout,
+                            type: 'debit',
+                            description: `Escrow released for task: ${task.title}`,
+                            status: 'success',
+                            reference: `ESC-REL-${task._id}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+                            provider: 'system',
+                            paymentPurpose: 'escrow_release',
+                            currency: 'NGN',
+                            metadata: { taskId: task._id.toString(), taskerPayout, platformFee }
+                        });
+                    } catch (txnErr) {
+                        console.error('Failed to create escrow_release transaction:', txnErr);
+                    }
+
+                    // Record platform_fee transaction
+                    try {
+                        await Transaction.create({
+                            user: task.user._id,
+                            amount: platformFee,
+                            type: 'debit',
+                            description: `Platform fee (15%) for task: ${task.title}`,
+                            status: 'success',
+                            reference: `PLT-FEE-${task._id}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+                            provider: 'system',
+                            paymentPurpose: 'platform_fee',
+                            currency: 'NGN',
+                            metadata: { taskId: task._id.toString(), escrowAmount: task.escrowAmount, feeRate: platformFeeRate }
+                        });
+                    } catch (txnErr) {
+                        console.error('Failed to create platform_fee transaction:', txnErr);
+                    }
                 }
                 task.status = 'completed';
                 task.updatedAt = new Date();
                 task.completionCode = undefined; // Clear sensitive code
                 await task.save();
+
+                // Notify user about task completion
+                try {
+                    const tasker = await Tasker.findById(task.assignedTasker).select('firstName lastName');
+                    if (tasker) {
+                        notifyUserAboutTaskCompletion(task.user._id, task, tasker).catch((e) => {
+                            console.error('notifyUserAboutTaskCompletion error:', e);
+                        });
+                    }
+                } catch (notifyErr) {
+                    console.error('Failed to send task completion notification:', notifyErr);
+                }
+
                 return res.json({
                     status: 'success',
                     message: 'Task completed and payout released',
@@ -650,10 +701,36 @@ const changeTaskStatus = async (req, res) => {
                     );
                     task.isEscrowHeld = false;
                     task.escrowStatus = 'refunded';
+
+                    // Record escrow_refund transaction
+                    try {
+                        await Transaction.create({
+                            user: task.user._id,
+                            amount: task.escrowAmount,
+                            type: 'credit',
+                            description: `Escrow refunded for cancelled task: ${task.title}`,
+                            status: 'success',
+                            reference: `ESC-REF-${task._id}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+                            provider: 'system',
+                            paymentPurpose: 'escrow_refund',
+                            currency: 'NGN',
+                            metadata: { taskId: task._id.toString() }
+                        });
+                    } catch (txnErr) {
+                        console.error('Failed to create escrow_refund transaction:', txnErr);
+                    }
                 }
                 task.status = 'cancelled';
                 task.updatedAt = new Date();
                 await task.save();
+
+                // Notify the assigned tasker about cancellation
+                if (task.assignedTasker) {
+                    notifyTaskerAboutTaskCancellation(task.assignedTasker, task).catch((e) => {
+                        console.error('notifyTaskerAboutTaskCancellation error:', e);
+                    });
+                }
+
                 return res.json({
                     status: 'success',
                     message: 'Task cancelled and funds refunded',
@@ -661,6 +738,62 @@ const changeTaskStatus = async (req, res) => {
                 });
             } catch (err) {
                 console.error('Refund on cancel error:', err);
+                return res.status(500).json({
+                    status: 'error',
+                    message: 'Could not cancel task',
+                    error: err.message
+                });
+            }
+        }
+
+        // Special handling: user cancels from 'in-progress' -> refund escrow
+        if (isUser && status === 'cancelled' && currentStatus === 'in-progress') {
+            try {
+                if (task.isEscrowHeld && task.escrowAmount > 0) {
+                    await User.updateOne(
+                        { _id: task.user._id },
+                        { $inc: { wallet: task.escrowAmount } }
+                    );
+                    task.isEscrowHeld = false;
+                    task.escrowStatus = 'refunded';
+
+                    // Record escrow_refund transaction
+                    try {
+                        await Transaction.create({
+                            user: task.user._id,
+                            amount: task.escrowAmount,
+                            type: 'credit',
+                            description: `Escrow refunded for cancelled in-progress task: ${task.title}`,
+                            status: 'success',
+                            reference: `ESC-REF-${task._id}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+                            provider: 'system',
+                            paymentPurpose: 'escrow_refund',
+                            currency: 'NGN',
+                            metadata: { taskId: task._id.toString(), cancelledFrom: 'in-progress' }
+                        });
+                    } catch (txnErr) {
+                        console.error('Failed to create escrow_refund transaction:', txnErr);
+                    }
+                }
+                task.status = 'cancelled';
+                task.completionCode = undefined;
+                task.updatedAt = new Date();
+                await task.save();
+
+                // Notify the assigned tasker about cancellation
+                if (task.assignedTasker) {
+                    notifyTaskerAboutTaskCancellation(task.assignedTasker, task).catch((e) => {
+                        console.error('notifyTaskerAboutTaskCancellation error:', e);
+                    });
+                }
+
+                return res.json({
+                    status: 'success',
+                    message: 'Task cancelled and funds refunded',
+                    task
+                });
+            } catch (err) {
+                console.error('Refund on in-progress cancel error:', err);
                 return res.status(500).json({
                     status: 'error',
                     message: 'Could not cancel task',

@@ -55,6 +55,7 @@ const taskerSchema = new Schema({
     
     // Identity verification
     verifyIdentity: { type: Boolean, default: false },
+    isKYCVerified: { type: Boolean, default: false },
     
     isActive: { type: Boolean, default: true },
     lastLogin: { type: Date },

@@ -1,6 +1,8 @@
 import Bid from '../models/bid.js';
 import Task from '../models/task.js';
 import User from '../models/user.js';
+import Transaction from '../models/transaction.js';
+import crypto from 'crypto';
 import { notifyUserAboutNewBid, notifyTaskerAboutBidAcceptance, notifyTaskerAboutBidRejection } from '../utils/notificationUtils.js';
 import Conversation from '../models/conversation.js';
 import Message from '../models/message.js';
@@ -463,6 +465,24 @@ const acceptBid = async (req, res) => {
                 updatedAt: Date.now()
             }
         );
+
+        // Step 3b: Record escrow_hold transaction
+        try {
+            await Transaction.create({
+                user: bid.task.user,
+                amount: amountToHold,
+                type: 'debit',
+                description: `Escrow held for task: ${bid.task.title}`,
+                status: 'success',
+                reference: `ESC-HOLD-${bid.task._id}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+                provider: 'system',
+                paymentPurpose: 'escrow_hold',
+                currency: 'NGN',
+                metadata: { taskId: bid.task._id.toString(), bidId: bid._id.toString(), taskerId: bid.tasker.toString() }
+            });
+        } catch (txnErr) {
+            console.error('Failed to create escrow_hold transaction record:', txnErr);
+        }
 
         // Step 4: Fetch other bids (for notifications) then reject them
         const otherBids = await Bid.find({
