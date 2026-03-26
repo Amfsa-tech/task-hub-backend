@@ -66,6 +66,8 @@ const taskSchema = new Schema({
         type: Date, 
         default: Date.now 
     },
+    platformFee: { type: Number, default: 0 },
+    taskerPayout: { type: Number, default: 0 },
     escrowStatus: {
     type: String,
     enum: [
