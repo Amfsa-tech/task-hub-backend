@@ -6,19 +6,36 @@ import { logAdminAction } from '../utils/auditLogger.js';
 // --- 1. MAIN CATEGORY PAGE (List & Top Stats) ---
 export const getAdminCategoriesDashboard = async (req, res) => {
     try {
-        const activeCategories = await Category.countDocuments({ isActive: true });
-        const closedCategories = await Category.countDocuments({ isActive: false });
+        // Only count MAIN categories for the top stats
+        const activeCategories = await Category.countDocuments({ isActive: true, parentCategory: null });
+        const closedCategories = await Category.countDocuments({ isActive: false, parentCategory: null });
         const totalServices = await Task.countDocuments(); 
 
-        const categories = await Category.find().sort({ createdAt: -1 });
+        // Fetch only MAIN categories for the primary table
+        const mainCategories = await Category.find({ parentCategory: null }).sort({ createdAt: -1 });
         
-        const categoriesWithStats = await Promise.all(categories.map(async (cat) => {
-            const serviceCount = await Task.countDocuments({ categories: cat._id });
+        const categoriesWithStats = await Promise.all(mainCategories.map(async (cat) => {
+            // Find sub-categories for this specific main category
+            const subCategories = await Category.find({ parentCategory: cat._id }).select('_id');
+            const subCatIds = subCategories.map(sc => sc._id);
+            
+            // Tasks might be tagged with the main category OR the sub-category
+            const allRelevantCatIds = [cat._id, ...subCatIds];
+            
+            // NEW: Querying against the new mainCategory and subCategory fields
+            const serviceCount = await Task.countDocuments({ 
+                $or: [
+                    { mainCategory: { $in: allRelevantCatIds } },
+                    { subCategory: { $in: allRelevantCatIds } }
+                ]
+            });
+            
             return {
                 _id: cat._id,
                 name: cat.name, 
-                displayName: cat.displayName, // Applied the display name fix here
+                displayName: cat.displayName, 
                 description: cat.description,
+                subCategoryCount: subCatIds.length,
                 services: serviceCount,
                 isActive: cat.isActive
             };
@@ -36,6 +53,7 @@ export const getAdminCategoriesDashboard = async (req, res) => {
             }
         });
     } catch (error) {
+        console.error(error);
         res.status(500).json({ status: 'error', message: 'Failed to load category dashboard' });
     }
 };
@@ -50,23 +68,52 @@ export const getAdminCategoryDetails = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Category not found' });
         }
 
-        const totalServices = await Task.countDocuments({ categories: categoryId });
-        const totalTaskers = await Tasker.countDocuments({ categories: categoryId });
-        const activeTaskers = await Tasker.countDocuments({ categories: categoryId, isActive: true });
+        // Fetch actual sub-category documents to list in the new UI table
+        const subCategories = await Category.find({ parentCategory: category._id }).sort({ createdAt: -1 });
+        const subCatIds = subCategories.map(sc => sc._id);
+        const allRelevantCatIds = [category._id, ...subCatIds];
+
+        // NEW: Query definitions using the updated schema fields
+        const taskQuery = { 
+            $or: [
+                { mainCategory: { $in: allRelevantCatIds } },
+                { subCategory: { $in: allRelevantCatIds } }
+            ]
+        };
+
+        const taskerQuery = { 
+            $or: [
+                { mainCategories: { $in: allRelevantCatIds } },
+                { subCategories: { $in: allRelevantCatIds } }
+            ]
+        };
+
+        // Stats now aggregate across the main category AND all its sub-categories
+        const totalServices = await Task.countDocuments(taskQuery);
+        const totalTaskers = await Tasker.countDocuments(taskerQuery);
+        const activeTaskers = await Tasker.countDocuments({ ...taskerQuery, isActive: true });
 
         const revenueAgg = await Task.aggregate([
-            { $match: { categories: category._id, status: 'completed' } },
+            { 
+                $match: { 
+                    $or: [
+                        { mainCategory: { $in: allRelevantCatIds } },
+                        { subCategory: { $in: allRelevantCatIds } }
+                    ],
+                    status: 'completed' 
+                } 
+            },
             { $group: { _id: null, total: { $sum: '$budget' } } }
         ]);
         const revenue = revenueAgg[0]?.total || 0;
 
-        const tasks = await Task.find({ categories: categoryId })
+        const tasks = await Task.find(taskQuery)
             .populate('user', 'fullName')
             .select('title budget status createdAt user')
             .sort({ createdAt: -1 })
             .limit(20); 
 
-        const taskers = await Tasker.find({ categories: categoryId })
+        const taskers = await Tasker.find(taskerQuery)
             .select('firstName lastName emailAddress isActive verifyIdentity updatedAt profilePicture')
             .sort({ updatedAt: -1 })
             .limit(20);
@@ -87,17 +134,24 @@ export const getAdminCategoryDetails = async (req, res) => {
                 category: {
                     _id: category._id,
                     name: category.name,
-                    displayName: category.displayName, // Applied the display name fix here
+                    displayName: category.displayName, 
                     description: category.description,
                     isActive: category.isActive,
                     minimumPrice: category.minimumPrice || 0 
                 },
                 stats: {
                     totalServices,
+                    subCategoryCount: subCategories.length,
+                    activeServices: tasks.filter(t => t.status !== 'cancelled').length,
                     activeTaskers,
                     totalTaskers,
                     revenue
                 },
+                subCategories: subCategories.map(sc => ({
+                    _id: sc._id,
+                    displayName: sc.displayName,
+                    isActive: sc.isActive
+                })),
                 tasks: tasks.map(t => ({
                     _id: t._id,
                     title: t.title,
@@ -110,14 +164,15 @@ export const getAdminCategoryDetails = async (req, res) => {
             }
         });
     } catch (error) {
+        console.error(error);
         res.status(500).json({ status: 'error', message: 'Failed to load category details' });
     }
 };
 
-// --- 3. CREATE CATEGORY (Admin Modal) ---
+// --- 3. CREATE CATEGORY & SUB-CATEGORY (Admin Modal) ---
 export const createAdminCategory = async (req, res) => {
     try {
-        const { name, displayName, description, minimumPrice, isActive } = req.body;
+        const { name, displayName, description, minimumPrice, isActive, parentCategory } = req.body;
         
         const normalizedName = name.toLowerCase().trim().replace(/\s+/g, '-');
         
@@ -126,12 +181,20 @@ export const createAdminCategory = async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'Category name exists' });
         }
 
+        if (parentCategory) {
+            const parentExists = await Category.findById(parentCategory);
+            if (!parentExists) {
+                return res.status(404).json({ status: 'error', message: 'Parent category not found' });
+            }
+        }
+
         const category = await Category.create({
             name: normalizedName,
             displayName: displayName || name,
             description,
             minimumPrice: minimumPrice || 0,
             isActive: isActive !== undefined ? isActive : true,
+            parentCategory: parentCategory || null,
             createdBy: req.admin._id 
         });
 
@@ -146,7 +209,7 @@ export const createAdminCategory = async (req, res) => {
 // --- 4. UPDATE / TOGGLE CATEGORY (Admin Modal) ---
 export const updateAdminCategory = async (req, res) => {
     try {
-        const { name, displayName, description, minimumPrice, isActive } = req.body;
+        const { name, displayName, description, minimumPrice, isActive, parentCategory } = req.body;
         
         const category = await Category.findById(req.params.id);
         if (!category) return res.status(404).json({ status: 'error', message: 'Category not found' });
@@ -156,6 +219,7 @@ export const updateAdminCategory = async (req, res) => {
         if (description !== undefined) category.description = description;
         if (minimumPrice !== undefined) category.minimumPrice = minimumPrice;
         if (isActive !== undefined) category.isActive = isActive;
+        if (parentCategory !== undefined) category.parentCategory = parentCategory;
 
         await category.save();
 
@@ -177,9 +241,21 @@ export const deleteAdminCategory = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Category not found' });
         }
 
-        // Safety check: Prevent deletion if tasks or taskers are actively using it
-        const tasksUsingCategory = await Task.countDocuments({ categories: categoryId });
-        const taskersUsingCategory = await Tasker.countDocuments({ categories: categoryId });
+        const subCategoryCount = await Category.countDocuments({ parentCategory: categoryId });
+        if (subCategoryCount > 0) {
+            return res.status(400).json({
+                status: 'error',
+                message: `Cannot delete category. It contains ${subCategoryCount} sub-categories. Please delete or reassign them first.`
+            });
+        }
+
+        // NEW: Check if tasks or taskers are actively using it using the new schema fields
+        const tasksUsingCategory = await Task.countDocuments({ 
+            $or: [{ mainCategory: categoryId }, { subCategory: categoryId }] 
+        });
+        const taskersUsingCategory = await Tasker.countDocuments({ 
+            $or: [{ mainCategories: categoryId }, { subCategories: categoryId }] 
+        });
 
         if (tasksUsingCategory > 0 || taskersUsingCategory > 0) {
             return res.status(400).json({ 

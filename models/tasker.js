@@ -40,10 +40,21 @@ const taskerSchema = new Schema({
     },
     
     // Task categories the tasker can handle
-    categories: [{ 
+    // REPLACED: categories: [{ type: Schema.Types.ObjectId, ref: 'Category' }]
+    // NEW STRUCTURE:
+    mainCategories: [{
         type: Schema.Types.ObjectId,
         ref: 'Category'
     }],
+    subCategories: [{
+        type: Schema.Types.ObjectId,
+        ref: 'Category'
+    }],
+    university: {
+        type: String,
+        trim: true,
+        default: null
+    },
     
     // New authentication fields
     isEmailVerified: { type: Boolean, default: false },

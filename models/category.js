@@ -44,6 +44,11 @@ const categorySchema = new Schema({
         type: Number,
         default: 0
     },
+    parentCategory: {
+        type: Schema.Types.ObjectId,
+        ref: 'Category',
+        default: null
+    }
 });
 
 // Index for better query performance

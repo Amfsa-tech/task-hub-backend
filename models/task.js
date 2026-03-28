@@ -9,10 +9,25 @@ const taskSchema = new Schema({
         type: String, 
         required: true 
     },
-    categories: [{ 
+    // REPLACED: categories: [{ type: Schema.Types.ObjectId, ref: 'Category' }]
+    // NEW STRUCTURE:
+    mainCategory: {
         type: Schema.Types.ObjectId,
-        ref: 'Category'
-    }],
+        ref: 'Category',
+        required: [true, 'Main category is required']
+    },
+    subCategory: {
+        type: Schema.Types.ObjectId,
+        ref: 'Category',
+        required: [true, 'Subcategory is required']
+    },
+    university: {
+        type: String, 
+        trim: true,
+        default: null
+        // Note: Your taskController should validate that this is provided 
+        // if the mainCategory name is "campus-tasks"
+    },
     tags: [{ 
         type: String 
     }],
@@ -82,10 +97,20 @@ const taskSchema = new Schema({
 
 });
 
-// Add custom validation to ensure at least one category
-taskSchema.path('categories').validate(function(value) {
-    return value && value.length > 0;
-}, 'At least one category is required');
+// ADD THIS INSTEAD (Optional but recommended based on your document)
+taskSchema.pre('validate', async function(next) {
+    if (this.mainCategory) {
+        // We need to fetch the category to check its name
+        const Category = mongoose.model('Category');
+        const mainCat = await Category.findById(this.mainCategory);
+        
+        // If it's a Campus Task, ensure university is provided
+        if (mainCat && mainCat.name === 'campus-tasks' && !this.university) {
+            this.invalidate('university', 'University selection is required for Campus Tasks.');
+        }
+    }
+    next();
+});
 
 // Create geospatial index for location-based queries
 taskSchema.index({ location: '2dsphere' });
