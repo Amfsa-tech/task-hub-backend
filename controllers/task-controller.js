@@ -3,6 +3,8 @@ import { Types } from 'mongoose';
 import crypto from 'crypto';
 import { calculateDistance, milesToMeters } from '../utils/locationUtils.js';
 import Category from '../models/category.js';
+import MainCategory from '../models/mainCategory.js';
+import University from '../models/university.js';
 import Tasker from '../models/tasker.js';
 import Bid from '../models/bid.js';
 import Transaction from '../models/transaction.js';
@@ -17,11 +19,11 @@ const isValidObjectId = (id) => {
 // Create a new task
 const createTask = async (req, res) => {
     try {
-        const { title, description, categories, tags, images, location, budget, isBiddingEnabled, deadline } = req.body;
+        const { title, description, categories, tags, images, location, budget, isBiddingEnabled, deadline, mainCategory, university } = req.body;
         
         // Required fields validation
         const requiredFields = {
-            title, description, categories, 
+            title, description, categories, mainCategory,
             'location.latitude': location?.latitude,
             'location.longitude': location?.longitude,
             budget
@@ -82,6 +84,70 @@ const createTask = async (req, res) => {
             });
         }
 
+        // Validate mainCategory exists and is active
+        if (!isValidObjectId(mainCategory)) {
+            return res.status(400).json({
+                status: "error",
+                message: "Invalid mainCategory ID format"
+            });
+        }
+
+        const mainCat = await MainCategory.findById(mainCategory);
+        if (!mainCat || !mainCat.isActive) {
+            return res.status(400).json({
+                status: "error",
+                message: "Main category not found or inactive"
+            });
+        }
+
+        // Validate all subcategories belong to the provided mainCategory
+        const mismatchedCategories = existingCategories.filter(
+            cat => cat.mainCategory && cat.mainCategory.toString() !== mainCategory
+        );
+        if (mismatchedCategories.length > 0) {
+            return res.status(400).json({
+                status: "error",
+                message: "All subcategories must belong to the selected main category",
+                details: `Mismatched category IDs: ${mismatchedCategories.map(c => c._id).join(', ')}`
+            });
+        }
+
+        // Validate university for campus-type main categories
+        let validatedUniversity = null;
+        const campusKeywords = ['campus'];
+        const isCampusCategory = campusKeywords.some(kw => mainCat.name.includes(kw));
+
+        if (isCampusCategory) {
+            if (!university) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "University is required for campus tasks"
+                });
+            }
+            if (!isValidObjectId(university)) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Invalid university ID format"
+                });
+            }
+            const uni = await University.findById(university);
+            if (!uni || !uni.isActive) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "University not found or inactive"
+                });
+            }
+            validatedUniversity = uni._id;
+        } else if (university) {
+            // Non-campus task with university provided — validate but allow
+            if (isValidObjectId(university)) {
+                const uni = await University.findById(university);
+                if (uni && uni.isActive) {
+                    validatedUniversity = uni._id;
+                }
+            }
+        }
+
         // Validate images array if provided
         if (images && Array.isArray(images)) {
             for (let i = 0; i < images.length; i++) {
@@ -129,6 +195,8 @@ const createTask = async (req, res) => {
             title,
             description,
             categories: uniqueCategories,
+            mainCategory: mainCat._id,
+            university: validatedUniversity,
             tags: tags || [],
             images: images || [],
             location: {

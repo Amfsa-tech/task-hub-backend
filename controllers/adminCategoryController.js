@@ -1,4 +1,5 @@
 import Category from '../models/category.js';
+import MainCategory from '../models/mainCategory.js';
 import Task from '../models/task.js';
 import Tasker from '../models/tasker.js';
 import { logAdminAction } from '../utils/auditLogger.js';
@@ -117,7 +118,16 @@ export const getAdminCategoryDetails = async (req, res) => {
 // --- 3. CREATE CATEGORY (Admin Modal) ---
 export const createAdminCategory = async (req, res) => {
     try {
-        const { name, displayName, description, minimumPrice, isActive } = req.body;
+        const { name, displayName, description, minimumPrice, isActive, mainCategory } = req.body;
+
+        if (!mainCategory) {
+            return res.status(400).json({ status: 'error', message: 'mainCategory is required' });
+        }
+
+        const mainCat = await MainCategory.findById(mainCategory);
+        if (!mainCat || !mainCat.isActive) {
+            return res.status(400).json({ status: 'error', message: 'Main category not found or inactive' });
+        }
         
         const normalizedName = name.toLowerCase().trim().replace(/\s+/g, '-');
         
@@ -132,6 +142,7 @@ export const createAdminCategory = async (req, res) => {
             description,
             minimumPrice: minimumPrice || 0,
             isActive: isActive !== undefined ? isActive : true,
+            mainCategory: mainCat._id,
             createdBy: req.admin._id 
         });
 

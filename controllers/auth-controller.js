@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import mongoose from "mongoose";
 import Category from "../models/category.js";
+import University from "../models/university.js";
 import KYCVerification from "../models/kycVerification.js";
 import {
   generateToken,
@@ -460,6 +461,7 @@ export const getTasker = async (req, res) => {
     // Get tasker with populated categories
     const tasker = await Tasker.findById(req.tasker._id)
       .populate("categories", "name displayName description isActive")
+      .populate("university", "name abbreviation state")
       .select(
         "-password -emailVerificationToken -passwordResetToken -loginAttempts -lockUntil",
       );
@@ -487,6 +489,7 @@ export const getTasker = async (req, res) => {
       wallet: tasker.wallet,
       location: tasker.location,
       categories: tasker.categories,
+      university: tasker.university,
       isEmailVerified: tasker.isEmailVerified,
       verifyIdentity: tasker.verifyIdentity,
       isKYCVerified: tasker?.isKYCVerified,
@@ -896,7 +899,7 @@ export const updateProfilePicture = async (req, res) => {
 
 // Update Tasker Categories
 export const updateTaskerCategories = async (req, res) => {
-  const { categories } = req.body;
+  const { categories, university } = req.body;
 
   // Check if user is a tasker
   if (!req.tasker.firstName) {
@@ -963,10 +966,33 @@ export const updateTaskerCategories = async (req, res) => {
     }
 
     req.tasker.categories = uniqueCategoryIds;
+
+    // Handle university update
+    if (university !== undefined) {
+      if (university === null) {
+        req.tasker.university = null;
+      } else if (mongoose.Types.ObjectId.isValid(university)) {
+        const uni = await University.findOne({ _id: university, isActive: true });
+        if (!uni) {
+          return res.status(400).json({
+            status: "error",
+            message: "University not found or inactive",
+          });
+        }
+        req.tasker.university = uni._id;
+      } else {
+        return res.status(400).json({
+          status: "error",
+          message: "Invalid university ID format",
+        });
+      }
+    }
+
     await req.tasker.save();
 
-    // Populate categories for response
+    // Populate categories and university for response
     await req.tasker.populate("categories", "name displayName description");
+    await req.tasker.populate("university", "name abbreviation state");
 
     res.status(200).json({
       status: "success",

@@ -2,6 +2,8 @@ import Tasker from '../models/tasker.js';
 import User from '../models/user.js';
 import { calculateDistance, milesToMeters } from './locationUtils.js';
 import { sendPushToUser, sendPushToMultipleUsers, sendTaskNotification, sendBidNotification } from '../services/onesignal.js';
+import { sendEmail } from './authUtils.js';
+import { newTaskEmailHtml, bidAcceptedEmailHtml, bidRejectedEmailHtml, taskCancelledEmailHtml } from './taskerEmailTemplates.js';
 
 // Notify taskers about new tasks matching their categories
 export const notifyMatchingTaskers = async (task, options = {}) => {
@@ -9,16 +11,21 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
     console.log(`[notify] notifyMatchingTaskers called for task ${task?._id} with options:`, options);
     const enableRadiusFilter = options.enableRadiusFilter === true;
     const defaultMaxDistanceMiles = typeof options.maxDistanceMiles === 'number' ? options.maxDistanceMiles : 200;
-        // Find taskers who have ANY of the task's categories in their categories array
-        const matchingTaskers = await Tasker.find({
+        // Find all active taskers matching the task's categories (for both push + email)
+        // Build tasker query — scope to university for campus tasks
+        const taskerQuery = {
             categories: { $in: task.categories },
             isActive: true,
-            // Do not require email verification for push notifications to avoid missing real-time alerts
-            notificationId: { $ne: null } // Only notify taskers with notification IDs
-        }).populate('categories', 'name displayName');
+        };
+        if (task.university) {
+            taskerQuery.university = task.university;
+        }
+
+        const matchingTaskers = await Tasker.find(taskerQuery)
+            .populate('categories', 'name displayName');
 
         if (matchingTaskers.length === 0) {
-            console.log(`No matching taskers to notify. Reasons may include: no taskers with these categories, accounts inactive, or no notificationId set. Categories: ${task.categories.join(', ')}`);
+            console.log(`No matching taskers to notify. Reasons may include: no taskers with these categories or accounts inactive. Categories: ${task.categories.join(', ')}`);
             return;
     }
     console.log(`Found ${matchingTaskers.length} matching taskers for task: ${task.title}`);
@@ -28,48 +35,47 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
         const taskCategories = await Category.find({ _id: { $in: task.categories } });
         const categoryNames = taskCategories.map(cat => cat.displayName).join(', ');
         
-    // Collect notification IDs for batch sending, with optional radius filtering
+    // Collect push + email recipients, with optional radius filtering
     const notificationIds = [];
-    let skippedNoNotificationId = 0;
+    const emailRecipients = []; // { email, firstName }
     let skippedOutOfRadius = 0;
         
         for (const tasker of matchingTaskers) {
-            if (tasker.notificationId) {
-                // If enabled and both have location, filter by distance
-                if (enableRadiusFilter &&
-                    task.location?.latitude != null && task.location?.longitude != null &&
-                    tasker.location?.latitude != null && tasker.location?.longitude != null) {
-                    const distanceMeters = calculateDistance(
-                        task.location.latitude,
-                        task.location.longitude,
-                        tasker.location.latitude,
-                        tasker.location.longitude
-                    );
-                    const withinRadius = distanceMeters <= milesToMeters(defaultMaxDistanceMiles);
-                    if (!withinRadius) {
-                        skippedOutOfRadius++;
-                        continue; // skip notifying this tasker due to distance
-                    }
+            // If enabled and both have location, filter by distance
+            if (enableRadiusFilter &&
+                task.location?.latitude != null && task.location?.longitude != null &&
+                tasker.location?.latitude != null && tasker.location?.longitude != null) {
+                const distanceMeters = calculateDistance(
+                    task.location.latitude,
+                    task.location.longitude,
+                    tasker.location.latitude,
+                    tasker.location.longitude
+                );
+                const withinRadius = distanceMeters <= milesToMeters(defaultMaxDistanceMiles);
+                if (!withinRadius) {
+                    skippedOutOfRadius++;
+                    continue; // skip notifying this tasker due to distance
                 }
-                notificationIds.push(tasker.notificationId);
-                
-                // Find which categories match for this tasker
-                const matchingCategoryIds = tasker.categories
-                    .filter(taskerCat => task.categories.some(taskCat => taskCat.toString() === taskerCat._id.toString()))
-                    .map(cat => cat.displayName)
-                    .join(', ');
-                    
-                console.log(`📧 Notification: Tasker ${tasker.firstName} ${tasker.lastName} (${tasker.emailAddress}) - New "${categoryNames}" task available: "${task.title}" (matches: ${matchingCategoryIds})`);
-            } else {
-                skippedNoNotificationId++;
             }
+
+            // Push notification (only if they have a notificationId)
+            if (tasker.notificationId) {
+                notificationIds.push(tasker.notificationId);
+            }
+
+            // Email (always)
+            if (tasker.emailAddress) {
+                emailRecipients.push({ email: tasker.emailAddress, firstName: tasker.firstName });
+            }
+                
+            const matchingCategoryIds = tasker.categories
+                .filter(taskerCat => task.categories.some(taskCat => taskCat.toString() === taskerCat._id.toString()))
+                .map(cat => cat.displayName)
+                .join(', ');
+                    
+            console.log(`📧 Notification: Tasker ${tasker.firstName} ${tasker.lastName} (${tasker.emailAddress}) - New "${categoryNames}" task available: "${task.title}" (matches: ${matchingCategoryIds})`);
         }
-    console.log(`[notify] Done building recipients. toNotify=${notificationIds.length}, skippedNoId=${skippedNoNotificationId}, skippedOutOfRadius=${skippedOutOfRadius}`);
-        
-        // Diagnostics when no one to notify
-        if (notificationIds.length === 0) {
-            console.log(`No notification recipients. Skipped out-of-radius: ${skippedOutOfRadius}, missing notificationId: ${skippedNoNotificationId}`);
-        }
+    console.log(`[notify] Done building recipients. push=${notificationIds.length}, email=${emailRecipients.length}, skippedOutOfRadius=${skippedOutOfRadius}`);
 
         // Send batch push notifications
         if (notificationIds.length > 0) {
@@ -111,6 +117,26 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
                 console.log(`Single-send fallback complete. Success: ${successCount}/${notificationIds.length}`);
             }
         }
+
+        // Send emails to all matching taskers
+        if (emailRecipients.length > 0) {
+            let emailSuccess = 0;
+            for (const { email, firstName } of emailRecipients) {
+                try {
+                    const html = newTaskEmailHtml({
+                        taskerName: firstName,
+                        taskTitle: task.title,
+                        categoryNames,
+                        budget: task.budget,
+                    });
+                    await sendEmail({ to: email, subject: `New ${categoryNames} Task: "${task.title}" - TaskHub`, html });
+                    emailSuccess++;
+                } catch (emailErr) {
+                    console.error(`Email send failed for ${email}:`, emailErr.message);
+                }
+            }
+            console.log(`✅ Emails sent to ${emailSuccess}/${emailRecipients.length} taskers`);
+        }
         
     } catch (error) {
         console.error('Error notifying matching taskers:', error);
@@ -145,22 +171,39 @@ export const notifyUserAboutNewBid = async (userId, task, bid, tasker) => {
 // Notify tasker about bid acceptance
 export const notifyTaskerAboutBidAcceptance = async (taskerId, task, bid) => {
     try {
-        const tasker = await Tasker.findById(taskerId).select('firstName lastName notificationId');
-        if (!tasker || !tasker.notificationId) {
-            console.log('Tasker not found or has no notification ID');
+        const tasker = await Tasker.findById(taskerId).select('firstName lastName emailAddress notificationId');
+        if (!tasker) {
+            console.log('Tasker not found');
             return;
         }
 
         const message = `Congratulations! Your bid of ₦${bid.amount} has been accepted for "${task.title}"`;
-        
-        await sendTaskNotification(
-            tasker.notificationId,
-            'Bid Accepted!',
-            message,
-            task._id.toString()
-        );
-        
-        console.log(`✅ Bid acceptance notification sent to tasker ${tasker.firstName} ${tasker.lastName}`);
+
+        // Push notification
+        if (tasker.notificationId) {
+            await sendTaskNotification(
+                tasker.notificationId,
+                'Bid Accepted!',
+                message,
+                task._id.toString()
+            );
+            console.log(`✅ Bid acceptance push sent to tasker ${tasker.firstName} ${tasker.lastName}`);
+        }
+
+        // Email
+        if (tasker.emailAddress) {
+            try {
+                const html = bidAcceptedEmailHtml({
+                    taskerName: tasker.firstName,
+                    taskTitle: task.title,
+                    bidAmount: bid.amount,
+                });
+                await sendEmail({ to: tasker.emailAddress, subject: `Bid Accepted: "${task.title}" - TaskHub`, html });
+                console.log(`✅ Bid acceptance email sent to ${tasker.emailAddress}`);
+            } catch (emailErr) {
+                console.error(`Bid acceptance email failed for ${tasker.emailAddress}:`, emailErr.message);
+            }
+        }
     } catch (error) {
         console.error('Error notifying tasker about bid acceptance:', error);
     }
@@ -169,22 +212,39 @@ export const notifyTaskerAboutBidAcceptance = async (taskerId, task, bid) => {
 // Notify tasker about bid rejection
 export const notifyTaskerAboutBidRejection = async (taskerId, task, bid) => {
     try {
-        const tasker = await Tasker.findById(taskerId).select('firstName lastName notificationId');
-        if (!tasker || !tasker.notificationId) {
-            console.log('Tasker not found or has no notification ID');
+        const tasker = await Tasker.findById(taskerId).select('firstName lastName emailAddress notificationId');
+        if (!tasker) {
+            console.log('Tasker not found');
             return;
         }
 
         const message = `Your bid of ₦${bid.amount} for "${task.title}" was not selected this time`;
-        
-        await sendTaskNotification(
-            tasker.notificationId,
-            'Bid Update',
-            message,
-            task._id.toString()
-        );
-        
-        console.log(`✅ Bid rejection notification sent to tasker ${tasker.firstName} ${tasker.lastName}`);
+
+        // Push notification
+        if (tasker.notificationId) {
+            await sendTaskNotification(
+                tasker.notificationId,
+                'Bid Update',
+                message,
+                task._id.toString()
+            );
+            console.log(`✅ Bid rejection push sent to tasker ${tasker.firstName} ${tasker.lastName}`);
+        }
+
+        // Email
+        if (tasker.emailAddress) {
+            try {
+                const html = bidRejectedEmailHtml({
+                    taskerName: tasker.firstName,
+                    taskTitle: task.title,
+                    bidAmount: bid.amount,
+                });
+                await sendEmail({ to: tasker.emailAddress, subject: `Bid Update: "${task.title}" - TaskHub`, html });
+                console.log(`✅ Bid rejection email sent to ${tasker.emailAddress}`);
+            } catch (emailErr) {
+                console.error(`Bid rejection email failed for ${tasker.emailAddress}:`, emailErr.message);
+            }
+        }
     } catch (error) {
         console.error('Error notifying tasker about bid rejection:', error);
     }
@@ -217,22 +277,38 @@ export const notifyUserAboutTaskCompletion = async (userId, task, tasker) => {
 // Notify tasker about task cancellation
 export const notifyTaskerAboutTaskCancellation = async (taskerId, task) => {
     try {
-        const tasker = await Tasker.findById(taskerId).select('firstName lastName notificationId');
-        if (!tasker || !tasker.notificationId) {
-            console.log('Tasker not found or has no notification ID');
+        const tasker = await Tasker.findById(taskerId).select('firstName lastName emailAddress notificationId');
+        if (!tasker) {
+            console.log('Tasker not found');
             return;
         }
 
         const message = `The task "${task.title}" has been cancelled by the user`;
-        
-        await sendTaskNotification(
-            tasker.notificationId,
-            'Task Cancelled',
-            message,
-            task._id.toString()
-        );
-        
-        console.log(`✅ Task cancellation notification sent to tasker ${tasker.firstName} ${tasker.lastName}`);
+
+        // Push notification
+        if (tasker.notificationId) {
+            await sendTaskNotification(
+                tasker.notificationId,
+                'Task Cancelled',
+                message,
+                task._id.toString()
+            );
+            console.log(`✅ Task cancellation push sent to tasker ${tasker.firstName} ${tasker.lastName}`);
+        }
+
+        // Email
+        if (tasker.emailAddress) {
+            try {
+                const html = taskCancelledEmailHtml({
+                    taskerName: tasker.firstName,
+                    taskTitle: task.title,
+                });
+                await sendEmail({ to: tasker.emailAddress, subject: `Task Cancelled: "${task.title}" - TaskHub`, html });
+                console.log(`✅ Task cancellation email sent to ${tasker.emailAddress}`);
+            } catch (emailErr) {
+                console.error(`Task cancellation email failed for ${tasker.emailAddress}:`, emailErr.message);
+            }
+        }
     } catch (error) {
         console.error('Error notifying tasker about task cancellation:', error);
     }

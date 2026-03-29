@@ -44,6 +44,12 @@ const taskerSchema = new Schema({
         type: Schema.Types.ObjectId,
         ref: 'Category'
     }],
+
+    // University affiliation (required for campus taskers)
+    university: {
+        type: Schema.Types.ObjectId,
+        ref: 'University'
+    },
     
     // New authentication fields
     isEmailVerified: { type: Boolean, default: false },

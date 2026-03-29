@@ -39,10 +39,13 @@ const categorySchema = new Schema({
         type: Date,
         default: Date.now
     },
-    // Add this inside your categorySchema definition
     minimumPrice: {
         type: Number,
         default: 0
+    },
+    mainCategory: {
+        type: Schema.Types.ObjectId,
+        ref: 'MainCategory'
     },
 });
 

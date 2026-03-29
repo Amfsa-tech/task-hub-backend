@@ -22,8 +22,13 @@ import adminChatRoutes from './routes/adminChatRoutes.js';
 import adminSettingsRoutes from './routes/adminSettingsRoutes.js';
 import adminCategoryRoutes from './routes/adminCategoryRoutes.js';
 import adminWithdrawalRoutes from './routes/adminWithdrawalRoutes.js';
+import adminMainCategoryRoutes from './routes/adminMainCategoryRoutes.js';
+import adminUniversityRoutes from './routes/adminUniversityRoutes.js';
 import waitlistRoutes from './routes/waitlistRoute.js';
 import walletRoutes from './routes/walletRoute.js';
+import nearbyTaskerRoutes from './routes/nearbyTaskerRoute.js';
+import mainCategoryRoutes from './routes/mainCategoryRoute.js';
+import universityRoutes from './routes/universityRoute.js';
 import { checkMaintenanceMode } from './middlewares/maintenanceMiddleware.js';
 
 const app = express();
@@ -114,6 +119,8 @@ app.use('/api/admin/messages', adminChatRoutes);     // Support Chat
 app.use('/api/admin/settings', adminSettingsRoutes);
 app.use('/api/admin/categories', adminCategoryRoutes);
 app.use('/api/admin/withdrawals', adminWithdrawalRoutes);
+app.use('/api/admin/main-categories', adminMainCategoryRoutes);
+app.use('/api/admin/universities', adminUniversityRoutes);
 
 
 app.use(checkMaintenanceMode);
@@ -126,6 +133,9 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/v1/kyc', kycRoute);          // Didit identity verification
 app.use('/api/wallet', walletRoutes);        // Wallet funding (Paystack)
+app.use('/api/taskers', nearbyTaskerRoutes); // Public nearby taskers
+app.use('/api/main-categories', mainCategoryRoutes); // Public main categories
+app.use('/api/universities', universityRoutes);       // Public universities
 app.use('/api/waitlist', waitlistRoutes);
 
 

@@ -13,6 +13,14 @@ const taskSchema = new Schema({
         type: Schema.Types.ObjectId,
         ref: 'Category'
     }],
+    mainCategory: {
+        type: Schema.Types.ObjectId,
+        ref: 'MainCategory'
+    },
+    university: {
+        type: Schema.Types.ObjectId,
+        ref: 'University'
+    },
     tags: [{ 
         type: String 
     }],

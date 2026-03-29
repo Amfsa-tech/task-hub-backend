@@ -1,5 +1,6 @@
 import Task from '../models/task.js';
 import User from '../models/user.js';
+import Transaction from '../models/transaction.js';
 
 const PLATFORM_FEE_RATE = 0.15;
 
@@ -198,5 +199,133 @@ export const getPaymentById = async (req, res) => {
     } catch (error) {
         console.error('Get transaction details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch transaction details' });
+    }
+};
+
+/**
+ * GET /api/admin/payments/deposits/stats
+ * Summary stats for user wallet deposits (from Transaction model).
+ */
+export const getDepositStats = async (req, res) => {
+    try {
+        const depositFilter = { paymentPurpose: 'wallet_funding' };
+
+        const [
+            totalDeposits,
+            successCount,
+            pendingCount,
+            failedCount,
+        ] = await Promise.all([
+            Transaction.countDocuments(depositFilter),
+            Transaction.countDocuments({ ...depositFilter, status: 'success' }),
+            Transaction.countDocuments({ ...depositFilter, status: 'pending' }),
+            Transaction.countDocuments({ ...depositFilter, status: 'failed' }),
+        ]);
+
+        const totalAmountAgg = await Transaction.aggregate([
+            { $match: { ...depositFilter, status: 'success' } },
+            { $group: { _id: null, total: { $sum: '$amount' } } }
+        ]);
+        const totalAmount = totalAmountAgg[0]?.total || 0;
+
+        const pendingAmountAgg = await Transaction.aggregate([
+            { $match: { ...depositFilter, status: 'pending' } },
+            { $group: { _id: null, total: { $sum: '$amount' } } }
+        ]);
+        const pendingAmount = pendingAmountAgg[0]?.total || 0;
+
+        return res.json({
+            status: 'success',
+            data: {
+                totalDeposits,
+                success: successCount,
+                pending: pendingCount,
+                failed: failedCount,
+                totalAmount,
+                pendingAmount
+            }
+        });
+    } catch (error) {
+        console.error('Deposit stats error:', error);
+        return res.status(500).json({ status: 'error', message: 'Failed to fetch deposit stats' });
+    }
+};
+
+/**
+ * GET /api/admin/payments/deposits
+ * List all user deposit transactions with filtering and pagination.
+ * Query params: page, limit, status, search, startDate, endDate
+ */
+export const getAllDeposits = async (req, res) => {
+    try {
+        const { page = 1, limit = 10, status, search, startDate, endDate } = req.query;
+
+        const query = { paymentPurpose: 'wallet_funding' };
+
+        if (status && ['success', 'pending', 'failed'].includes(status)) {
+            query.status = status;
+        }
+
+        if (startDate || endDate) {
+            query.createdAt = {};
+            if (startDate) query.createdAt.$gte = new Date(startDate);
+            if (endDate) query.createdAt.$lte = new Date(endDate);
+        }
+
+        // If search term, find matching users first
+        if (search) {
+            const matchingUsers = await User.find({
+                $or: [
+                    { fullName: { $regex: search, $options: 'i' } },
+                    { emailAddress: { $regex: search, $options: 'i' } }
+                ]
+            }).select('_id');
+            query.user = { $in: matchingUsers.map(u => u._id) };
+        }
+
+        const total = await Transaction.countDocuments(query);
+        const deposits = await Transaction.find(query)
+            .populate('user', 'fullName emailAddress profilePicture')
+            .sort({ createdAt: -1 })
+            .limit(Number(limit))
+            .skip((Number(page) - 1) * Number(limit))
+            .select('user amount type status reference provider paymentPurpose currency gatewayResponse createdAt verifiedAt creditedAt');
+
+        return res.json({
+            status: 'success',
+            results: deposits.length,
+            totalRecords: total,
+            totalPages: Math.ceil(total / Number(limit)),
+            currentPage: Number(page),
+            deposits
+        });
+    } catch (error) {
+        console.error('Get deposits error:', error);
+        return res.status(500).json({ status: 'error', message: 'Failed to fetch deposits' });
+    }
+};
+
+/**
+ * GET /api/admin/payments/deposits/:id
+ * Get a single deposit transaction detail.
+ */
+export const getDepositById = async (req, res) => {
+    try {
+        const deposit = await Transaction.findOne({
+            _id: req.params.id,
+            paymentPurpose: 'wallet_funding'
+        }).populate('user', 'fullName emailAddress profilePicture wallet');
+
+        if (!deposit) {
+            return res.status(404).json({ status: 'error', message: 'Deposit not found' });
+        }
+
+        return res.json({
+            status: 'success',
+            data: deposit
+        });
+    } catch (error) {
+        console.error('Get deposit by id error:', error);
+        return res.status(500).json({ status: 'error', message: 'Failed to fetch deposit details' });
     }
 };
