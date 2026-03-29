@@ -675,20 +675,24 @@ const changeTaskStatus = async (req, res) => {
 
             try {
                 if (task.isEscrowHeld && task.escrowAmount > 0) {
-                    // Calculate 15% platform fee
+                    
+                    // NEW MATH: Calculates fee so it is exactly 15% of the Tasker's final payout
                     const platformFeeRate = 0.15;
-                    const platformFee = Math.round(task.escrowAmount * platformFeeRate);
-                    const taskerPayout = task.escrowAmount - platformFee;
+                    const taskerPayout = Math.round(task.escrowAmount / (1 + platformFeeRate));
+                    const platformFee = task.escrowAmount - taskerPayout;
 
                     await Tasker.updateOne(
                         { _id: task.assignedTasker },
                         { $inc: { wallet: taskerPayout } }
                     );
+                    
                     task.isEscrowHeld = false;
                     task.platformFee = platformFee;
                     task.taskerPayout = taskerPayout;
                     task.escrowStatus = 'released';
                     task.completedAt = new Date();
+
+                    // ... (keep the rest of the transaction recording logic exactly the same)
 
                     // Record escrow_release transaction (tasker payout)
                     try {

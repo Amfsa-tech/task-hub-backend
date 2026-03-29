@@ -40,15 +40,20 @@ const taskerSchema = new Schema({
     },
     
     // Task categories the tasker can handle
-    categories: [{ 
+    // REPLACED: categories: [{ type: Schema.Types.ObjectId, ref: 'Category' }]
+    // NEW STRUCTURE:
+    mainCategories: [{
         type: Schema.Types.ObjectId,
         ref: 'Category'
     }],
-
-    // University affiliation (required for campus taskers)
-    university: {
+    subCategories: [{
         type: Schema.Types.ObjectId,
-        ref: 'University'
+        ref: 'Category'
+    }],
+    university: {
+        type: String,
+        trim: true,
+        default: null
     },
     
     // New authentication fields
