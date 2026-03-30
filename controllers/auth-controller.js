@@ -803,7 +803,7 @@ export const verifyTaskerIdentity = async (req, res) => {
 
 export const getTaskerVerificationStatus = async (req, res) => {
   try {
-    const taskerId = req.user.id;
+    const taskerId = req.tasker.id;
     const tasker = await Tasker.findById(taskerId).select("verifyIdentity firstName lastName");
     if (!tasker) return res.status(404).json({ status: "error", message: "Tasker not found" });
     return res.status(200).json({
