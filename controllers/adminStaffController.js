@@ -1,6 +1,5 @@
 import adminAuditLog from '../models/adminAuditLog.js'; 
 import Admin from '../models/admin.js';
-import bcrypt from 'bcryptjs';
 import { logAdminAction } from '../utils/auditLogger.js';
 
 // GET /api/admin/staff/stats (Matches the 3 Top Cards)
@@ -69,22 +68,21 @@ export const createStaff = async (req, res) => {
     try {
         const { firstName, lastName, email, password, role } = req.body;
 
+        if (!firstName || !lastName || !email || !password) {
+            return res.status(400).json({ status: 'error', message: 'First name, last name, email, and password are required' });
+        }
+
         const existingAdmin = await Admin.findOne({ email });
         if (existingAdmin) {
             return res.status(400).json({ status: 'error', message: 'Admin already exists' });
         }
 
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
         const newAdmin = await Admin.create({
-            firstName,
-            lastName,
+            name: `${firstName.trim()} ${lastName.trim()}`,
             email,
-            password: hashedPassword,
-            role: role || 'support', // Default role
-            isActive: true,
-            createdAt: new Date()
+            password,
+            role: role || 'operations',
+            isActive: true
         });
 
         await logAdminAction({
