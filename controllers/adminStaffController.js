@@ -1,29 +1,26 @@
 import adminAuditLog from '../models/adminAuditLog.js'; 
 import Admin from '../models/admin.js';
+import AdminInvite from '../models/adminInvite.js'; // NEW IMPORT
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto'; // NEW IMPORT
 import { logAdminAction } from '../utils/auditLogger.js';
+import { sendAdminInviteEmail } from '../utils/authUtils.js'; // NEW IMPORT
 
 // GET /api/admin/staff/stats (Matches the 3 Top Cards)
 export const getStaffStats = async (req, res) => {
     try {
-        // Logic for "Active Today" (Logged in since 12:00 AM)
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
 
         const [totalAdmin, superAdmin, activeToday] = await Promise.all([
             Admin.countDocuments(),
             Admin.countDocuments({ role: 'super_admin' }),
-            // Requires 'lastLogin' field in your Admin model
             Admin.countDocuments({ lastLogin: { $gte: startOfDay } }) 
         ]);
 
         res.json({
             status: 'success',
-            data: {
-                totalAdmin,
-                activeToday,
-                superAdmin
-            }
+            data: { totalAdmin, activeToday, superAdmin }
         });
     } catch (error) {
         console.error('Staff stats error:', error);
@@ -37,7 +34,6 @@ export const getAllStaff = async (req, res) => {
         const { search, status } = req.query;
         const query = {};
 
-        // 1. Search (Name or Email)
         if (search) {
             query.$or = [
                 { firstName: { $regex: search, $options: 'i' } },
@@ -46,13 +42,12 @@ export const getAllStaff = async (req, res) => {
             ];
         }
 
-        // 2. Status Filter (Active / Suspended)
         if (status === 'active') query.isActive = true;
         if (status === 'suspended') query.isActive = false;
 
         const staff = await Admin.find(query)
-            .select('-password') // Hide password hash
-            .sort({ createdAt: -1 }); // Newest first
+            .select('-password') 
+            .sort({ createdAt: -1 }); 
 
         res.json({
             status: 'success',
@@ -64,40 +59,113 @@ export const getAllStaff = async (req, res) => {
     }
 };
 
-// POST /api/admin/staff (Invite Admin Button)
-export const createStaff = async (req, res) => {
+// POST /api/admin/staff/invite (Invite Admin Button from Figma)
+export const inviteAdmin = async (req, res) => {
     try {
-        const { firstName, lastName, email, password, role } = req.body;
+        const { email, role } = req.body;
 
-        const existingAdmin = await Admin.findOne({ email });
-        if (existingAdmin) {
-            return res.status(400).json({ status: 'error', message: 'Admin already exists' });
+        if (!email) {
+            return res.status(400).json({ status: 'error', message: 'Email address is required' });
         }
 
+        // 1. Check if admin already exists
+        const existingAdmin = await Admin.findOne({ email });
+        if (existingAdmin) {
+            return res.status(400).json({ status: 'error', message: 'An admin with this email already exists' });
+        }
+
+        // 2. Generate a secure random token
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+        // 3. Save or update the invitation
+        let invite = await AdminInvite.findOne({ email });
+        
+        if (invite) {
+            // Update existing invite with new token and expiry
+            invite.token = hashedToken;
+            invite.expiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+            invite.role = role || invite.role;
+            await invite.save();
+        } else {
+            // Create new invite
+            await AdminInvite.create({
+                email,
+                role: role || 'support', 
+                token: hashedToken,
+                invitedBy: req.admin._id,
+                expiresAt: Date.now() + 24 * 60 * 60 * 1000 // 24 hours
+            });
+        }
+
+        // 4. Send the email with the UNHASHED token
+        await sendAdminInviteEmail(email, rawToken);
+
+        await logAdminAction({
+            adminId: req.admin._id,
+            action: 'INVITED_ADMIN',
+            resourceType: 'AdminInvite',
+            details: `Invited email: ${email}`,
+            req
+        });
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Invitation email sent successfully'
+        });
+
+    } catch (error) {
+        console.error('Invite Admin error:', error);
+        res.status(500).json({ status: 'error', message: 'Failed to send invitation' });
+    }
+};
+
+// POST /api/admin/staff/setup (When the invited user clicks the email link)
+export const setupAdminAccount = async (req, res) => {
+    try {
+        const { token, firstName, lastName, password } = req.body;
+
+        if (!token || !firstName || !lastName || !password) {
+            return res.status(400).json({ status: 'error', message: 'All fields are required to setup account' });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({ status: 'error', message: 'Password must be at least 6 characters' });
+        }
+
+        // 1. Hash the provided token to compare with database
+        const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+        // 2. Find valid invitation
+        const invite = await AdminInvite.findOne({
+            token: hashedToken,
+            expiresAt: { $gt: Date.now() } // Ensure it hasn't expired
+        });
+
+        if (!invite) {
+            return res.status(400).json({ status: 'error', message: 'Invalid or expired invitation link' });
+        }
+
+        // 3. Hash password and create the official Admin record
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
         const newAdmin = await Admin.create({
+            name: `${firstName} ${lastName}`, // <--- FIX APPLIED HERE
             firstName,
             lastName,
-            email,
+            email: invite.email,
             password: hashedPassword,
-            role: role || 'support', // Default role
-            isActive: true,
-            createdAt: new Date()
+            role: invite.role,
+            isActive: true
         });
 
-        await logAdminAction({
-            adminId: req.admin._id,
-            action: 'CREATE_ADMIN',
-            resourceType: 'Admin',
-            resourceId: newAdmin._id,
-            req
-        });
+        // 4. Delete the invitation so it can't be used again
+        await AdminInvite.findByIdAndDelete(invite._id);
 
         res.status(201).json({
             status: 'success',
-            message: 'New admin invited successfully',
+            message: 'Admin account setup successfully. You can now log in.',
             admin: {
                 id: newAdmin._id,
                 email: newAdmin.email,
@@ -106,7 +174,8 @@ export const createStaff = async (req, res) => {
         });
 
     } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Failed to create admin' });
+        console.error('Setup Admin error:', error);
+        res.status(500).json({ status: 'error', message: 'Failed to setup admin account' });
     }
 };
 
@@ -115,7 +184,6 @@ export const updateStaffStatus = async (req, res) => {
     try {
         const { isActive } = req.body;
         
-        // Prevent modifying your own status or other super admins if you aren't one
         const targetAdmin = await Admin.findById(req.params.id);
         if (!targetAdmin) return res.status(404).json({ message: 'Admin not found' });
 
@@ -144,57 +212,26 @@ export const updateStaffStatus = async (req, res) => {
 export const getStaffById = async (req, res) => {
     try {
         const staffId = req.params.id;
-
-        // 1. Fetch Admin Profile
         const staff = await Admin.findById(staffId).select('-password');
         
-        if (!staff) {
-            return res.status(404).json({ status: 'error', message: 'Staff member not found' });
-        }
+        if (!staff) return res.status(404).json({ status: 'error', message: 'Staff member not found' });
 
-        // 2. Fetch Recent Activities (Audit Logs for this specific admin)
         const activities = await adminAuditLog.find({ admin: staffId })
             .sort({ createdAt: -1 })
             .limit(10);
 
-        // 3. Define Permission Roles (Hardcoded mapping for UI display)
-        // You can adjust these based on your actual role definitions
         const rolePermissions = {
-            super_admin: [
-                'Full System Access',
-                'Manage Admins & Staff',
-                'Financial Oversight',
-                'System Configuration',
-                'Database Management'
-            ],
-            operations: [
-                'User and Tasker Management',
-                'KYC Verification',
-                'Task Management',
-                'Payment Oversight',
-                'System Logs & Reports'
-            ],
-            support: [
-                'User Disputes',
-                'Chat Support',
-                'Basic User Management',
-                'View Transaction History'
-            ],
-            trust_safety: [
-                'KYC Verification',
-                'Flagged Content Review',
-                'User Suspension/Banning',
-                'Report Resolution'
-            ]
+            super_admin: ['Full System Access', 'Manage Admins & Staff', 'Financial Oversight', 'System Configuration', 'Database Management'],
+            operations: ['User and Tasker Management', 'KYC Verification', 'Task Management', 'Payment Oversight', 'System Logs & Reports'],
+            support: ['User Disputes', 'Chat Support', 'Basic User Management', 'View Transaction History'],
+            trust_safety: ['KYC Verification', 'Flagged Content Review', 'User Suspension/Banning', 'Report Resolution']
         };
 
-        // Get permissions for this user's role (default to empty if role unknown)
         const permissions = rolePermissions[staff.role] || ['Basic View Access'];
 
-        // 4. Format Activity Log for UI
         const formattedActivities = activities.map(log => ({
             id: log._id,
-            action: log.action.replace(/_/g, ' '), // Convert "USER_SUSPENDED" to "USER SUSPENDED"
+            action: log.action.replace(/_/g, ' '), 
             details: log.details || `Performed action on ${log.resourceType}`,
             date: log.createdAt
         }));
@@ -207,19 +244,19 @@ export const getStaffById = async (req, res) => {
                     firstName: staff.firstName,
                     lastName: staff.lastName,
                     email: staff.email,
-                    role: staff.role, // e.g., "Operations Admin"
-                    phone: staff.phoneNumber || 'N/A', // Ensure this field exists in your Schema or return N/A
-                    location: staff.location || 'N/A', // Ensure this field exists in your Schema or return N/A
+                    role: staff.role, 
+                    phone: staff.phoneNumber || 'N/A', 
+                    location: staff.location || 'N/A', 
                     joinedAt: staff.createdAt,
                     isActive: staff.isActive
                 },
-                permissions: permissions, // Populates the "Permission Access" box
+                permissions: permissions, 
                 accountInfo: {
                     adminId: staff._id,
                     role: staff.role,
                     lastUpdated: staff.updatedAt
                 },
-                recentActivities: formattedActivities // Populates the "Recent Activities" timeline
+                recentActivities: formattedActivities 
             }
         });
 

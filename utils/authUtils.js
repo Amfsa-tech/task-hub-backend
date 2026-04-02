@@ -107,6 +107,7 @@ export const sendVerificationEmail = async (email, token, userType = 'user') => 
             margin: 0;
             font-size: 28px;
             font-weight: 600;
+            color: #333;
         }
         
         /* Content */
@@ -190,7 +191,7 @@ export const sendVerificationEmail = async (email, token, userType = 'user') => 
     <div class="email-container">
         <div class="header">
             <div class="logo"><img src="https://res.cloudinary.com/daf6mdwkh/image/upload/v1750868774/20250614_185641_iwuj1n.png" alt="TaskHub" style="width: 100px; height: 100px;"></div>
-            <h1>Verify Your Account</h1>
+            <h1 style="color: #333;">Verify Your Account</h1>
         </div>
         
         <div class="content">
@@ -208,7 +209,7 @@ export const sendVerificationEmail = async (email, token, userType = 'user') => 
         </div>
         
         <div class="footer">
-            <p>© 2025 TaskHub. All rights reserved.</p>
+            <p>© 2026 TaskHub. All rights reserved.</p>
             
             
             <p>TaskHub</p>
@@ -270,6 +271,7 @@ export const sendPasswordResetEmail = async (email, token, userType = 'user') =>
             margin: 0;
             font-size: 28px;
             font-weight: 600;
+            color: #333;
         }
         
         /* Content */
@@ -353,7 +355,7 @@ export const sendPasswordResetEmail = async (email, token, userType = 'user') =>
     <div class="email-container">
         <div class="header">
             <div class="logo"><img src="https://res.cloudinary.com/daf6mdwkh/image/upload/v1750868774/20250614_185641_iwuj1n.png" alt="TaskHub" style="width: 100px; height: 100px;"></div>
-            <h1>Reset Your Password</h1>
+            <h1 style="color: #333;">Reset Your Password</h1>
         </div>
         
         <div class="content">
@@ -372,7 +374,7 @@ export const sendPasswordResetEmail = async (email, token, userType = 'user') =>
         </div>
         
         <div class="footer">
-            <p>© 2025 TaskHub. All rights reserved.</p>
+            <p>© 2026 TaskHub. All rights reserved.</p>
             
             
             <p>TaskHub</p>
@@ -383,6 +385,150 @@ export const sendPasswordResetEmail = async (email, token, userType = 'user') =>
     `;
 
     await sendEmail({ to: email, subject: 'Password Reset - TaskHub', html });
+    return true;
+};
+
+// NEW: Send Admin Invite Email
+export const sendAdminInviteEmail = async (email, token) => {
+    console.log("sending admin invite email");
+    
+    // Ensure FRONTEND_URL is set in your .env, fallback to localhost for development
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const inviteLink = `${frontendUrl}/admin/setup-account?token=${token}`;
+
+    const html = `
+                <html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Invitation</title>
+    <style>
+        /* Base Styles */
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 0;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        /* Email Container */
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+        
+        /* Header */
+        .header {
+            background-color: white;
+            padding: 30px 20px;
+            text-align: center;
+            color: white;
+        }
+        
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        /* Content */
+        .content {
+            padding: 30px;
+            color: #333;
+            text-align: center;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background-color: #8600AF;
+            color: white;
+            text-decoration: none;
+            padding: 14px 28px;
+            border-radius: 50px;
+            font-weight: 600;
+            margin: 20px 0;
+            transition: all 0.3s ease;
+        }
+        
+        .cta-button:hover {
+            background-color: #6a0088;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(134, 0, 175, 0.3);
+        }
+        
+        /* Footer */
+        .footer {
+            background-color: #121212;
+            color: #aaa;
+            padding: 25px;
+            text-align: center;
+            font-size: 14px;
+        }
+        
+        .footer a {
+            color: #ddd;
+            text-decoration: none;
+        }
+        
+        /* Responsive */
+        @media screen and (max-width: 600px) {
+            .email-container {
+                border-radius: 0;
+            }
+            .content {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <div class="logo"><img src="https://res.cloudinary.com/daf6mdwkh/image/upload/v1750868774/20250614_185641_iwuj1n.png" alt="TaskHub" style="width: 100px; height: 100px;"></div>
+            <h1 style="color: #333;">Join TaskHub Admin</h1>
+        </div>
+        
+        <div class="content">
+            <p>Hello,</p>
+            <p>You have been invited to join the TaskHub system as an Administrator.</p>
+            <p>Please click the button below to set up your account profile and password:</p>
+            
+            <a href="${inviteLink}" class="cta-button">Setup Admin Account</a>
+            
+            <p style="margin-top: 20px; font-size: 14px; color: #666;">This link will expire in 24 hours. If you did not expect this invitation, please ignore this email.</p>
+            
+            <p style="margin-top: 30px; text-align: left;">Best regards,<br>The TaskHub Team</p>
+        </div>
+        
+        <div class="footer">
+            <p>© 2026 TaskHub. All rights reserved.</p>
+            <p>TaskHub</p>
+        </div>
+    </div>
+</body>
+</html>
+    `;
+
+    await sendEmail({ to: email, subject: 'Admin Invitation - TaskHub', html });
+    
+    // Also log the link to the console for easy testing in development/Postman!
+    console.log('\n--- ADMIN INVITE DEV LINK ---');
+    console.log(inviteLink);
+    console.log('-----------------------------\n');
+    
     return true;
 };
 
@@ -399,7 +545,8 @@ export default {
     sendEmail,
     sendVerificationEmail,
     sendPasswordResetEmail,
+    sendAdminInviteEmail, // ADDED TO EXPORTS
     MAX_LOGIN_ATTEMPTS,
     LOCK_TIME,
     JWT_SECRET
-}; 
+};

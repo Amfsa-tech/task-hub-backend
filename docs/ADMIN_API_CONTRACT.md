@@ -151,12 +151,14 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 ## 12. Staff Management (`/api/admin/staff`)
 
 | Method | Endpoint | Description | Roles |
-| --- | --- | --- | --- |
-| **GET** | `/api/admin/staff/stats` | Staff hierarchy and count. | `super_admin` |
-| **GET** | `/api/admin/staff` | List all admin/staff accounts. | `super_admin` |
-| **POST** | `/api/admin/staff` | Create a new staff account. | `super_admin` |
-| **GET** | `/api/admin/staff/:id` | Get specific staff member details. | `super_admin` |
-| **PATCH** | `/api/admin/staff/:id/status` | Change staff active/inactive status. | `super_admin` |
+| :--- | :--- | :--- | :--- |
+| **GET** | `/api/admin/staff/stats` | Staff hierarchy and count (Active today, Total, Super Admins). | `super_admin` |
+| **GET** | `/api/admin/staff` | List all admin/staff accounts. Supports `?search=` and `?status=` queries. | `super_admin` |
+| **POST** | `/api/admin/staff/invite` | Sends an email invitation with a secure setup token. Payload requires `email` and `role`. | `super_admin` |
+| **POST** | `/api/admin/staff/setup` | **PUBLIC ROUTE (No Auth Required).** Finalizes account creation from the email link. Payload requires `token` (from URL), `firstName`, `lastName`, and `password`. | None (Public) |
+| **GET** | `/api/admin/staff/:id` | Get specific staff member details, including their recent activity logs and permissions. | `super_admin` |
+| **PATCH** | `/api/admin/staff/:id/status` | Change staff active/inactive status. Payload requires `{"isActive": boolean}`. | `super_admin` |
+
 
 ---
 ## 13. Category Management (`/api/admin/categories`)
@@ -168,6 +170,18 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 | **POST** | `/api/admin/categories` | Create a new category. Payload: `name`, `displayName`. Optional: `description`, `minimumPrice`, `parentCategory` (pass a Main Category ID here to create a Subcategory). | `super_admin`, `operations` |
 | **PATCH** | `/api/admin/categories/:id` | Update category details, toggle `isActive` status, or reassign `parentCategory`. | `super_admin`, `operations` |
 | **DELETE** | `/api/admin/categories/:id` | Delete a category. **Note:** Returns a `400` error if it contains subcategories or is actively assigned to any tasks/taskers. | `super_admin`, `operations` |
+
+---
+
+## 14. Notification Management (`/api/admin/notifications`)
+
+| Method | Endpoint | Description | Roles |
+| :--- | :--- | :--- | :--- |
+| **GET** | `/api/admin/notifications/stats` | Fetches aggregate analytics for the notification dashboard, including `totalSent` and global `openRate`. | `super_admin`, `operations`, `support` |
+| **GET** | `/api/admin/notifications` | Retrieves a chronological list of all broadcasted notifications for the "Sent Notifications" table. Includes sender details. | `super_admin`, `operations`, `support` |
+| **POST** | `/api/admin/notifications/send` | Broadcasts a new notification. Payload requires `title`, `message`, and `audience` (Options: 'All Users', 'All Taskers', 'Everyone', 'Selected Users'). Optional: `type`, `selectedUserIds`. | `super_admin`, `operations`, `support` |
+
+
 
 
 
