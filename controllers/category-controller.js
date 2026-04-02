@@ -74,8 +74,8 @@ const getAllCategories = async (req, res) => {
     try {
         // For public use, only return active categories
         const categories = await Category.find({ isActive: true })
-            .select('_id name displayName description mainCategory')
-            .populate('mainCategory', '_id name displayName')
+            .select('_id name displayName description parentCategory mainCategory')
+            .populate('parentCategory', '_id name displayName')
             .sort({ displayName: 1 });
             
         res.status(200).json({
