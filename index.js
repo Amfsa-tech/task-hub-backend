@@ -24,6 +24,7 @@ import adminCategoryRoutes from './routes/adminCategoryRoutes.js';
 import adminWithdrawalRoutes from './routes/adminWithdrawalRoutes.js';
 import adminMainCategoryRoutes from './routes/adminMainCategoryRoutes.js';
 import adminUniversityRoutes from './routes/adminUniversityRoutes.js';
+import adminNotificationRoutes from './routes/adminNotificationRoutes.js';
 import waitlistRoutes from './routes/waitlistRoute.js';
 import walletRoutes from './routes/walletRoute.js';
 import nearbyTaskerRoutes from './routes/nearbyTaskerRoute.js';
@@ -121,6 +122,7 @@ app.use('/api/admin/categories', adminCategoryRoutes);
 app.use('/api/admin/withdrawals', adminWithdrawalRoutes);
 app.use('/api/admin/main-categories', adminMainCategoryRoutes);
 app.use('/api/admin/universities', adminUniversityRoutes);
+app.use('/api/admin/notifications', adminNotificationRoutes); // Admin Notifications
 
 
 app.use(checkMaintenanceMode);
