@@ -91,7 +91,7 @@ export const inviteAdmin = async (req, res) => {
             // Create new invite
             await AdminInvite.create({
                 email,
-                role: role || 'support', 
+                role: role || 'operations', 
                 token: hashedToken,
                 invitedBy: req.admin._id,
                 expiresAt: Date.now() + 24 * 60 * 60 * 1000 // 24 hours
@@ -223,7 +223,7 @@ export const getStaffById = async (req, res) => {
         const rolePermissions = {
             super_admin: ['Full System Access', 'Manage Admins & Staff', 'Financial Oversight', 'System Configuration', 'Database Management'],
             operations: ['User and Tasker Management', 'KYC Verification', 'Task Management', 'Payment Oversight', 'System Logs & Reports'],
-            support: ['User Disputes', 'Chat Support', 'Basic User Management', 'View Transaction History'],
+            finance: ['Financial Oversight', 'Payment Processing', 'Withdrawal Management', 'Transaction Reports'],
             trust_safety: ['KYC Verification', 'Flagged Content Review', 'User Suspension/Banning', 'Report Resolution']
         };
 
