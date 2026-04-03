@@ -3,7 +3,6 @@ import { Types } from 'mongoose';
 import crypto from 'crypto';
 import { calculateDistance, milesToMeters } from '../utils/locationUtils.js';
 import Category from '../models/category.js';
-import MainCategory from '../models/mainCategory.js';
 import University from '../models/university.js';
 import Tasker from '../models/tasker.js';
 import Bid from '../models/bid.js';
@@ -92,7 +91,7 @@ const createTask = async (req, res) => {
             });
         }
 
-        const mainCat = await MainCategory.findById(mainCategory);
+        const mainCat = await Category.findOne({ _id: mainCategory, parentCategory: null });
         if (!mainCat || !mainCat.isActive) {
             return res.status(400).json({
                 status: "error",
@@ -102,7 +101,7 @@ const createTask = async (req, res) => {
 
         // Validate all subcategories belong to the provided mainCategory
         const mismatchedCategories = existingCategories.filter(
-            cat => cat.mainCategory && cat.mainCategory.toString() !== mainCategory
+            cat => cat.parentCategory && cat.parentCategory.toString() !== mainCategory
         );
         if (mismatchedCategories.length > 0) {
             return res.status(400).json({
@@ -194,8 +193,8 @@ const createTask = async (req, res) => {
         const task = new Task({
             title,
             description,
-            categories: uniqueCategories,
             mainCategory: mainCat._id,
+            subCategory: uniqueCategories[0],
             university: validatedUniversity,
             tags: tags || [],
             images: images || [],
