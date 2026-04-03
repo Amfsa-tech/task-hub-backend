@@ -33,8 +33,8 @@ export const findNearbyTaskers = async ({ latitude, longitude } = {}) => {
     // Fetch candidates sorted by rating, with extra buffer for precise filtering
     const limit = hasLocation ? MAX_RESULTS * 5 : MAX_RESULTS;
     const taskers = await Tasker.find(query)
-        .select('firstName lastName profilePicture averageRating area residentState location categories')
-        .populate({ path: 'categories', select: 'displayName', options: { limit: 1 } })
+        .select('firstName lastName profilePicture averageRating area residentState location subCategories')
+        .populate({ path: 'subCategories', select: 'displayName', options: { limit: 1 } })
         .sort({ averageRating: -1 })
         .limit(limit)
         .lean();
@@ -70,7 +70,7 @@ export const findNearbyTaskers = async ({ latitude, longitude } = {}) => {
         profilePicture: t.profilePicture,
         averageRating: t.averageRating,
         completedJobs: jobCountMap[t._id.toString()] || 0,
-        primaryCategory: t.categories?.[0]?.displayName || null,
+        primaryCategory: t.subCategories?.[0]?.displayName || null,
         area: t.area || null,
         residentState: t.residentState,
         ...(hasLocation && t.distance != null ? { distance: Math.round((t.distance / 1000) * 10) / 10 } : {})

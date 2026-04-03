@@ -213,7 +213,7 @@ const createTask = async (req, res) => {
         
         // Notify matching taskers about the new task (non-blocking)
         try {
-            console.log(`[notify] Triggering notifications for task ${task._id} (${task.title}) in categories: ${task.categories.join(', ')}`);
+            console.log(`[notify] Triggering notifications for task ${task._id} (${task.title}) mainCategory: ${task.mainCategory}, subCategory: ${task.subCategory}`);
             await notifyMatchingTaskers(task);
         } catch (notificationError) {
             console.error('Error sending notifications:', notificationError);
@@ -270,7 +270,8 @@ const getAllTasks = async (req, res) => {
     const tasks = await Task.find(filterOptions)
             .populate('user', 'fullName profilePicture')
             .populate('assignedTasker', 'firstName lastName profilePicture')
-            .populate('categories', 'name displayName description')
+            .populate('mainCategory', 'name displayName description')
+            .populate('subCategory', 'name displayName description')
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit);
@@ -308,7 +309,8 @@ const getTaskById = async (req, res) => {
     const task = await Task.findById(id)
             .populate('user', 'fullName profilePicture')
             .populate('assignedTasker', 'firstName lastName profilePicture')
-            .populate('categories', 'name displayName description');
+            .populate('mainCategory', 'name displayName description')
+            .populate('subCategory', 'name displayName description');
             
         if (!task) {
             return res.status(404).json({
@@ -534,7 +536,8 @@ const getUserTasks = async (req, res) => {
         // Get tasks with pagination
     const tasks = await Task.find(filterOptions)
             .populate('assignedTasker', 'firstName lastName profilePicture')
-            .populate('categories', 'name displayName description')
+            .populate('mainCategory', 'name displayName description')
+            .populate('subCategory', 'name displayName description')
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit);
@@ -913,7 +916,7 @@ const getTaskerFeed = async (req, res) => {
         const skip = (page - 1) * limit;
         
         // Get tasker with categories
-    const tasker = await Tasker.findById(req.tasker._id).populate('categories');
+    const tasker = await Tasker.findById(req.tasker._id).populate('subCategories');
         
         if (!tasker) {
             return res.status(404).json({
@@ -922,7 +925,7 @@ const getTaskerFeed = async (req, res) => {
             });
         }
         
-        if (!tasker.categories || tasker.categories.length === 0) {
+        if (!tasker.subCategories || tasker.subCategories.length === 0) {
             return res.json({
                 status: "success",
                 message: "No categories set. Please update your categories to see relevant tasks.",
@@ -938,12 +941,12 @@ const getTaskerFeed = async (req, res) => {
         }
         
         // Get tasker's category IDs
-        const taskerCategoryIds = tasker.categories.map(cat => cat._id);
+        const taskerCategoryIds = tasker.subCategories.map(cat => cat._id);
         
         // Build filter for tasks matching tasker's categories
         const filterOptions = {
             // Only show tasks in tasker's categories
-            categories: { $in: taskerCategoryIds },
+            subCategory: { $in: taskerCategoryIds },
             // Only show open tasks (available for bidding)
             status: 'open',
             // Optionally filter by bidding enabled
@@ -995,7 +998,8 @@ const getTaskerFeed = async (req, res) => {
         // Get tasks with pagination
     let tasks = await Task.find(filterOptions)
             .populate('user', 'fullName profilePicture')
-            .populate('categories', 'name displayName description')
+            .populate('mainCategory', 'name displayName description')
+            .populate('subCategory', 'name displayName description')
             .select('-__v') // Exclude version field
             .sort({ createdAt: -1 })
             .skip(skip)

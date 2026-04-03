@@ -81,7 +81,8 @@ export const getAllTasks = async (req, res) => {
         const tasks = await Task.find(filter)
             .populate('user', 'fullName emailAddress profilePicture') // Added profilePicture for UI
             .populate('assignedTasker', 'firstName lastName emailAddress')
-            .populate('categories', 'name') // <--- NEW: Populates the "CATEGORY" column
+            .populate('mainCategory', 'name')
+            .populate('subCategory', 'name')
             .sort({ createdAt: -1 })
             .limit(limit * 1)
             .skip((page - 1) * limit);
@@ -116,7 +117,8 @@ export const getTaskById = async (req, res) => {
         const task = await Task.findById(taskId)
             .populate('user', 'fullName emailAddress profilePicture phone') 
             .populate('assignedTasker', 'firstName lastName emailAddress profilePicture phone') 
-            .populate('categories', 'name');
+            .populate('mainCategory', 'name')
+            .populate('subCategory', 'name');
 
         if (!task) {
             return res.status(404).json({ status: 'error', message: 'Task not found' });
@@ -147,8 +149,8 @@ export const getTaskById = async (req, res) => {
                     negotiable: task.budgetType === 'negotiable' ? 'YES' : 'NO',
                     
                     // --- THE FIX IS HERE ---
-                    // We use '?.' to check if categories exists before trying to read [0]
-                    category: task.categories?.[0]?.name || 'General', 
+                    // We use '?.' to check if mainCategory exists
+                    category: task.mainCategory?.name || 'General', 
                     // -----------------------
 
                     createdAt: task.createdAt,

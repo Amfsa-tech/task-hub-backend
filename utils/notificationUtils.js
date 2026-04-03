@@ -14,7 +14,7 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
         // Find all active taskers matching the task's categories (for both push + email)
         // Build tasker query — scope to university for campus tasks
         const taskerQuery = {
-            categories: { $in: task.categories },
+            subCategories: task.subCategory,
             isActive: true,
         };
         if (task.university) {
@@ -22,18 +22,18 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
         }
 
         const matchingTaskers = await Tasker.find(taskerQuery)
-            .populate('categories', 'name displayName');
+            .populate('subCategories', 'name displayName');
 
         if (matchingTaskers.length === 0) {
-            console.log(`No matching taskers to notify. Reasons may include: no taskers with these categories or accounts inactive. Categories: ${task.categories.join(', ')}`);
+            console.log(`No matching taskers to notify. Reasons may include: no taskers with these categories or accounts inactive. subCategory: ${task.subCategory}`);
             return;
     }
     console.log(`Found ${matchingTaskers.length} matching taskers for task: ${task.title}`);
         
         // Get category names for logging
         const Category = (await import('../models/category.js')).default;
-        const taskCategories = await Category.find({ _id: { $in: task.categories } });
-        const categoryNames = taskCategories.map(cat => cat.displayName).join(', ');
+        const taskCategory = await Category.findById(task.subCategory);
+        const categoryNames = taskCategory?.displayName || 'Unknown';
         
     // Collect push + email recipients, with optional radius filtering
     const notificationIds = [];
@@ -68,8 +68,8 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
                 emailRecipients.push({ email: tasker.emailAddress, firstName: tasker.firstName });
             }
                 
-            const matchingCategoryIds = tasker.categories
-                .filter(taskerCat => task.categories.some(taskCat => taskCat.toString() === taskerCat._id.toString()))
+            const matchingCategoryIds = tasker.subCategories
+                .filter(taskerCat => taskerCat._id.toString() === task.subCategory.toString())
                 .map(cat => cat.displayName)
                 .join(', ');
                     
@@ -368,9 +368,9 @@ export const sendWelcomeNotificationToTasker = async (taskerId) => {
 export const getTaskersByCategory = async (categoryId) => {
     try {
         const taskers = await Tasker.find({
-            categories: categoryId,
+            subCategories: categoryId,
             isActive: true
-        }).populate('categories', 'name displayName description');
+        }).populate('subCategories', 'name displayName description');
         
         return taskers;
     } catch (error) {
@@ -385,9 +385,9 @@ export const getCategoryMatchStats = async (categoryId) => {
         const Task = (await import('../models/task.js')).default;
         
         const [taskersCount, tasksCount, recentTasks] = await Promise.all([
-            Tasker.countDocuments({ categories: categoryId, isActive: true }),
-            Task.countDocuments({ categories: categoryId }),
-            Task.find({ categories: categoryId })
+            Tasker.countDocuments({ subCategories: categoryId, isActive: true }),
+            Task.countDocuments({ subCategory: categoryId }),
+            Task.find({ subCategory: categoryId })
                 .sort({ createdAt: -1 })
                 .limit(5)
                 .select('title createdAt status budget')
