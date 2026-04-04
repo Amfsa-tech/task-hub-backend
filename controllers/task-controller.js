@@ -945,13 +945,16 @@ const getTaskerFeed = async (req, res) => {
         
         // Build filter for tasks matching tasker's categories
         const filterOptions = {
-            // Only show tasks in tasker's categories
-            subCategory: { $in: taskerCategoryIds },
             // Only show open tasks (available for bidding)
             status: 'open',
             // Optionally filter by bidding enabled
             ...(req.query.biddingOnly === 'true' && { isBiddingEnabled: true })
         };
+
+        // Only filter by category if tasker has subCategories set
+        if (taskerCategoryIds.length > 0) {
+            filterOptions.subCategory = { $in: taskerCategoryIds };
+        }
         
         // Additional filters from query params
         if (req.query.budget_min || req.query.budget_max) {
@@ -965,18 +968,13 @@ const getTaskerFeed = async (req, res) => {
         }
         
         // Location-based filtering (within specified radius)
-        // Apply location filtering if tasker has location set (default 200 miles)
-        if (tasker.location && tasker.location.latitude && tasker.location.longitude) {
-            const maxDistanceMiles = parseFloat(req.query.maxDistance) || 200; // Default 200 miles
-            
-            // Debugging: Log the tasker's location and max distance
-            console.log('🌍 Location filtering enabled:');
-            console.log(`   Tasker location: ${tasker.location.latitude}, ${tasker.location.longitude}`);
-            console.log(`   Max distance: ${maxDistanceMiles} miles`);
-            
+        const hasLocation = tasker.location && tasker.location.latitude && tasker.location.longitude;
+        const maxDistanceMiles = parseFloat(req.query.maxDistance) || 200; // Default 200 miles
+
+        if (hasLocation) {
             // Use bounding box for initial MongoDB filtering (performance optimization)
             const latDelta = maxDistanceMiles / 69; // Rough miles to degrees latitude
-            const lngDelta = maxDistanceMiles / (69 * Math.cos(tasker.location.latitude * Math.PI / 180)); // Adjust for longitude
+            const lngDelta = maxDistanceMiles / (69 * Math.cos(tasker.location.latitude * Math.PI / 180));
             
             filterOptions['location.latitude'] = {
                 $gte: tasker.location.latitude - latDelta,
@@ -986,41 +984,29 @@ const getTaskerFeed = async (req, res) => {
                 $gte: tasker.location.longitude - lngDelta,
                 $lte: tasker.location.longitude + lngDelta
             };
-            
-            console.log(`   Bounding box: lat ${tasker.location.latitude - latDelta} to ${tasker.location.latitude + latDelta}`);
-            console.log(`   Bounding box: lng ${tasker.location.longitude - lngDelta} to ${tasker.location.longitude + lngDelta}`);
         }
+
+        // Log the filter being applied for debugging
+        console.log('📋 Tasker feed filter:', JSON.stringify(filterOptions, null, 2));
+        console.log('📋 Tasker subCategory IDs:', taskerCategoryIds.map(id => id.toString()));
         
-        // Count total tasks matching the filter
-    const totalTasks = await Task.countDocuments(filterOptions);
-        const totalPages = Math.ceil(totalTasks / limit);
-        
-        // Get tasks with pagination
-    let tasks = await Task.find(filterOptions)
+        // Get ALL matching tasks first (no pagination yet), then apply precise distance filter
+        let tasks = await Task.find(filterOptions)
             .populate('user', 'fullName profilePicture')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description')
-            .select('-__v') // Exclude version field
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limit);
+            .select('-__v')
+            .sort({ createdAt: -1 });
         
         // Apply precise distance filtering if tasker has location
-        if (tasker.location && tasker.location.latitude && tasker.location.longitude) {
-            const maxDistanceMiles = parseFloat(req.query.maxDistance) || 200; // Default 200 miles
+        if (hasLocation) {
             const maxDistanceMeters = milesToMeters(maxDistanceMiles);
             
-            console.log(`🔍 Applying precise distance filtering...`);
-            console.log(`   Tasks before filtering: ${tasks.length}`);
-            
             tasks = tasks.filter(task => {
-                // Check if task has location
                 if (!task.location || !task.location.latitude || !task.location.longitude) {
-                    console.log(`   ❌ Task "${task.title}" has no location, excluding`);
                     return false;
                 }
                 
-                // Calculate precise distance
                 const distance = calculateDistance(
                     tasker.location.latitude,
                     tasker.location.longitude,
@@ -1028,18 +1014,14 @@ const getTaskerFeed = async (req, res) => {
                     task.location.longitude
                 );
                 
-                const distanceMiles = distance / 1609.34; // Convert meters to miles
-                const withinRadius = distance <= maxDistanceMeters;
-                
-                console.log(`   📍 Task "${task.title}" at ${task.location.latitude}, ${task.location.longitude}`);
-                console.log(`      Distance: ${distanceMiles.toFixed(2)} miles (${distance.toFixed(0)} meters)`);
-                console.log(`      Within radius: ${withinRadius ? '✅ YES' : '❌ NO'}`);
-                
-                return withinRadius;
+                return distance <= maxDistanceMeters;
             });
-            
-            console.log(`   Tasks after filtering: ${tasks.length}`);
         }
+
+        // Apply pagination AFTER all filtering
+        const totalTasks = tasks.length;
+        const totalPages = Math.ceil(totalTasks / limit);
+        tasks = tasks.slice(skip, skip + limit);
         
         // Check if tasker has already bid on these tasks
         const taskIds = tasks.map(task => task._id);
@@ -1083,24 +1065,14 @@ const getTaskerFeed = async (req, res) => {
             status: "success",
             message: "Tasker feed retrieved successfully",
             tasks: tasksWithBidInfo,
-            // taskerCategories: tasker.categories,
-            // pagination: {
-            //     currentPage: page,
-            //     totalPages,
-            //     totalTasks,
-            //     hasNextPage: page < totalPages,
-            //     hasPrevPage: page > 1,
-            //     tasksPerPage: limit
-            // },
-            // filters: {
-            //     appliedFilters: filterOptions,
-            //     availableFilters: {
-            //         biddingOnly: "Show only tasks with bidding enabled",
-            //         budget_min: "Minimum budget filter",
-            //         budget_max: "Maximum budget filter",
-            //         maxDistance: "Maximum distance in miles (default: 200, requires tasker location)"
-            //     }
-            // }
+            pagination: {
+                currentPage: page,
+                totalPages,
+                totalTasks,
+                hasNextPage: page < totalPages,
+                hasPrevPage: page > 1,
+                tasksPerPage: limit
+            }
         });
         
     } catch (error) {
