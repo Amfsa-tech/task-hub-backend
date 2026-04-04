@@ -1,10 +1,10 @@
 import adminAuditLog from '../models/adminAuditLog.js'; 
 import Admin from '../models/admin.js';
-import AdminInvite from '../models/adminInvite.js'; // NEW IMPORT
+import AdminInvite from '../models/adminInvite.js'; 
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto'; // NEW IMPORT
+import crypto from 'crypto'; 
 import { logAdminAction } from '../utils/auditLogger.js';
-import { sendAdminInviteEmail } from '../utils/authUtils.js'; // NEW IMPORT
+import { sendAdminInviteEmail } from '../utils/authUtils.js'; 
 
 // GET /api/admin/staff/stats (Matches the 3 Top Cards)
 export const getStaffStats = async (req, res) => {
@@ -91,7 +91,7 @@ export const inviteAdmin = async (req, res) => {
             // Create new invite
             await AdminInvite.create({
                 email,
-                role: role || 'support', 
+                role: role || 'operations', 
                 token: hashedToken,
                 invitedBy: req.admin._id,
                 expiresAt: Date.now() + 24 * 60 * 60 * 1000 // 24 hours
@@ -146,16 +146,14 @@ export const setupAdminAccount = async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'Invalid or expired invitation link' });
         }
 
-        // 3. Hash password and create the official Admin record
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
+        // 3. Create the official Admin record using the RAW password. 
+        // The Mongoose pre('save') hook will handle the bcrypt hashing automatically.
         const newAdmin = await Admin.create({
-            name: `${firstName} ${lastName}`, // <--- FIX APPLIED HERE
+            name: `${firstName} ${lastName}`,
             firstName,
             lastName,
             email: invite.email,
-            password: hashedPassword,
+            password: password, // <-- Fix applied here
             role: invite.role,
             isActive: true
         });
@@ -223,7 +221,7 @@ export const getStaffById = async (req, res) => {
         const rolePermissions = {
             super_admin: ['Full System Access', 'Manage Admins & Staff', 'Financial Oversight', 'System Configuration', 'Database Management'],
             operations: ['User and Tasker Management', 'KYC Verification', 'Task Management', 'Payment Oversight', 'System Logs & Reports'],
-            support: ['User Disputes', 'Chat Support', 'Basic User Management', 'View Transaction History'],
+            finance: ['Financial Oversight', 'Payment Processing', 'Withdrawal Management', 'Transaction Reports'],
             trust_safety: ['KYC Verification', 'Flagged Content Review', 'User Suspension/Banning', 'Report Resolution']
         };
 
