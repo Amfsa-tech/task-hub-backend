@@ -81,7 +81,7 @@ export const getAllTaskers = async (req, res) => {
 
         const taskers = await Tasker.find(query)
             .select('-password') 
-            .populate('categories', 'name') 
+            .populate('subCategories', 'name') 
             .sort(sortOption)
             .limit(limit * 1)
             .skip((page - 1) * limit);
@@ -93,7 +93,7 @@ export const getAllTaskers = async (req, res) => {
             lastName: t.lastName,
             emailAddress: t.emailAddress,
             profilePicture: t.profilePicture || '', // <--- Always returns at least an empty string
-            categories: t.categories,
+            categories: t.subCategories,
             isActive: t.isActive,
             verifyIdentity: t.verifyIdentity,
             updatedAt: t.updatedAt,
@@ -123,7 +123,7 @@ export const getTaskerById = async (req, res) => {
 
         const tasker = await Tasker.findById(taskerId)
             .select('-password')
-            .populate('categories', 'name');
+            .populate('subCategories', 'name');
 
         if (!tasker) {
             return res.status(404).json({ status: 'error', message: 'Tasker not found' });
@@ -187,7 +187,7 @@ export const getTaskerById = async (req, res) => {
                     profilePicture: tasker.profilePicture || '', // <--- THE FIX for Details Page
                     lastUpdated: tasker.updatedAt
                 },
-                categories: tasker.categories.map(c => c.name),
+                categories: tasker.subCategories.map(c => c.name),
                 reviews: reviewsFormatted
             }
         });

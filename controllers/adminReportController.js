@@ -95,7 +95,8 @@ export const exportTaskReport = async (req, res) => {
         // 1. Fetch tasks with populated fields
         const tasks = await Task.find(filter)
             .populate('user', 'fullName emailAddress')
-            .populate('categories', 'name')
+            .populate('mainCategory', 'name')
+            .populate('subCategory', 'name')
             .sort({ createdAt: -1 });
 
         // 2. Map data with safety checks (the fix is the ?. usage)
@@ -104,8 +105,8 @@ export const exportTaskReport = async (req, res) => {
             'Title': t.title || 'Untitled Task',
             'Posted By': t.user?.fullName || 'Unknown User',
             'User Email': t.user?.emailAddress || 'N/A',
-            // Safety check for categories to prevent "reading properties of undefined"
-            'Category': t.categories?.[0]?.name || 'General', 
+            // Safety check for mainCategory
+            'Category': t.mainCategory?.name || 'General', 
             'Budget': t.budget || 0,
             'Status': t.status || 'N/A',
             'Date Created': t.createdAt ? t.createdAt.toISOString().split('T')[0] : 'N/A'

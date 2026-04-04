@@ -10,7 +10,7 @@ const adminInviteSchema = new Schema({
     },
     role: {
         type: String,
-        default: 'support' // Default role if not specified in the UI
+        default: 'operations' // Default role if not specified in the UI
     },
     token: {
         type: String,
