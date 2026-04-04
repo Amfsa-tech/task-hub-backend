@@ -1,10 +1,10 @@
 import adminAuditLog from '../models/adminAuditLog.js'; 
 import Admin from '../models/admin.js';
-import AdminInvite from '../models/adminInvite.js'; // NEW IMPORT
+import AdminInvite from '../models/adminInvite.js'; 
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto'; // NEW IMPORT
+import crypto from 'crypto'; 
 import { logAdminAction } from '../utils/auditLogger.js';
-import { sendAdminInviteEmail } from '../utils/authUtils.js'; // NEW IMPORT
+import { sendAdminInviteEmail } from '../utils/authUtils.js'; 
 
 // GET /api/admin/staff/stats (Matches the 3 Top Cards)
 export const getStaffStats = async (req, res) => {
@@ -146,16 +146,14 @@ export const setupAdminAccount = async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'Invalid or expired invitation link' });
         }
 
-        // 3. Hash password and create the official Admin record
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
+        // 3. Create the official Admin record using the RAW password. 
+        // The Mongoose pre('save') hook will handle the bcrypt hashing automatically.
         const newAdmin = await Admin.create({
-            name: `${firstName} ${lastName}`, // <--- FIX APPLIED HERE
+            name: `${firstName} ${lastName}`,
             firstName,
             lastName,
             email: invite.email,
-            password: hashedPassword,
+            password: password, // <-- Fix applied here
             role: invite.role,
             isActive: true
         });
