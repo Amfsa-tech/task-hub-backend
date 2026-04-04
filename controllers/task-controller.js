@@ -910,9 +910,11 @@ const changeTaskStatus = async (req, res) => {
 // Get tasker feed - tasks matching tasker's categories
 const getTaskerFeed = async (req, res) => {
     try {
-        // Get pagination parameters
-        const page = parseInt(req.query.page) || 1;
+        // Get pagination parameters - supports both cursor-based and offset-based
         const limit = parseInt(req.query.limit) || 10;
+        const cursor = req.query.cursor; // _id of the last task seen (for "load more")
+        // Legacy offset-based pagination (kept for backward compatibility)
+        const page = parseInt(req.query.page) || 1;
         const skip = (page - 1) * limit;
         
         // Get tasker with categories
@@ -986,6 +988,14 @@ const getTaskerFeed = async (req, res) => {
             };
         }
 
+        // Cursor-based pagination: only fetch tasks older than the cursor
+        if (cursor) {
+            const { isValidObjectId } = await import('mongoose');
+            if (isValidObjectId(cursor)) {
+                filterOptions._id = { $lt: cursor };
+            }
+        }
+
         // Log the filter being applied for debugging
         console.log('📋 Tasker feed filter:', JSON.stringify(filterOptions, null, 2));
         console.log('📋 Tasker subCategory IDs:', taskerCategoryIds.map(id => id.toString()));
@@ -996,7 +1006,7 @@ const getTaskerFeed = async (req, res) => {
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description')
             .select('-__v')
-            .sort({ createdAt: -1 });
+            .sort({ _id: -1 });
         
         // Apply precise distance filtering if tasker has location
         if (hasLocation) {
@@ -1020,11 +1030,22 @@ const getTaskerFeed = async (req, res) => {
 
         // Apply pagination AFTER all filtering
         const totalTasks = tasks.length;
+        let paginatedTasks;
+        
+        if (cursor) {
+            // Cursor-based: just take the first `limit` items (already filtered by _id < cursor)
+            paginatedTasks = tasks.slice(0, limit);
+        } else {
+            // Legacy offset-based pagination
+            paginatedTasks = tasks.slice(skip, skip + limit);
+        }
+        
         const totalPages = Math.ceil(totalTasks / limit);
-        tasks = tasks.slice(skip, skip + limit);
+        const nextCursor = paginatedTasks.length > 0 ? paginatedTasks[paginatedTasks.length - 1]._id : null;
+        const hasMore = paginatedTasks.length === limit;
         
         // Check if tasker has already bid on these tasks
-        const taskIds = tasks.map(task => task._id);
+        const taskIds = paginatedTasks.map(task => task._id);
     const existingBids = await Bid.find({
             task: { $in: taskIds },
             tasker: req.tasker._id
@@ -1041,7 +1062,7 @@ const getTaskerFeed = async (req, res) => {
         });
         
         // Add bid information to tasks
-        const tasksWithBidInfo = tasks.map(task => {
+        const tasksWithBidInfo = paginatedTasks.map(task => {
             const taskObj = task.toObject();
             const bidInfo = bidMap[task._id.toString()];
             
@@ -1061,6 +1082,9 @@ const getTaskerFeed = async (req, res) => {
             };
         });
         
+        // Prevent stale cached responses for feed data
+        res.set('Cache-Control', 'no-store');
+        
         res.json({
             status: "success",
             message: "Tasker feed retrieved successfully",
@@ -1069,9 +1093,10 @@ const getTaskerFeed = async (req, res) => {
                 currentPage: page,
                 totalPages,
                 totalTasks,
-                hasNextPage: page < totalPages,
-                hasPrevPage: page > 1,
-                tasksPerPage: limit
+                hasNextPage: cursor ? hasMore : page < totalPages,
+                hasPrevPage: cursor ? !!cursor : page > 1,
+                tasksPerPage: limit,
+                nextCursor
             }
         });
         
