@@ -4,6 +4,7 @@ import Tasker from '../models/tasker.js';
 import { logAdminAction } from '../utils/auditLogger.js';
 import mongoose from 'mongoose';
 import Bid from '../models/bid.js'
+import { escapeRegex } from '../utils/searchUtils.js';
 
 // --- NEW: GET /api/admin/tasks/stats (For the 5 Top Cards) ---
 export const getTaskStats = async (req, res) => {
@@ -53,11 +54,12 @@ export const getAllTasks = async (req, res) => {
 
         // 2. Advanced Search (Title OR User Name OR User Email)
         if (search) {
+            const escaped = escapeRegex(search);
             // First, find users matching the search term
             const matchingUsers = await User.find({
                 $or: [
-                    { fullName: { $regex: search, $options: 'i' } },
-                    { emailAddress: { $regex: search, $options: 'i' } } // Matches your User model field
+                    { fullName: { $regex: escaped, $options: 'i' } },
+                    { emailAddress: { $regex: escaped, $options: 'i' } } // Matches your User model field
                 ]
             }).select('_id');
 
@@ -65,7 +67,7 @@ export const getAllTasks = async (req, res) => {
 
             // Filter tasks that match Title OR belong to those users
             filter.$or = [
-                { title: { $regex: search, $options: 'i' } },
+                { title: { $regex: escaped, $options: 'i' } },
                 { user: { $in: matchingUserIds } }
             ];
         }
@@ -239,16 +241,15 @@ export const forceCompleteTask = async (req, res) => {
             });
         }
 
+        const update = { status: 'completed' };
         if (task.isEscrowHeld) {
-            task.escrowStatus = 'released';
+            update.escrowStatus = 'released';
+            update.isEscrowHeld = false;
         }
         
         await Task.findByIdAndUpdate(
             req.params.id,
-            {
-                status: 'completed',
-                escrowStatus: task.isEscrowHeld ? 'released' : 'held'
-            },
+            update,
             { runValidators: true }
         );
         

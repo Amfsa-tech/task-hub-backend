@@ -2,6 +2,7 @@ import Withdrawal from '../models/withdrawal.js';
 import Tasker from '../models/tasker.js';
 import Transaction from '../models/transaction.js';
 import { logAdminAction } from '../utils/auditLogger.js';
+import { escapeRegex } from '../utils/searchUtils.js';
 
 /**
  * GET /api/admin/withdrawals/stats
@@ -75,11 +76,12 @@ export const getAllWithdrawals = async (req, res) => {
 
         // If search term provided, find matching taskers first
         if (search) {
+            const escaped = escapeRegex(search);
             const matchingTaskers = await Tasker.find({
                 $or: [
-                    { firstName: { $regex: search, $options: 'i' } },
-                    { lastName: { $regex: search, $options: 'i' } },
-                    { emailAddress: { $regex: search, $options: 'i' } }
+                    { firstName: { $regex: escaped, $options: 'i' } },
+                    { lastName: { $regex: escaped, $options: 'i' } },
+                    { emailAddress: { $regex: escaped, $options: 'i' } }
                 ]
             }).select('_id');
 
@@ -208,10 +210,17 @@ export const rejectWithdrawal = async (req, res) => {
             });
         }
 
+        if (!withdrawal.amount || withdrawal.amount <= 0) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid withdrawal amount'
+            });
+        }
+
         // Refund the amount back to tasker wallet
         await Tasker.updateOne(
             { _id: withdrawal.tasker },
-            { $inc: { wallet: withdrawal.amount } }
+            { $inc: { wallet: Math.abs(withdrawal.amount) } }
         );
 
         withdrawal.status = 'rejected';

@@ -4,6 +4,7 @@ import Tasker from '../models/tasker.js'; // Added Tasker import
 import { sendKycNotification } from '../services/onesignal.js';
 import { logAdminAction } from '../utils/auditLogger.js';
 import { saveNotification } from '../services/notificationService.js';
+import { escapeRegex } from '../utils/searchUtils.js';
 
 // GET /api/admin/kyc/stats (Matches the 6 Top Cards)
 export const getKycStats = async (req, res) => {
@@ -61,7 +62,7 @@ export const getAllKycRequests = async (req, res) => {
 
         if (search) {
             filter.$or = [
-                { idNumber: { $regex: search, $options: 'i' } } // Search by NIN
+                { idNumber: { $regex: escapeRegex(search), $options: 'i' } } // Search by NIN
             ];
         }
 
@@ -262,7 +263,7 @@ export const getKycDetails = async (req, res) => {
 
             // Middle Right: KYC Information
             kycInfo: {
-                nin: kyc.nin, // Your National Identification Number field
+                maskedNin: kyc.maskedNin, // Masked National Identification Number
                 userId: kyc.user._id,
                 submissionDate: kyc.createdAt,
                 lastUpdated: kyc.updatedAt,

@@ -43,13 +43,14 @@ export const submitNIN = async (req, res) => {
 
         const kyc = await KYCVerification.create({
             user: req.user._id,
-            nin,
-            status: 'pending',
-            verificationSummary: {
+            userType: 'User',
+            maskedNin: nin.slice(0, 3) + '****' + nin.slice(-4),
+            status: result.isVerified ? 'Approved' : 'Pending',
+            verificationData: {
                 matchStatus: result.validationResult?.matchStatus,
                 mismatches: result.validationResult?.mismatches
             },
-            verifiedAt: new Date()
+            verifiedAt: result.isVerified ? new Date() : undefined
         });
 
         res.json({

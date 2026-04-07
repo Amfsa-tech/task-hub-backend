@@ -676,7 +676,7 @@ const changeTaskStatus = async (req, res) => {
             }
 
             try {
-                if (task.isEscrowHeld && task.escrowAmount > 0) {
+                if (task.isEscrowHeld && task.escrowAmount > 0 && task.assignedTasker) {
                     
                     // NEW MATH: Calculates fee so it is exactly 15% of the Tasker's final payout
                     const platformFeeRate = 0.15;
@@ -911,7 +911,7 @@ const changeTaskStatus = async (req, res) => {
 const getTaskerFeed = async (req, res) => {
     try {
         // Get pagination parameters - supports both cursor-based and offset-based
-        const limit = parseInt(req.query.limit) || 10;
+        const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 50);
         const cursor = req.query.cursor; // _id of the last task seen (for "load more")
         // Legacy offset-based pagination (kept for backward compatibility)
         const page = parseInt(req.query.page) || 1;
@@ -937,7 +937,9 @@ const getTaskerFeed = async (req, res) => {
                     totalPages: 0,
                     totalTasks: 0,
                     hasNextPage: false,
-                    hasPrevPage: false
+                    hasPrevPage: false,
+                    tasksPerPage: limit,
+                    nextCursor: null
                 }
             });
         }
@@ -959,12 +961,12 @@ const getTaskerFeed = async (req, res) => {
         }
         
         // Additional filters from query params
-        if (req.query.budget_min || req.query.budget_max) {
+        if (req.query.budget_min != null || req.query.budget_max != null) {
             filterOptions.budget = {};
-            if (req.query.budget_min) {
+            if (req.query.budget_min != null) {
                 filterOptions.budget.$gte = parseFloat(req.query.budget_min);
             }
-            if (req.query.budget_max) {
+            if (req.query.budget_max != null) {
                 filterOptions.budget.$lte = parseFloat(req.query.budget_max);
             }
         }
@@ -996,17 +998,27 @@ const getTaskerFeed = async (req, res) => {
             }
         }
 
-        // Log the filter being applied for debugging
-        console.log('📋 Tasker feed filter:', JSON.stringify(filterOptions, null, 2));
-        console.log('📋 Tasker subCategory IDs:', taskerCategoryIds.map(id => id.toString()));
+        // Fetch tasks with an over-fetch buffer to account for distance filtering
+        // We fetch more than `limit` because precise distance filtering may remove some results
+        const fetchLimit = hasLocation ? limit * 5 : (cursor ? limit : 0);
         
-        // Get ALL matching tasks first (no pagination yet), then apply precise distance filter
-        let tasks = await Task.find(filterOptions)
+        let taskQuery = Task.find(filterOptions)
             .populate('user', 'fullName profilePicture')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description')
             .select('-__v')
             .sort({ _id: -1 });
+        
+        // For cursor-based pagination, apply limit at DB level for performance
+        // For offset-based, we need total count so fetch without limit
+        if (cursor) {
+            taskQuery = taskQuery.limit(fetchLimit || limit);
+        } else if (hasLocation) {
+            // Over-fetch to account for distance filtering, but don't load everything
+            taskQuery = taskQuery.limit(skip + fetchLimit);
+        }
+        
+        let tasks = await taskQuery;
         
         // Apply precise distance filtering if tasker has location
         if (hasLocation) {
@@ -1046,10 +1058,10 @@ const getTaskerFeed = async (req, res) => {
         
         // Check if tasker has already bid on these tasks
         const taskIds = paginatedTasks.map(task => task._id);
-    const existingBids = await Bid.find({
+        const existingBids = await Bid.find({
             task: { $in: taskIds },
             tasker: req.tasker._id
-        }).select('task amount bidType');
+        }).select('task amount bidType status');
         
         // Create a map of taskId -> bid for quick lookup
         const bidMap = {};
@@ -1057,6 +1069,7 @@ const getTaskerFeed = async (req, res) => {
             bidMap[bid.task.toString()] = {
                 amount: bid.amount,
                 bidType: bid.bidType,
+                status: bid.status,
                 hasBid: true
             };
         });

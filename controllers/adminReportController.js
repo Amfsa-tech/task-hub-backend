@@ -5,6 +5,7 @@ import Tasker from '../models/tasker.js';
 import KYCVerification from '../models/kycVerification.js';
 import { logAdminAction } from '../utils/auditLogger.js';
 import AuditLog from '../models/adminAuditLog.js'; 
+import { escapeRegex } from '../utils/searchUtils.js';
 
 
 // --- SECTION 1: MODERATION REPORTS (User Disputes/Spam) ---
@@ -24,9 +25,10 @@ export const getAllReports = async (req, res) => {
         }
 
         if (search) {
+            const escaped = escapeRegex(search);
              filter.$or = [
-                { reason: { $regex: search, $options: 'i' } },
-                { description: { $regex: search, $options: 'i' } }
+                { reason: { $regex: escaped, $options: 'i' } },
+                { description: { $regex: escaped, $options: 'i' } }
             ];
         }
 

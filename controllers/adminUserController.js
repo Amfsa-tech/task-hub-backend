@@ -3,6 +3,7 @@ import Task from '../models/task.js';
 import KYCVerification from '../models/kycVerification.js';
 import Report from '../models/report.js';
 import { logAdminAction } from '../utils/auditLogger.js';
+import { escapeRegex } from '../utils/searchUtils.js';
 
 // GET /api/admin/users/stats (Top Cards)
 export const getUserStats = async (req, res) => {
@@ -23,7 +24,7 @@ export const getUserStats = async (req, res) => {
             User.countDocuments({ isActive: true }),
             User.countDocuments({ isActive: false }), // Inactive
             User.countDocuments({ isKYCVerified: true }),
-            User.countDocuments({ isActive: false }), // Suspended (Assuming suspended = inactive)
+            User.countDocuments({ isActive: false, isDeleted: false }), // Suspended (inactive but not deleted)
             KYCVerification.countDocuments({ status: 'pending' }),
             Task.countDocuments(),
             Task.countDocuments({ status: 'completed' }),
@@ -60,10 +61,11 @@ export const getAllUsers = async (req, res) => {
 
         // 1. Search (Name, Email, Phone)
         if (search) {
+            const escaped = escapeRegex(search);
             query.$or = [
-                { fullName: { $regex: search, $options: 'i' } },
-                { email: { $regex: search, $options: 'i' } },
-                { phoneNumber: { $regex: search, $options: 'i' } } // Added Phone search
+                { fullName: { $regex: escaped, $options: 'i' } },
+                { email: { $regex: escaped, $options: 'i' } },
+                { phoneNumber: { $regex: escaped, $options: 'i' } } // Added Phone search
             ];
         }
 

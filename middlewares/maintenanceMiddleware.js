@@ -5,8 +5,8 @@ export const checkMaintenanceMode = async (req, res, next) => {
         const settings = await AdminSettings.findOne();
 
         if (settings?.system?.maintenanceMode) {
-            // Bypass for Admins
-            if (req.admin || (req.user && req.user.isAdmin)) {
+            // Bypass for Admins (req.admin is set by protectAdmin middleware)
+            if (req.admin) {
                 return next();
             }
 

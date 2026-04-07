@@ -15,7 +15,13 @@ export const initializeFunding = async (req, res) => {
 
         // Validate amount (expect Naira from client, convert to kobo for Paystack)
         const nairaAmount = Number(amount);
-        if (!nairaAmount || nairaAmount < 100) {
+        if (isNaN(nairaAmount)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid amount value',
+            });
+        }
+        if (nairaAmount < 100) {
             return res.status(400).json({
                 status: 'error',
                 message: 'Minimum funding amount is ₦100',
@@ -259,7 +265,7 @@ export const getUserBalance = async (req, res) => {
             data: {
                 walletBalance: user.wallet,
                 totalInEscrow: totalEscrow,
-                availableBalance: user.wallet
+                availableBalance: user.wallet - totalEscrow
             }
         });
     } catch (error) {

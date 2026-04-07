@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto'; 
 import { logAdminAction } from '../utils/auditLogger.js';
 import { sendAdminInviteEmail } from '../utils/authUtils.js'; 
+import { escapeRegex } from '../utils/searchUtils.js';
 
 // GET /api/admin/staff/stats (Matches the 3 Top Cards)
 export const getStaffStats = async (req, res) => {
@@ -35,10 +36,11 @@ export const getAllStaff = async (req, res) => {
         const query = {};
 
         if (search) {
+            const escaped = escapeRegex(search);
             query.$or = [
-                { firstName: { $regex: search, $options: 'i' } },
-                { lastName: { $regex: search, $options: 'i' } },
-                { email: { $regex: search, $options: 'i' } }
+                { firstName: { $regex: escaped, $options: 'i' } },
+                { lastName: { $regex: escaped, $options: 'i' } },
+                { email: { $regex: escaped, $options: 'i' } }
             ];
         }
 

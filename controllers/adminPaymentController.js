@@ -1,6 +1,7 @@
 import Task from '../models/task.js';
 import User from '../models/user.js';
 import Transaction from '../models/transaction.js';
+import { escapeRegex } from '../utils/searchUtils.js';
 
 const PLATFORM_FEE_RATE = 0.15;
 
@@ -70,7 +71,7 @@ export const getAllPayments = async (req, res) => {
 
         // Search Filter
         if (search) {
-            query.title = { $regex: search, $options: 'i' };
+            query.title = { $regex: escapeRegex(search), $options: 'i' };
         }
 
         // Date Filter
@@ -274,10 +275,11 @@ export const getAllDeposits = async (req, res) => {
 
         // If search term, find matching users first
         if (search) {
+            const escaped = escapeRegex(search);
             const matchingUsers = await User.find({
                 $or: [
-                    { fullName: { $regex: search, $options: 'i' } },
-                    { emailAddress: { $regex: search, $options: 'i' } }
+                    { fullName: { $regex: escaped, $options: 'i' } },
+                    { emailAddress: { $regex: escaped, $options: 'i' } }
                 ]
             }).select('_id');
             query.user = { $in: matchingUsers.map(u => u._id) };

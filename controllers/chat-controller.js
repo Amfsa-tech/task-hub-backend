@@ -164,11 +164,10 @@ export const listMessages = async (req, res) => {
 
     const messages = await Message.find(query)
       .sort({ createdAt: 1 })
-      .limit(limit);
+      .limit(limit + 1);
 
-    const hasMore = before
-      ? (await Message.countDocuments({ conversation: id, createdAt: { $lt: messages[0]?.createdAt || new Date(0) } })) > 0
-      : (await Message.countDocuments({ conversation: id, createdAt: { $lt: messages[0]?.createdAt || new Date() } })) > 0;
+    const hasMore = messages.length > limit;
+    if (hasMore) messages.pop();
 
     return res.status(200).json({ status: 'success', messages, hasMore });
   } catch (error) {

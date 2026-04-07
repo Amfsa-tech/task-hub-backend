@@ -4,6 +4,7 @@ import Category from '../models/category.js';
 import Report from '../models/report.js';
 import KYCVerification from '../models/kycVerification.js';
 import { logAdminAction } from '../utils/auditLogger.js';
+import { escapeRegex } from '../utils/searchUtils.js';
 
 // GET /api/admin/taskers/stats
 export const getTaskerStats = async (req, res) => {
@@ -63,10 +64,11 @@ export const getAllTaskers = async (req, res) => {
 
         // Search
         if (search) {
+            const escaped = escapeRegex(search);
             query.$or = [
-                { firstName: { $regex: search, $options: 'i' } },
-                { lastName: { $regex: search, $options: 'i' } },
-                { emailAddress: { $regex: search, $options: 'i' } } 
+                { firstName: { $regex: escaped, $options: 'i' } },
+                { lastName: { $regex: escaped, $options: 'i' } },
+                { emailAddress: { $regex: escaped, $options: 'i' } } 
             ];
         }
 
