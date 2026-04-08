@@ -1182,6 +1182,45 @@ const getCompletionCode = async (req, res) => {
     }
 };
 
+const getTaskerTasks = async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        const filterOptions = { assignedTasker: req.tasker._id };
+
+        if (req.query.status && ['assigned', 'in-progress', 'completed', 'cancelled'].includes(req.query.status)) {
+            filterOptions.status = req.query.status;
+        }
+
+        const totalTasks = await Task.countDocuments(filterOptions);
+
+        const tasks = await Task.find(filterOptions)
+            .populate('user', 'firstName lastName profilePicture')
+            .populate('mainCategory', 'name displayName description')
+            .populate('subCategory', 'name displayName description')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        res.status(200).json({
+            status: "success",
+            count: tasks.length,
+            totalPages: Math.ceil(totalTasks / limit),
+            currentPage: page,
+            tasks
+        });
+    } catch (error) {
+        console.error("Get tasker tasks error:", error);
+        res.status(500).json({
+            status: "error",
+            message: "Error fetching tasker tasks",
+            error: error.message
+        });
+    }
+};
+
 export  {
     createTask,
     getAllTasks,
@@ -1191,5 +1230,6 @@ export  {
     getUserTasks,
     changeTaskStatus,
     getTaskerFeed,
-    getCompletionCode
+    getCompletionCode,
+    getTaskerTasks
 }; 

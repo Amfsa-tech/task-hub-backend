@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createTask, getAllTasks, getTaskById, updateTask, deleteTask, getUserTasks, changeTaskStatus, getTaskerFeed, getCompletionCode } from '../controllers/task-controller.js';
+import { createTask, getAllTasks, getTaskById, updateTask, deleteTask, getUserTasks, changeTaskStatus, getTaskerFeed, getCompletionCode, getTaskerTasks } from '../controllers/task-controller.js';
 import { protectUser, protectTasker } from '../middlewares/authMiddleware.js';
 
 const router = Router();
@@ -9,6 +9,7 @@ router.get('/', getAllTasks);
 
 // Tasker protected routes (place before dynamic :id route)
 router.get('/tasker/feed', protectTasker, getTaskerFeed);
+router.get('/tasker/tasks', protectTasker, getTaskerTasks);
 
 // User protected routes (place before dynamic :id route)
 router.get('/user/tasks', protectUser, getUserTasks);
