@@ -4,6 +4,7 @@ import Task from '../models/task.js';
 import Bid from '../models/bid.js';
 import { Types } from 'mongoose';
 import { notifyOnNewChatMessage } from '../utils/notificationUtils.js';
+import { uploadMultipleToCloudinary } from '../utils/uploadService.js';
 
 const isValidId = (id) => Types.ObjectId.isValid(id);
 
@@ -185,9 +186,28 @@ export const sendMessage = async (req, res) => {
     if (!conversation) return res.status(404).json({ status: 'error', message: 'Conversation not found' });
     if (!ensureParticipant(conversation, req)) return res.status(403).json({ status: 'error', message: 'Forbidden' });
 
-    const { text, attachments } = req.body || {};
-    if (!text && (!attachments || attachments.length === 0)) {
+    const { text } = req.body || {};
+    const hasFiles = req.files && req.files.length > 0;
+    if (!text && !hasFiles) {
       return res.status(400).json({ status: 'error', message: 'Message text or attachments required' });
+    }
+
+    // Upload attachment files to Cloudinary
+    let uploadedAttachments = [];
+    if (hasFiles) {
+      try {
+        const results = await uploadMultipleToCloudinary(req.files, 'taskhub/chat', 'auto');
+        uploadedAttachments = results.map((result, i) => ({
+          url: result.url,
+          publicId: result.publicId,
+          type: req.files[i].mimetype,
+          name: req.files[i].originalname,
+          size: req.files[i].size,
+        }));
+      } catch (uploadError) {
+        console.error('Chat attachment upload error:', uploadError);
+        return res.status(500).json({ status: 'error', message: 'Failed to upload attachments' });
+      }
     }
 
     const senderType = req.userType === 'user' ? 'user' : 'tasker';
@@ -197,11 +217,11 @@ export const sendMessage = async (req, res) => {
       senderUser: senderType === 'user' ? req.user._id : undefined,
       senderTasker: senderType === 'tasker' ? req.user._id : undefined,
       text: text || null,
-      attachments: attachments || [],
+      attachments: uploadedAttachments,
     });
 
     // Update conversation
-    conversation.lastMessage = text ? String(text).slice(0, 200) : (attachments?.length ? 'Attachment' : '');
+    conversation.lastMessage = text ? String(text).slice(0, 200) : (uploadedAttachments.length ? 'Attachment' : '');
     conversation.lastMessageAt = new Date();
     if (senderType === 'user') conversation.unread.tasker += 1; else conversation.unread.user += 1;
     await conversation.save();

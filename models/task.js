@@ -32,7 +32,8 @@ const taskSchema = new Schema({
         type: String 
     }],
     images: [{
-        url: { type: String, required: true }
+        url: { type: String, required: true },
+        publicId: { type: String }
     }],
     location: {
         latitude: { type: Number, required: true },

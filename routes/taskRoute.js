@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { createTask, getAllTasks, getTaskById, updateTask, deleteTask, getUserTasks, changeTaskStatus, getTaskerFeed, getCompletionCode, getTaskerTasks } from '../controllers/task-controller.js';
 import { protectUser, protectTasker } from '../middlewares/authMiddleware.js';
+import { uploadTaskImages, handleMulterError } from '../middlewares/uploadMiddleware.js';
 
 const router = Router();
 
@@ -13,8 +14,8 @@ router.get('/tasker/tasks', protectTasker, getTaskerTasks);
 
 // User protected routes (place before dynamic :id route)
 router.get('/user/tasks', protectUser, getUserTasks);
-router.post('/', protectUser, createTask);
-router.put('/:id', protectUser, updateTask);
+router.post('/', protectUser, uploadTaskImages, handleMulterError, createTask);
+router.put('/:id', protectUser, uploadTaskImages, handleMulterError, updateTask);
 router.delete('/:id', protectUser, deleteTask);
 
 // Dynamic route for getting a specific task must come after more specific routes

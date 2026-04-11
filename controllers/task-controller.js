@@ -9,6 +9,16 @@ import Bid from '../models/bid.js';
 import Transaction from '../models/transaction.js';
 import { notifyMatchingTaskers, notifyUserAboutTaskCompletion, notifyTaskerAboutTaskCancellation } from '../utils/notificationUtils.js';
 import User from '../models/user.js';
+import { uploadMultipleToCloudinary } from '../utils/uploadService.js';
+
+/**
+ * Parse a multipart form field that may be a JSON string.
+ * Returns the parsed value or the original string.
+ */
+const parseField = (value) => {
+    if (typeof value !== 'string') return value;
+    try { return JSON.parse(value); } catch { return value; }
+};
 
 // Helper function to check if ID is valid
 const isValidObjectId = (id) => {
@@ -18,7 +28,17 @@ const isValidObjectId = (id) => {
 // Create a new task
 const createTask = async (req, res) => {
     try {
-        const { title, description, categories, tags, images, location, budget, isBiddingEnabled, deadline, mainCategory, university } = req.body;
+        // With multer multipart parsing, complex fields arrive as JSON strings
+        const title = req.body.title;
+        const description = req.body.description;
+        const categories = parseField(req.body.categories);
+        const tags = parseField(req.body.tags);
+        const location = parseField(req.body.location);
+        const budget = parseField(req.body.budget);
+        const isBiddingEnabled = parseField(req.body.isBiddingEnabled);
+        const deadline = req.body.deadline;
+        const mainCategory = req.body.mainCategory;
+        const university = req.body.university;
         
         // Required fields validation
         const requiredFields = {
@@ -147,16 +167,17 @@ const createTask = async (req, res) => {
             }
         }
 
-        // Validate images array if provided
-        if (images && Array.isArray(images)) {
-            for (let i = 0; i < images.length; i++) {
-                if (!images[i].url) {
-                    return res.status(400).json({
-                        status: "error",
-                        message: "Invalid image format",
-                        details: `Image at index ${i} is missing the URL`
-                    });
-                }
+        // Upload images to Cloudinary if files were attached
+        let uploadedImages = [];
+        if (req.files && req.files.length > 0) {
+            try {
+                uploadedImages = await uploadMultipleToCloudinary(req.files, 'taskhub/tasks');
+            } catch (uploadError) {
+                console.error('Cloudinary upload error:', uploadError);
+                return res.status(500).json({
+                    status: "error",
+                    message: "Failed to upload images",
+                });
             }
         }
         
@@ -197,7 +218,7 @@ const createTask = async (req, res) => {
             subCategory: uniqueCategories[0],
             university: validatedUniversity,
             tags: tags || [],
-            images: images || [],
+            images: uploadedImages,
             location: {
                 latitude: location.latitude,
                 longitude: location.longitude,
@@ -371,16 +392,17 @@ const updateTask = async (req, res) => {
             });
         }
         
-        // Validate images array if provided
-        if (req.body.images && Array.isArray(req.body.images)) {
-            for (let i = 0; i < req.body.images.length; i++) {
-                if (!req.body.images[i].url) {
-                    return res.status(400).json({
-                        status: "error",
-                        message: "Invalid image format",
-                        details: `Image at index ${i} is missing the URL`
-                    });
-                }
+        // Upload new images to Cloudinary if files were attached
+        let uploadedImages;
+        if (req.files && req.files.length > 0) {
+            try {
+                uploadedImages = await uploadMultipleToCloudinary(req.files, 'taskhub/tasks');
+            } catch (uploadError) {
+                console.error('Cloudinary upload error:', uploadError);
+                return res.status(500).json({
+                    status: "error",
+                    message: "Failed to upload images",
+                });
             }
         }
         
@@ -403,13 +425,31 @@ const updateTask = async (req, res) => {
             }
         }
 
-        // Prepare update data
-        const updateData = { ...req.body, updatedAt: Date.now() };
+        // Prepare update data — parse JSON strings from multipart form fields
+        const updateData = { updatedAt: Date.now() };
+
+        // Copy simple fields if provided
+        const simpleFields = ['title', 'description', 'deadline', 'mainCategory', 'university'];
+        for (const field of simpleFields) {
+            if (req.body[field] !== undefined) updateData[field] = req.body[field];
+        }
+
+        // Parse fields that may be JSON-encoded
+        if (req.body.budget !== undefined) updateData.budget = parseField(req.body.budget);
+        if (req.body.isBiddingEnabled !== undefined) updateData.isBiddingEnabled = parseField(req.body.isBiddingEnabled);
+        if (req.body.tags !== undefined) updateData.tags = parseField(req.body.tags);
+        if (req.body.categories !== undefined) updateData.categories = parseField(req.body.categories);
+
+        // Set images only if new files were uploaded
+        if (uploadedImages) {
+            updateData.images = uploadedImages;
+        }
         
         // Handle location update
-        if (req.body.location) {
+        const locationInput = parseField(req.body.location);
+        if (locationInput) {
             // Validate required location fields if updating location
-            if (req.body.location.latitude === undefined || req.body.location.longitude === undefined) {
+            if (locationInput.latitude === undefined || locationInput.longitude === undefined) {
                 return res.status(400).json({
                     status: "error",
                     message: "Invalid location data",
@@ -418,7 +458,7 @@ const updateTask = async (req, res) => {
             }
             
             // Validate location coordinates
-            if (isNaN(req.body.location.latitude) || isNaN(req.body.location.longitude)) {
+            if (isNaN(locationInput.latitude) || isNaN(locationInput.longitude)) {
                 return res.status(400).json({
                     status: "error",
                     message: "Invalid location coordinates",
@@ -427,11 +467,11 @@ const updateTask = async (req, res) => {
             }
             
             updateData.location = {
-                latitude: req.body.location.latitude,
-                longitude: req.body.location.longitude,
-                address: req.body.location.address || task.location.address || "",
-                state: req.body.location.state || task.location.state || "",
-                country: req.body.location.country || task.location.country || ""
+                latitude: locationInput.latitude,
+                longitude: locationInput.longitude,
+                address: locationInput.address || task.location.address || "",
+                state: locationInput.state || task.location.state || "",
+                country: locationInput.country || task.location.country || ""
             };
         }
         

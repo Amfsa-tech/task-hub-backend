@@ -3,6 +3,7 @@ import { Schema, model } from 'mongoose';
 const attachmentSchema = new Schema(
   {
     url: { type: String, required: true },
+    publicId: { type: String },
     type: { type: String },
     name: { type: String },
     size: { type: Number }
