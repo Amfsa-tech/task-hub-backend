@@ -55,6 +55,13 @@ const taskerSchema = new Schema({
         trim: true,
         default: null
     },
+
+    // Portfolio
+    previousWork: [{
+        url: { type: String, required: true },
+        publicId: { type: String }
+    }],
+    websiteLink: { type: String, default: '' },
     
     // New authentication fields
     isEmailVerified: { type: Boolean, default: false },

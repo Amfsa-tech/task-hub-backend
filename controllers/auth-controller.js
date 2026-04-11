@@ -7,6 +7,7 @@ import mongoose from "mongoose";
 import Category from "../models/category.js";
 import University from "../models/university.js";
 import KYCVerification from "../models/kycVerification.js";
+import { uploadMultipleToCloudinary } from "../utils/uploadService.js";
 import {
   generateToken,
   generateRandomToken,
@@ -595,7 +596,7 @@ export const updateProfile = async (req, res) => {
 
     if (req.user.firstName) {
       // Taskers get these extra fields
-      allowedUpdates.push("mainCategories", "subCategories", "university");
+      allowedUpdates.push("mainCategories", "subCategories", "university", "websiteLink");
     }
 
     for (const field of allowedUpdates) {
@@ -669,6 +670,66 @@ export const updateProfilePicture = async (req, res) => {
     res.status(200).json({ status: "success", message: "Profile picture updated successfully", profilePicture: req.user.profilePicture });
   } catch (error) {
     res.status(500).json({ status: "error", message: "Error updating profile picture", error: error.message });
+  }
+};
+
+export const uploadPreviousWork = async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ status: "error", message: "At least one image is required" });
+    }
+
+    const uploaded = await uploadMultipleToCloudinary(req.files, 'taskhub/previous-work');
+
+    // Append to existing previous work instead of replacing
+    const tasker = req.user;
+    const current = tasker.previousWork || [];
+    const combined = [...current, ...uploaded];
+
+    if (combined.length > 10) {
+      return res.status(400).json({
+        status: "error",
+        message: `Maximum 10 previous work images allowed. You have ${current.length}, tried to add ${uploaded.length}`,
+      });
+    }
+
+    tasker.previousWork = combined;
+    await tasker.save();
+
+    res.status(200).json({
+      status: "success",
+      message: "Previous work uploaded successfully",
+      previousWork: tasker.previousWork,
+    });
+  } catch (error) {
+    console.error("Upload previous work error:", error);
+    res.status(500).json({ status: "error", message: "Failed to upload previous work", error: error.message });
+  }
+};
+
+export const deletePreviousWork = async (req, res) => {
+  try {
+    const { publicId } = req.body;
+    if (!publicId) {
+      return res.status(400).json({ status: "error", message: "publicId is required" });
+    }
+
+    const tasker = req.user;
+    const index = (tasker.previousWork || []).findIndex(img => img.publicId === publicId);
+    if (index === -1) {
+      return res.status(404).json({ status: "error", message: "Image not found in previous work" });
+    }
+
+    tasker.previousWork.splice(index, 1);
+    await tasker.save();
+
+    res.status(200).json({
+      status: "success",
+      message: "Previous work image removed",
+      previousWork: tasker.previousWork,
+    });
+  } catch (error) {
+    res.status(500).json({ status: "error", message: "Error removing image", error: error.message });
   }
 };
 
