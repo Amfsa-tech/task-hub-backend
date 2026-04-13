@@ -476,6 +476,7 @@ export const getTasker = async (req, res) => {
       mainCategories: tasker.mainCategories,
       subCategories: tasker.subCategories,
       university: tasker.university,
+      websiteLink: tasker.websiteLink,
       isEmailVerified: tasker.isEmailVerified,
       verifyIdentity: tasker.verifyIdentity,
       isKYCVerified: tasker?.isKYCVerified,
@@ -682,7 +683,7 @@ export const uploadPreviousWork = async (req, res) => {
     const uploaded = await uploadMultipleToCloudinary(req.files, 'taskhub/previous-work');
 
     // Append to existing previous work instead of replacing
-    const tasker = req.user;
+    const tasker = req.tasker;
     const current = tasker.previousWork || [];
     const combined = [...current, ...uploaded];
 
@@ -721,7 +722,7 @@ export const deletePreviousWork = async (req, res) => {
       return res.status(400).json({ status: "error", message: "publicId is required" });
     }
 
-    const tasker = req.user;
+    const tasker = req.tasker;
     const index = (tasker.previousWork || []).findIndex(img => img.publicId === publicId);
     if (index === -1) {
       return res.status(404).json({ status: "error", message: "Image not found in previous work" });
