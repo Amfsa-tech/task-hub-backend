@@ -36,8 +36,10 @@ export const uploadToCloudinary = async (buffer, folder, resourceType = 'image')
             return await uploadOnce(buffer, folder, resourceType);
         } catch (error) {
             lastError = error;
-            const isTimeout = error.name === 'TimeoutError' || error.http_code === 499;
-            if (!isTimeout || attempt === MAX_RETRIES) break;
+            const isRetryable =
+                error.name === 'TimeoutError' ||
+                [499, 500, 502, 503, 504].includes(error.http_code);
+            if (!isRetryable || attempt === MAX_RETRIES) break;
             const delay = 1000 * 2 ** attempt;
             await new Promise((r) => setTimeout(r, delay));
         }

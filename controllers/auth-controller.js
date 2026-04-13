@@ -703,10 +703,12 @@ export const uploadPreviousWork = async (req, res) => {
     });
   } catch (error) {
     console.error("Upload previous work error:", error);
-    const isTimeout = error.name === 'TimeoutError' || error.http_code === 499;
-    const status = isTimeout ? 504 : 500;
-    const message = isTimeout
-      ? "Upload timed out — please check your network connection and try again"
+    const isTransient =
+      error.name === 'TimeoutError' ||
+      [499, 500, 502, 503, 504].includes(error.http_code);
+    const status = isTransient ? 502 : 500;
+    const message = isTransient
+      ? "Upload service temporarily unavailable — please try again"
       : "Failed to upload previous work";
     res.status(status).json({ status: "error", message, error: error.message });
   }
