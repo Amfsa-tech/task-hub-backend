@@ -30,6 +30,7 @@ import walletRoutes from './routes/walletRoute.js';
 import nearbyTaskerRoutes from './routes/nearbyTaskerRoute.js';
 import mainCategoryRoutes from './routes/mainCategoryRoute.js';
 import universityRoutes from './routes/universityRoute.js';
+import taskerNinRoutes from './routes/taskerNinRoute.js';
 import { checkMaintenanceMode } from './middlewares/maintenanceMiddleware.js';
 
 const app = express();
@@ -139,6 +140,7 @@ app.use('/api/taskers', nearbyTaskerRoutes); // Public nearby taskers
 app.use('/api/main-categories', mainCategoryRoutes); // Public main categories
 app.use('/api/universities', universityRoutes);       // Public universities
 app.use('/api/waitlist', waitlistRoutes);
+app.use('/api/tasker/nin', taskerNinRoutes);
 
 
 

@@ -1,6 +1,58 @@
 import KYCVerification from '../models/kycVerification.js';
 import { ninVerificationService } from '../services/nin_service.js';
 
+/**
+ * Tasker submits NIN + full name for manual admin review.
+ * One-time submission only — no QoreID call, stored as Pending.
+ */
+export const submitTaskerNIN = async (req, res) => {
+    try {
+        const { nin, fullName } = req.body;
+
+        if (!nin || !fullName) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'nin and fullName are required'
+            });
+        }
+
+        if (!/^\d{11}$/.test(nin)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'NIN must be exactly 11 digits'
+            });
+        }
+
+        const existing = await KYCVerification.findOne({ user: req.tasker._id, userType: 'Tasker' });
+        if (existing) {
+            return res.status(409).json({
+                status: 'error',
+                message: 'NIN has already been submitted'
+            });
+        }
+
+        const kyc = await KYCVerification.create({
+            user: req.tasker._id,
+            userType: 'Tasker',
+            maskedNin: nin.slice(0, 3) + '****' + nin.slice(-4),
+            provider: 'qoreid',
+            status: 'Pending',
+            verificationData: { fullName }
+        });
+
+        res.status(201).json({
+            status: 'success',
+            message: 'NIN submitted successfully. It will be reviewed shortly.',
+            kycId: kyc._id
+        });
+    } catch (error) {
+        res.status(error.status || 500).json({
+            status: 'error',
+            message: error.message || 'Failed to submit NIN'
+        });
+    }
+};
+
 export const submitNIN = async (req, res) => {
     try {
         const { nin, firstName, lastName, dob, gender, phoneNumber, email } = req.body;
