@@ -53,6 +53,19 @@ export const findNearbyTaskers = async ({ latitude, longitude } = {}) => {
             .filter(t => t.distance <= radiusMeters)
             .sort((a, b) => b.averageRating - a.averageRating)
             .slice(0, MAX_RESULTS);
+
+        // Fallback: fill remaining slots with top-rated taskers if not enough nearby
+        if (results.length < MAX_RESULTS) {
+            const nearbyIds = new Set(results.map(t => t._id.toString()));
+            const fillCount = MAX_RESULTS - results.length;
+            const fallback = await Tasker.find({ isActive: true, _id: { $nin: [...nearbyIds] } })
+                .select('firstName lastName profilePicture averageRating area residentState location subCategories')
+                .populate({ path: 'subCategories', select: 'displayName', options: { limit: 1 } })
+                .sort({ averageRating: -1 })
+                .limit(fillCount)
+                .lean();
+            results = [...results, ...fallback];
+        }
     }
 
     // Aggregate completed job counts

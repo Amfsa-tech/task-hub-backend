@@ -476,6 +476,7 @@ export const getTasker = async (req, res) => {
       mainCategories: tasker.mainCategories,
       subCategories: tasker.subCategories,
       university: tasker.university,
+      previousWork: tasker.previousWork,
       websiteLink: tasker.websiteLink,
       isEmailVerified: tasker.isEmailVerified,
       verifyIdentity: tasker.verifyIdentity,
