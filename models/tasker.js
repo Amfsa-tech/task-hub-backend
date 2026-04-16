@@ -62,6 +62,9 @@ const taskerSchema = new Schema({
         publicId: { type: String }
     }],
     websiteLink: { type: String, default: '' },
+    transactionPin: {
+        type: String // We will store this as a hashed string, just like a password
+    },
     
     // New authentication fields
     isEmailVerified: { type: Boolean, default: false },

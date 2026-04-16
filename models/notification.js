@@ -1,10 +1,14 @@
 import mongoose from 'mongoose';
 
 const notificationSchema = new mongoose.Schema({
+  // Made optional so it accepts either a User OR a Tasker
   user: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    ref: 'User'
+  },
+  tasker: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Tasker'
   },
   title: String,
   message: String,
@@ -12,6 +16,10 @@ const notificationSchema = new mongoose.Schema({
   read: {
     type: Boolean,
     default: false
+  },
+  metadata: {
+    blockchainTxId: String,
+    externalLink: String
   }
 }, { timestamps: true });
 

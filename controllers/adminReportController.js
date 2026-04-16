@@ -1,12 +1,26 @@
+// --- EXISTING MODELS ---
 import Report from '../models/report.js';
 import Task from '../models/task.js';
 import User from '../models/user.js';
 import Tasker from '../models/tasker.js';
 import KYCVerification from '../models/kycVerification.js';
-import { logAdminAction } from '../utils/auditLogger.js';
-import AuditLog from '../models/adminAuditLog.js'; 
-import { escapeRegex } from '../utils/searchUtils.js';
 
+// --- NEW MODELS & UTILS ---
+import Transaction from '../models/transaction.js'; // For Payment Exports
+import Category from '../models/category.js';       // For Task Category population
+import ActivityLog from '../models/ActivityLog.js'; // The User/Tasker activity log we just built
+import AuditLog from '../models/adminAuditLog.js';  // Existing Admin actions log
+import ActivityLogModel from '../models/ActivityLog.js'; // Alias if needed for clarity
+
+// --- UTILITIES ---
+import { logAdminAction } from '../utils/auditLogger.js';
+import { logActivity } from '../utils/activityLogger.js'; // To log things during moderation
+import { escapeRegex } from '../utils/searchUtils.js';
+import { sendExportResponse } from '../utils/exportUtils.js'; // The CSV/JSON utility
+
+// --- EXTERNAL LIBRARIES ---
+import mongoose from 'mongoose';
+import { Parser } from 'json2csv';
 
 // --- SECTION 1: MODERATION REPORTS (User Disputes/Spam) ---
 
@@ -84,40 +98,31 @@ export const resolveReport = async (req, res) => {
 // GET /api/admin/reports/export/tasks
 export const exportTaskReport = async (req, res) => {
     try {
-        const { status, startDate, endDate } = req.query;
-        const filter = {};
-
-        if (status && status !== 'All') filter.status = status;
-        if (startDate || endDate) {
-            filter.createdAt = {};
-            if (startDate) filter.createdAt.$gte = new Date(startDate);
-            if (endDate) filter.createdAt.$lte = new Date(endDate);
-        }
-
-        // 1. Fetch tasks with populated fields
-        const tasks = await Task.find(filter)
+        const { format } = req.query;
+        
+        // Fetch tasks and populate the User (client) and Tasker (assigned pro)
+        const tasks = await Task.find()
             .populate('user', 'fullName emailAddress')
-            .populate('mainCategory', 'name')
-            .populate('subCategory', 'name')
+            .populate('tasker', 'firstName lastName')
             .sort({ createdAt: -1 });
 
-        // 2. Map data with safety checks (the fix is the ?. usage)
+        // Mapping the data to flatten populated fields for the CSV
         const reportData = tasks.map(t => ({
-            'Task ID': t._id,
-            'Title': t.title || 'Untitled Task',
-            'Posted By': t.user?.fullName || 'Unknown User',
-            'User Email': t.user?.emailAddress || 'N/A',
-            // Safety check for mainCategory
-            'Category': t.mainCategory?.name || 'General', 
-            'Budget': t.budget || 0,
-            'Status': t.status || 'N/A',
-            'Date Created': t.createdAt ? t.createdAt.toISOString().split('T')[0] : 'N/A'
+            taskId: t._id,
+            title: t.title,
+            client: t.user?.fullName || 'N/A',
+            tasker: t.tasker ? `${t.tasker.firstName} ${t.tasker.lastName}` : 'Unassigned',
+            budget: t.budget,
+            status: t.status,
+            category: t.categoryName || 'General',
+            createdAt: t.createdAt
         }));
 
-        res.json({ status: 'success', data: reportData });
+        const fields = ['taskId', 'title', 'client', 'tasker', 'budget', 'status', 'category', 'createdAt'];
+        
+        return sendExportResponse(res, reportData, fields, 'Tasks_Operational_Report', format);
     } catch (error) {
-        // This logs the ACTUAL error to your terminal so you can see why it failed
-        console.error('Task export error detail:', error); 
+        console.error('Task export error:', error);
         res.status(500).json({ status: 'error', message: 'Task export failed' });
     }
 };
@@ -125,31 +130,31 @@ export const exportTaskReport = async (req, res) => {
 // GET /api/admin/reports/export/payments
 export const exportPaymentReport = async (req, res) => {
     try {
-        const { startDate, endDate } = req.query;
-        // Using your Task-based escrow logic for the payment report
-        const filter = { isEscrowHeld: true };
+        const { format } = req.query;
 
-        if (startDate || endDate) {
-            filter.updatedAt = {};
-            if (startDate) filter.updatedAt.$gte = new Date(startDate);
-            if (endDate) filter.updatedAt.$lte = new Date(endDate);
-        }
+        const transactions = await Transaction.find()
+            .populate('user', 'fullName')
+            .populate('tasker', 'firstName lastName')
+            .sort({ createdAt: -1 });
 
-        const payments = await Task.find(filter)
-            .populate('user', 'fullName emailAddress')
-            .sort({ updatedAt: -1 });
-
-        const reportData = payments.map(p => ({
-            'Reference': p._id,
-            'User': p.user?.emailAddress,
-            'Description': `Escrow for ${p.title}`,
-            'Type': p.escrowStatus === 'released' ? 'Debit' : 'Credit',
-            'Amount': p.escrowAmount,
-            'Date': p.updatedAt.toISOString().split('T')[0]
+        const reportData = transactions.map(tx => ({
+            txId: tx._id,
+            party: tx.user?.fullName || `${tx.tasker?.firstName} ${tx.tasker?.lastName}` || 'System',
+            amount: tx.amount,
+            currency: tx.currency,
+            type: tx.type, // credit/debit
+            purpose: tx.paymentPurpose, // deposit/withdrawal/escrow
+            provider: tx.provider, // stellar/paystack/system
+            status: tx.status,
+            reference: tx.reference,
+            date: tx.createdAt
         }));
 
-        res.json({ status: 'success', data: reportData });
+        const fields = ['txId', 'party', 'amount', 'currency', 'type', 'purpose', 'provider', 'status', 'reference', 'date'];
+        
+        return sendExportResponse(res, reportData, fields, 'Financial_Payments_Report', format);
     } catch (error) {
+        console.error('Payment export error:', error);
         res.status(500).json({ status: 'error', message: 'Payment export failed' });
     }
 };
@@ -157,100 +162,57 @@ export const exportPaymentReport = async (req, res) => {
 // GET /api/admin/reports/export/dashboard
 export const exportDashboardSummary = async (req, res) => {
     try {
-        // 1. Fetch Current System Snapshot
-        const [totalUsers, totalTaskers, totalTasks, pendingKyc] = await Promise.all([
-            User.countDocuments(),
-            Tasker.countDocuments(),
-            Task.countDocuments(),
-            KYCVerification.countDocuments({ status: 'pending' })
+        const { format } = req.query;
+
+        // Aggregate core stats
+        const userCount = await User.countDocuments();
+        const taskerCount = await Tasker.countDocuments();
+        const activeTasks = await Task.countDocuments({ status: { $in: ['open', 'in-progress'] } });
+        
+        const revenueAgg = await Transaction.aggregate([
+            { $match: { status: 'success', type: 'credit' } },
+            { $group: { _id: null, total: { $sum: '$amount' } } }
         ]);
 
-        // 2. Financial Summary
-        const revenueAgg = await Task.aggregate([
-            { $match: { status: 'completed' } },
-            { $group: { _id: null, total: { $sum: '$budget' } } }
-        ]);
-        const totalRevenue = revenueAgg[0]?.total || 0;
-
-        // 3. Format into a Summary Report
-        const reportData = [{
-            'Report Type': 'Executive System Summary',
-            'Export Date': new Date().toISOString().split('T')[0],
-            'Total Registered Users': totalUsers,
-            'Total Registered Taskers': totalTaskers,
-            'Total Tasks Created': totalTasks,
-            'Pending KYC Requests': pendingKyc,
-            'Total System Revenue': `₦${totalRevenue.toLocaleString()}`,
-            'Platform Growth Rate': '24%' // Matches Figma UI
+        const summaryData = [{
+            totalUsers: userCount,
+            totalTaskers: taskerCount,
+            activeTasks: activeTasks,
+            totalRevenue: revenueAgg[0]?.total || 0,
+            reportGeneratedAt: new Date()
         }];
 
-        res.json({
-            status: 'success',
-            message: 'Dashboard summary generated',
-            data: reportData
-        });
+        const fields = ['totalUsers', 'totalTaskers', 'activeTasks', 'totalRevenue', 'reportGeneratedAt'];
+
+        return sendExportResponse(res, summaryData, fields, 'Dashboard_Snapshot', format);
     } catch (error) {
-        console.error('Dashboard export error:', error);
-        res.status(500).json({ status: 'error', message: 'Failed to generate dashboard export' });
+        res.status(500).json({ status: 'error', message: 'Summary export failed' });
     }
 };
 
 // GET /api/admin/reports/export/users
 export const exportUserReport = async (req, res) => {
     try {
-        const { startDate, endDate } = req.query;
-        const filter = {};
+        const { format } = req.query; // Get ?format=csv from URL
+        const users = await User.find().select('fullName emailAddress phoneNumber country residentState wallet isActive createdAt');
 
-        if (startDate || endDate) {
-            filter.createdAt = {};
-            if (startDate) filter.createdAt.$gte = new Date(startDate);
-            if (endDate) filter.createdAt.$lte = new Date(endDate);
-        }
-
-        const users = await User.find(filter).sort({ createdAt: -1 });
-
-        const reportData = users.map(u => ({
-            'User ID': u._id,
-            'Full Name': u.fullName,
-            'Email': u.emailAddress,
-            'Phone': u.phoneNumber,
-            'State': u.residentState || 'N/A',
-            'Wallet Balance': u.walletBalance || 0,
-            'KYC Status': u.isKYCVerified ? 'Verified' : 'Unverified',
-            'Joined Date': u.createdAt.toISOString().split('T')[0]
-        }));
-
-        res.json({ status: 'success', data: reportData });
+        const fields = ['fullName', 'emailAddress', 'phoneNumber', 'country', 'residentState', 'wallet', 'isActive', 'createdAt'];
+        
+        return sendExportResponse(res, users, fields, 'Users_Report', format);
     } catch (error) {
         res.status(500).json({ status: 'error', message: 'User export failed' });
     }
 };
 
-// GET /api/admin/reports/export/taskers
+// 2. Export Tasker Report
 export const exportTaskerReport = async (req, res) => {
     try {
-        const { startDate, endDate } = req.query;
-        const filter = {};
+        const { format } = req.query;
+        const taskers = await Tasker.find().select('firstName lastName emailAddress phoneNumber wallet isKYCVerified isActive');
 
-        if (startDate || endDate) {
-            filter.createdAt = {};
-            if (startDate) filter.createdAt.$gte = new Date(startDate);
-            if (endDate) filter.createdAt.$lte = new Date(endDate);
-        }
-
-        const taskers = await Tasker.find(filter).sort({ createdAt: -1 });
-
-        const reportData = taskers.map(t => ({
-            'Tasker ID': t._id,
-            'Name': `${t.firstName} ${t.lastName}`,
-            'Email': t.emailAddress,
-            'Phone': t.phoneNumber,
-            'Rating': t.averageRating || 0,
-            'Verified': t.verifyIdentity ? 'Yes' : 'No',
-            'Joined Date': t.createdAt.toISOString().split('T')[0]
-        }));
-
-        res.json({ status: 'success', data: reportData });
+        const fields = ['firstName', 'lastName', 'emailAddress', 'phoneNumber', 'wallet', 'isKYCVerified', 'isActive'];
+        
+        return sendExportResponse(res, taskers, fields, 'Taskers_Report', format);
     } catch (error) {
         res.status(500).json({ status: 'error', message: 'Tasker export failed' });
     }
@@ -265,31 +227,57 @@ export const exportTaskerReport = async (req, res) => {
  */
 export const getAllActivityLogs = async (req, res) => {
     try {
-        const { page = 1, limit = 20, action, adminId } = req.query;
+        const { page = 1, limit = 20, search, userType } = req.query;
         const filter = {};
 
-        // Filter by specific action (e.g., 'VERIFY_TASKER') if provided
-        if (action) filter.action = action;
-        if (adminId) filter.admin = adminId;
+        if (search) {
+            const escaped = escapeRegex(search);
+            
+            // 1. Find matching Users and Taskers first
+            const [matchedUsers, matchedTaskers] = await Promise.all([
+                User.find({ 
+                    $or: [
+                        { fullName: { $regex: escaped, $options: 'i' } },
+                        { emailAddress: { $regex: escaped, $options: 'i' } }
+                    ] 
+                }).select('_id'),
+                Tasker.find({ 
+                    $or: [
+                        { firstName: { $regex: escaped, $options: 'i' } },
+                        { lastName: { $regex: escaped, $options: 'i' } },
+                        { emailAddress: { $regex: escaped, $options: 'i' } }
+                    ] 
+                }).select('_id')
+            ]);
 
-        const logs = await AuditLog.find(filter)
-            .populate('admin', 'firstName lastName email')
+            const userIds = matchedUsers.map(u => u._id);
+            const taskerIds = matchedTaskers.map(t => t._id);
+
+            // 2. Build the complex filter
+            filter.$or = [
+                { performedBy: { $in: [...userIds, ...taskerIds] } },
+                { action: { $regex: escaped, $options: 'i' } },
+                { ipAddress: { $regex: escaped, $options: 'i' } }
+            ];
+        }
+
+        if (userType) filter.onModel = userType;
+
+        const logs = await ActivityLog.find(filter)
+            .populate('performedBy', 'firstName lastName fullName emailAddress profilePicture')
             .sort({ createdAt: -1 })
-            .limit(limit * 1)
-            .skip((page - 1) * limit);
+            .limit(Number(limit))
+            .skip((Number(page) - 1) * Number(limit));
 
-        const total = await AuditLog.countDocuments(filter);
+        const total = await ActivityLog.countDocuments(filter);
 
         res.json({
             status: 'success',
             totalRecords: total,
-            totalPages: Math.ceil(total / limit),
-            currentPage: Number(page),
             logs
         });
     } catch (error) {
-        console.error('Fetch activity logs error:', error);
-        res.status(500).json({ status: 'error', message: 'Failed to fetch activity logs' });
+        res.status(500).json({ status: 'error', message: 'Search failed' });
     }
 };
 
@@ -316,5 +304,33 @@ export const getReportDetails = async (req, res) => {
     } catch (error) {
         console.error('Fetch report details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch report details' });
+    }
+};
+
+export const getUserSecuritySummary = async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        const stats = await ActivityLog.aggregate([
+            { $match: { performedBy: new mongoose.Types.ObjectId(userId) } },
+            { $group: {
+                _id: "$action",
+                count: { $sum: 1 },
+                lastSeen: { $max: "$createdAt" }
+            }}
+        ]);
+
+        const failedLogins = stats.find(s => s._id === 'LOGIN_FAILED')?.count || 0;
+
+        res.json({
+            status: 'success',
+            data: {
+                totalActions: stats.reduce((acc, curr) => acc + curr.count, 0),
+                failedLogins,
+                recentActions: stats.slice(0, 5)
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: 'Could not fetch security summary' });
     }
 };

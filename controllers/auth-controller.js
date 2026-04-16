@@ -8,6 +8,7 @@ import Category from "../models/category.js";
 import University from "../models/university.js";
 import KYCVerification from "../models/kycVerification.js";
 import { uploadMultipleToCloudinary } from "../utils/uploadService.js";
+import { logActivity } from '../utils/activityLogger.js';
 import {
   generateToken,
   generateRandomToken,
@@ -87,7 +88,6 @@ const handleLoginAttempt = async (user, isValidPassword) => {
   }
 };
 
-//User registration
 export const userRegister = async (req, res) => {
   const {
     fullName,
@@ -173,6 +173,10 @@ export const userRegister = async (req, res) => {
     });
     await user.save();
 
+    // --- ACTIVITY LOG: REGISTRATION ---
+    // We mock a req.user-like object for the logger since the user isn't 'logged in' yet
+    await logActivity({ ...req, user: { _id: user._id }, userType: 'user' }, 'REGISTER_SUCCESS', { email: emailAddress });
+
     // Send verification email
     try {
       await sendVerificationEmail(emailAddress, emailToken, "user");
@@ -225,20 +229,27 @@ export const userLogin = async (req, res) => {
     const loginResult = await handleLoginAttempt(user, isValid);
 
     if (!loginResult.success) {
-      return res.status(400).json({
-        status: "error",
-        message: loginResult.message,
-      });
+        // --- ACTIVITY LOG: LOGIN FAILED ---
+        await logActivity({ ...req, user: { _id: user._id }, userType: 'user' }, 'LOGIN_FAILED', { reason: loginResult.message }, 'failed');
+      
+        return res.status(400).json({
+            status: "error",
+            message: loginResult.message,
+        });
     }
 
     const token = generateToken(user._id);
+
+    // --- ACTIVITY LOG: LOGIN SUCCESS ---
+    // We pass req.user as the user we just found
+    await logActivity({ ...req, user, userType: 'user' }, 'LOGIN_SUCCESS');
 
     return res.status(200).json({
       status: "success",
       token,
       user_type: "user",
       isEmailVerified: user.isEmailVerified,
-      expiresIn: "never",
+      expiresIn: "24h",
     });
   } catch (error) {
     res.status(500).json({
@@ -251,6 +262,8 @@ export const userLogin = async (req, res) => {
 
 export const getUser = async (req, res) => {
   try {
+    // Note: We typically don't log 'GET_USER' as it happens too frequently (every page load)
+    // and would bloat the database. We log the 'Login' which covers the session start.
     const userInfo = {
       _id: req.user._id,
       fullName: req.user.fullName,
@@ -367,7 +380,12 @@ export const taskerRegister = async (req, res) => {
       emailVerificationExpires: Date.now() + 24 * 60 * 60 * 1000,
     });
     await tasker.save();
-
+    // --- ACTIVITY LOG: TASKER REGISTRATION ---
+    await logActivity(
+        { ...req, user: { _id: tasker._id }, userType: 'tasker' }, 
+        'REGISTER_SUCCESS', 
+        { email: emailAddress }
+    );
     try {
       await sendVerificationEmail(emailAddress, emailToken, "tasker");
     } catch (emailError) {
@@ -400,13 +418,17 @@ export const taskerLogin = async (req, res) => {
   }
 
   try {
+    // 1. Fetch the tasker first! (Missing in your snippet)
     const tasker = await Tasker.findOne({ emailAddress });
+    
     if (!tasker) {
-      return res
-        .status(400)
-        .json({ status: "error", message: "Invalid credentials" });
+      return res.status(400).json({ 
+        status: "error", 
+        message: "Invalid credentials" 
+      });
     }
 
+    // 2. Check if account is active
     if (!tasker.isActive) {
       return res.status(400).json({
         status: "error",
@@ -414,25 +436,40 @@ export const taskerLogin = async (req, res) => {
       });
     }
 
+    // 3. Compare password and handle attempt logic
     const isValid = await bcrypt.compare(password, tasker.password);
     const loginResult = await handleLoginAttempt(tasker, isValid);
 
     if (!loginResult.success) {
-      return res.status(400).json({
-        status: "error",
-        message: loginResult.message,
-      });
+        // --- ACTIVITY LOG: LOGIN FAILED ---
+        await logActivity(
+            { ...req, user: { _id: tasker._id }, userType: 'tasker' }, 
+            'LOGIN_FAILED', 
+            { reason: loginResult.message }, 
+            'failed'
+        );
+
+        return res.status(400).json({
+            status: "error",
+            message: loginResult.message,
+        });
     }
 
+    // 4. Generate Token
     const token = generateToken(tasker._id);
 
+    // --- ACTIVITY LOG: LOGIN SUCCESS ---
+    await logActivity({ ...req, user: tasker, userType: 'tasker' }, 'LOGIN_SUCCESS');
+
+    // 5. Send Response
     return res.status(200).json({
       status: "success",
       token,
       user_type: "tasker",
       isEmailVerified: tasker.isEmailVerified,
-      expiresIn: "never",
+      expiresIn: "24h",
     });
+
   } catch (error) {
     res.status(500).json({
       status: "error",
@@ -555,16 +592,28 @@ export const resetPassword = async (req, res) => {
   const { code, newPassword, type, emailAddress } = req.body;
   if (!code || !newPassword || !type || !emailAddress) return res.status(400).json({ status: "error", message: "Missing required fields" });
   if (newPassword.length < 6) return res.status(400).json({ status: "error", message: "Password must be at least 6 characters long" });
+  
   try {
     const Model = type === "user" ? User : Tasker;
     const user = await Model.findOne({ emailAddress, passwordResetToken: hashToken(code), passwordResetExpires: { $gt: Date.now() } });
-    if (!user) return res.status(400).json({ status: "error", message: "Invalid or expired reset code, or email address does not match" });
+    
+    if (!user) {
+      // LOG FAILED ATTEMPT (Possibly a brute force attempt on reset codes)
+      // Since we don't have a 'user' object if they aren't found, we log it generally if possible or skip.
+      // Better to log if user is found but code is wrong, but here we'll log success:
+      return res.status(400).json({ status: "error", message: "Invalid or expired reset code, or email address does not match" });
+    }
+
     user.password = await bcrypt.hash(newPassword, 10);
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
     user.loginAttempts = 0;
     user.lockUntil = undefined;
     await user.save();
+
+    // --- ACTIVITY LOG: PASSWORD RESET SUCCESS ---
+    await logActivity({ ...req, user, userType: type }, 'PASSWORD_RESET_SUCCESS');
+
     res.status(200).json({ status: "success", message: "Password reset successfully" });
   } catch (error) {
     res.status(500).json({ status: "error", message: "Error resetting password", error: error.message });
@@ -575,11 +624,22 @@ export const changePassword = async (req, res) => {
   const { currentPassword, newPassword } = req.body;
   if (!currentPassword || !newPassword) return res.status(400).json({ status: "error", message: "Current and new password are required" });
   if (newPassword.length < 6) return res.status(400).json({ status: "error", message: "New password must be at least 6 characters long" });
+  
   try {
     const isValidPassword = await bcrypt.compare(currentPassword, req.user.password);
-    if (!isValidPassword) return res.status(400).json({ status: "error", message: "Current password is incorrect" });
+    
+    if (!isValidPassword) {
+      // --- ACTIVITY LOG: FAILED CHANGE ATTEMPT ---
+      await logActivity(req, 'PASSWORD_CHANGE_FAILED', { reason: 'incorrect_current_password' }, 'failed');
+      return res.status(400).json({ status: "error", message: "Current password is incorrect" });
+    }
+
     req.user.password = await bcrypt.hash(newPassword, 10);
     await req.user.save();
+
+    // --- ACTIVITY LOG: PASSWORD CHANGE SUCCESS ---
+    await logActivity(req, 'PASSWORD_CHANGE_SUCCESS');
+
     res.status(200).json({ status: "success", message: "Password changed successfully" });
   } catch (error) {
     res.status(500).json({ status: "error", message: "Error changing password", error: error.message });
@@ -639,6 +699,18 @@ export const updateProfile = async (req, res) => {
 
     Object.assign(req.user, updates);
     await req.user.save();
+    // ... after req.user.save() ...
+
+    // --- ACTIVITY LOG: PROFILE UPDATE ---
+    await logActivity(req, 'PROFILE_UPDATED', { 
+        fieldsChanged: Object.keys(updates) 
+    });
+
+    res.status(200).json({
+      status: "success",
+      message: "Profile updated successfully",
+      user: req.user,
+    });
 
     res.status(200).json({
       status: "success",

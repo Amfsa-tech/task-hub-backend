@@ -9,18 +9,35 @@ const withdrawalSchema = new mongoose.Schema({
     amount: {
         type: Number,
         required: true,
-        min: 5000
+        min: 5000 // Minimum 5,000 Naira
     },
     status: {
         type: String,
-        enum: ['pending', 'approved', 'completed', 'rejected'],
+        enum: ['pending', 'processing', 'completed', 'rejected'],
         default: 'pending'
     },
+    // NEW: Define how the Tasker wants to be paid
+    payoutMethod: {
+        type: String,
+        enum: ['bank_transfer', 'stellar_crypto'],
+        required: true,
+        default: 'bank_transfer'
+    },
+    // UPDATED: Made these optional so crypto withdrawals don't crash
     bankDetails: {
-        bankName: { type: String, required: true },
-        bankCode: { type: String, required: true },
-        accountNumber: { type: String, required: true },
-        accountName: { type: String, required: true }
+        bankName: { type: String },
+        bankCode: { type: String },
+        accountNumber: { type: String },
+        accountName: { type: String }
+    },
+    // NEW: Where to send the XLM
+    stellarDetails: {
+        publicKey: { type: String }, // The Tasker's G... address
+        memo: { type: String }       // Optional (some exchanges require a memo)
+    },
+    // NEW: The Blockchain Receipt
+    blockchainTxId: {
+        type: String 
     },
     // Admin approval
     reviewedBy: {

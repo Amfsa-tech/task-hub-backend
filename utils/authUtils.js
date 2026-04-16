@@ -5,10 +5,11 @@ import { JWT_SECRET_KEY } from '../config/envConfig.js';
 export const JWT_SECRET = JWT_SECRET_KEY;
 
 // Generate JWT token (no expiry)
-export const generateToken = (userId) => {
-    return jwt.sign({ id: userId }, JWT_SECRET);
+export const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
+    expiresIn: '24h', // Change this to '1d', '7d', or '30d' depending on your preference
+  });
 };
-
 // Generate random tokens for email verification and password reset
 export const generateRandomToken = () => {
     return Math.floor(10000 + Math.random() * 90000).toString();

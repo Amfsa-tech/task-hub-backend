@@ -2,14 +2,11 @@
 import mongoose from 'mongoose';
 
 const transactionSchema = new mongoose.Schema({
-    user: { 
-        type: mongoose.Schema.Types.ObjectId, 
-        ref: 'User', 
-    },
-    tasker: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Tasker'
-    },
+    // The client who funded the wallet
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, 
+    
+    // The freelancer who withdrew the money
+    tasker: { type: mongoose.Schema.Types.ObjectId, ref: 'Tasker' },
     amount: { 
         type: Number, 
         required: true 
@@ -35,7 +32,7 @@ const transactionSchema = new mongoose.Schema({
     },
     provider: {
         type: String,
-        enum: ['paystack', 'system'],
+        enum: ['paystack', 'system', 'stellar'],
         default: 'system'
     },
     paymentPurpose: {

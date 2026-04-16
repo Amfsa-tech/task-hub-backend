@@ -2,6 +2,7 @@ import AdminNotification from '../models/adminNotification.js'; // <-- UPDATED I
 import User from '../models/user.js';       
 import Tasker from '../models/tasker.js';   
 import { logAdminAction } from '../utils/auditLogger.js';
+import Notification from '../models/notification.js'; // <-- ADD THIS IMPORT AT THE TOP
 
 // GET /api/admin/notifications/stats
 export const getNotificationStats = async (req, res) => {
@@ -67,19 +68,43 @@ export const sendNotification = async (req, res) => {
         }
 
         let recipientsCount = 0;
+        let notificationsToInsert = []; // Array to hold all the individual notifications
+
         if (audience === 'All Users') {
-            recipientsCount = await User.countDocuments();
+            const users = await User.find().select('_id');
+            recipientsCount = users.length;
+            notificationsToInsert = users.map(u => ({
+                user: u._id, title, message, type: type || 'Announcement'
+            }));
         } else if (audience === 'All Taskers') {
-            recipientsCount = await Tasker.countDocuments();
+            const taskers = await Tasker.find().select('_id');
+            recipientsCount = taskers.length;
+            notificationsToInsert = taskers.map(t => ({
+                tasker: t._id, title, message, type: type || 'Announcement'
+            }));
         } else if (audience === 'Everyone') {
-            const users = await User.countDocuments();
-            const taskers = await Tasker.countDocuments();
-            recipientsCount = users + taskers;
+            const users = await User.find().select('_id');
+            const taskers = await Tasker.find().select('_id');
+            recipientsCount = users.length + taskers.length;
+            
+            const userNotifs = users.map(u => ({ user: u._id, title, message, type: type || 'Announcement' }));
+            const taskerNotifs = taskers.map(t => ({ tasker: t._id, title, message, type: type || 'Announcement' }));
+            notificationsToInsert = [...userNotifs, ...taskerNotifs];
         } else if (audience === 'Selected Users') {
+            // Assuming selectedUserIds might contain both User and Tasker IDs
             recipientsCount = selectedUserIds ? selectedUserIds.length : 0;
+            
+            if (recipientsCount > 0) {
+                // Since we don't know if the IDs are Users or Taskers from the frontend easily, 
+                // we have to check. A simpler way if you strictly pass User IDs:
+                notificationsToInsert = selectedUserIds.map(id => ({
+                    user: id, // WARNING: If frontend passes Tasker IDs here, update this logic!
+                    title, message, type: type || 'Announcement'
+                }));
+            }
         }
 
-        // <-- UPDATED HERE
+        // 1. Log the broadcast receipt for the Admin
         const newNotification = await AdminNotification.create({
             title,
             message,
@@ -88,6 +113,11 @@ export const sendNotification = async (req, res) => {
             recipientsCount,
             sentBy: req.admin._id
         });
+
+        // 2. ACTUALLY SEND THE NOTIFICATIONS TO THE USERS/TASKERS
+        if (notificationsToInsert.length > 0) {
+            await Notification.insertMany(notificationsToInsert);
+        }
 
         await logAdminAction({
             adminId: req.admin._id,

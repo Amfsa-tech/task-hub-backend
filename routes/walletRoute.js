@@ -1,38 +1,61 @@
-import { Router } from 'express';
-import { protectUser, protectTasker } from '../middlewares/authMiddleware.js';
-import { initializeFunding, verifyFunding, getUserBalance, getUserTransactions } from '../controllers/walletController.js';
-import { handlePaystackWebhook } from '../controllers/paystackWebhookController.js';
-import { verifyPaystackSignature } from '../middlewares/paystackWebhookAuth.js';
+import express from 'express';
 import {
-    getTaskerBalance,
-    setBankAccount,
-    getBankAccount,
+    initializeFunding,
+    verifyFunding,
+    getUserBalance,
+    getUserTransactions,
+    getStellarDepositInfo,
     requestWithdrawal,
-    getWithdrawalHistory,
-    listBanks
-} from '../controllers/withdrawalController.js';
+    getTaskerBalance,
+    getTaskerTransactions,
+    setupTransactionPin
+} from '../controllers/walletController.js';
 
-const router = Router();
+// TODO: Ensure this import matches the exact name and path of your authentication middleware
+import { protectAny } from '../middlewares/authMiddleware.js'; 
 
-// User-facing endpoints (JWT protected)
-router.post('/fund/initialize', protectUser, initializeFunding);
-router.get('/fund/verify', protectUser, verifyFunding);
+const router = express.Router();
 
-// User wallet & transaction endpoints
-router.get('/user/balance', protectUser, getUserBalance);
-router.get('/user/transactions', protectUser, getUserTransactions);
+// ==========================================
+// SECURITY: Protect all wallet routes
+// ==========================================
+// Every route below this line requires the user to be logged in with a valid token
+router.use(protectAny);
 
-// Paystack webhook — no JWT auth, verified by HMAC signature
-router.post('/paystack-webhook', verifyPaystackSignature, handlePaystackWebhook);
+// ==========================================
+// FIAT FUNDING (PAYSTACK)
+// ==========================================
+// POST /api/wallet/fund/initialize
+router.post('/fund/initialize', initializeFunding);
 
-// Bank list (tasker auth required)
-router.get('/banks', protectTasker, listBanks);
+// GET /api/wallet/fund/verify?reference=...
+router.get('/fund/verify', verifyFunding);
 
-// Tasker wallet & withdrawal endpoints
-router.get('/tasker/balance', protectTasker, getTaskerBalance);
-router.get('/tasker/bank-account', protectTasker, getBankAccount);
-router.post('/tasker/bank-account', protectTasker, setBankAccount);
-router.post('/tasker/withdraw', protectTasker, requestWithdrawal);
-router.get('/tasker/withdrawals', protectTasker, getWithdrawalHistory);
+
+// ==========================================
+// USER BALANCES & HISTORY
+// ==========================================
+// GET /api/wallet/user/balance
+router.get('/user/balance', getUserBalance);
+
+// GET /api/wallet/user/transactions
+router.get('/user/transactions', getUserTransactions);
+
+
+// ==========================================
+// CRYPTO BRIDGE (STELLAR DEPOSITS & WITHDRAWALS)
+// ==========================================
+// GET /api/wallet/stellar/deposit-info
+// Returns Master Public Key and User's Memo ID for the QR code screen
+router.get('/stellar/deposit-info', getStellarDepositInfo);
+
+// POST /api/wallet/withdraw
+// Submits a withdrawal request (handles both Bank Transfers and Stellar Crypto)
+router.post('/withdraw', requestWithdrawal);
+// TASKER BALANCES & HISTORY (NEW)
+// ==========================================
+router.get('/tasker/balance', getTaskerBalance);
+router.get('/tasker/transactions', getTaskerTransactions);
+router.post('/tasker/pin/setup', setupTransactionPin);
 
 export default router;

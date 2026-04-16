@@ -5,7 +5,7 @@
 
 const LOGO_URL = 'https://res.cloudinary.com/daf6mdwkh/image/upload/v1750868774/20250614_185641_iwuj1n.png';
 
-const baseLayout = (title, bodyHtml) => `
+export const baseLayout = (title, bodyHtml) => `
 <html lang="en">
 <head>
     <meta charset="UTF-8">
