@@ -15,6 +15,11 @@ const server = new StellarSdk.Horizon.Server(
 const XLM_TO_NGN_RATE = 1500; 
 
 export const startDepositListener = () => {
+    if (!MASTER_PUBLIC_KEY) {
+        console.warn('⚠️ STELLAR_MASTER_PUBLIC_KEY is not set. Stellar deposit listener disabled.');
+        return;
+    }
+
     console.log(`📡 Starting Stellar Deposit Listener on ${IS_TESTNET ? 'TESTNET' : 'PUBLIC'}...`);
 
     // Stream payments sent to the Master Wallet
