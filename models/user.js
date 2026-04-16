@@ -20,7 +20,11 @@ const userSchema = new Schema({
         default: null,
         index: true // Index for efficient querying when sending notifications
     },
-    
+    stellarMemoId: { 
+        type: String, 
+        unique: true, 
+        sparse: true // Allows some users to not have one yet
+    },
     // Admin role
     isAdmin: { type: Boolean, default: false },
     

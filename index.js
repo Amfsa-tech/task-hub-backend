@@ -31,7 +31,9 @@ import nearbyTaskerRoutes from './routes/nearbyTaskerRoute.js';
 import mainCategoryRoutes from './routes/mainCategoryRoute.js';
 import universityRoutes from './routes/universityRoute.js';
 import ninSubmissionRoutes from './routes/taskerNinRoute.js';
+import userNotificationRoutes from './routes/notificationRoutes.js';
 import { checkMaintenanceMode } from './middlewares/maintenanceMiddleware.js';
+import { startDepositListener } from './services/stellarListener.js';
 
 const app = express();
 
@@ -90,6 +92,9 @@ setupConnectionHandlers();
 // Connect to MongoDB
 await connectDB();
 
+// Start watching the Stellar blockchain for deposits
+startDepositListener();
+
 // Middleware
 app.use(cors({
     origin: (origin, callback) => {
@@ -141,6 +146,8 @@ app.use('/api/main-categories', mainCategoryRoutes); // Public main categories
 app.use('/api/universities', universityRoutes);       // Public universities
 app.use('/api/waitlist', waitlistRoutes);
 app.use('/api/nin', ninSubmissionRoutes);
+// User/Tasker side notifications
+app.use('/api/notifications', userNotificationRoutes);
 
 
 

@@ -183,7 +183,17 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 
 
 
+---
 
+## 15. Withdrawal Management & Crypto Payouts (`/api/admin/withdrawals`)
+
+| Method | Endpoint | Description | Roles |
+| :--- | :--- | :--- | :--- |
+| **GET** | `/api/admin/withdrawals/stats` | Fetches aggregate withdrawal analytics (Pending, Processing, Approved, Total NGN Paid). | `super_admin`, `operations` |
+| **GET** | `/api/admin/withdrawals` | Lists all withdrawal requests. Supports filtering by `status`, `payoutMethod` (Bank/Stellar), and `search`. | `super_admin`, `operations` |
+| **PATCH** | `/api/admin/withdrawals/:id/approve` | **Automated Engine:** If payout is Stellar, it signs/broadcasts XLM to the blockchain instantly. If Bank, marks as approved for manual payment. | `super_admin` |
+| **PATCH** | `/api/admin/withdrawals/:id/reject` | Rejects request and **automatically refunds** NGN back to the Tasker's wallet. Requires `{"reason": "string"}`. | `super_admin`, `operations` |
+| **PATCH** | `/api/admin/withdrawals/:id/complete` | Manual override to mark a Bank withdrawal as finished. (Crypto withdrawals auto-complete). | `super_admin`, `operations` |
 
 ```
 
