@@ -174,8 +174,10 @@ export const userRegister = async (req, res) => {
     await user.save();
 
     // --- ACTIVITY LOG: REGISTRATION ---
-    // We mock a req.user-like object for the logger since the user isn't 'logged in' yet
-    await logActivity({ ...req, user: { _id: user._id }, userType: 'user' }, 'REGISTER_SUCCESS', { email: emailAddress });
+    // FIX: Attach directly to the existing req object
+    req.user = { _id: user._id };
+    req.userType = 'user';
+    await logActivity(req, 'REGISTER_SUCCESS', { email: emailAddress });
 
     // Send verification email
     try {
@@ -230,7 +232,16 @@ export const userLogin = async (req, res) => {
 
     if (!loginResult.success) {
         // --- ACTIVITY LOG: LOGIN FAILED ---
-        await logActivity({ ...req, user: { _id: user._id }, userType: 'user' }, 'LOGIN_FAILED', { reason: loginResult.message }, 'failed');
+        // FIX: Attach directly to req instead of using { ...req }
+        req.user = { _id: user._id };
+        req.userType = 'user';
+        
+        await logActivity(
+            req, 
+            'LOGIN_FAILED', 
+            { reason: loginResult.message }, 
+            'failed'
+        );
       
         return res.status(400).json({
             status: "error",
@@ -241,8 +252,10 @@ export const userLogin = async (req, res) => {
     const token = generateToken(user._id);
 
     // --- ACTIVITY LOG: LOGIN SUCCESS ---
-    // We pass req.user as the user we just found
-    await logActivity({ ...req, user, userType: 'user' }, 'LOGIN_SUCCESS');
+    // FIX: Attach directly to req instead of using { ...req }
+    req.user = user;
+    req.userType = 'user';
+    await logActivity(req, 'LOGIN_SUCCESS');
 
     return res.status(200).json({
       status: "success",
@@ -380,12 +393,13 @@ export const taskerRegister = async (req, res) => {
       emailVerificationExpires: Date.now() + 24 * 60 * 60 * 1000,
     });
     await tasker.save();
+    
     // --- ACTIVITY LOG: TASKER REGISTRATION ---
-    await logActivity(
-        { ...req, user: { _id: tasker._id }, userType: 'tasker' }, 
-        'REGISTER_SUCCESS', 
-        { email: emailAddress }
-    );
+    // FIX: Attach directly to the existing req object
+    req.user = { _id: tasker._id };
+    req.userType = 'tasker';
+    await logActivity(req, 'REGISTER_SUCCESS', { email: emailAddress });
+    
     try {
       await sendVerificationEmail(emailAddress, emailToken, "tasker");
     } catch (emailError) {
@@ -418,7 +432,7 @@ export const taskerLogin = async (req, res) => {
   }
 
   try {
-    // 1. Fetch the tasker first! (Missing in your snippet)
+    // 1. Fetch the tasker first!
     const tasker = await Tasker.findOne({ emailAddress });
     
     if (!tasker) {
@@ -442,8 +456,12 @@ export const taskerLogin = async (req, res) => {
 
     if (!loginResult.success) {
         // --- ACTIVITY LOG: LOGIN FAILED ---
+        // FIX: Attach to existing req object to preserve headers (like x-forwarded-for)
+        req.user = { _id: tasker._id };
+        req.userType = 'tasker';
+        
         await logActivity(
-            { ...req, user: { _id: tasker._id }, userType: 'tasker' }, 
+            req, 
             'LOGIN_FAILED', 
             { reason: loginResult.message }, 
             'failed'
@@ -459,7 +477,10 @@ export const taskerLogin = async (req, res) => {
     const token = generateToken(tasker._id);
 
     // --- ACTIVITY LOG: LOGIN SUCCESS ---
-    await logActivity({ ...req, user: tasker, userType: 'tasker' }, 'LOGIN_SUCCESS');
+    // FIX: Attach to existing req object to preserve headers
+    req.user = tasker;
+    req.userType = 'tasker';
+    await logActivity(req, 'LOGIN_SUCCESS');
 
     // 5. Send Response
     return res.status(200).json({
@@ -590,17 +611,27 @@ export const forgotPassword = async (req, res) => {
 
 export const resetPassword = async (req, res) => {
   const { code, newPassword, type, emailAddress } = req.body;
-  if (!code || !newPassword || !type || !emailAddress) return res.status(400).json({ status: "error", message: "Missing required fields" });
-  if (newPassword.length < 6) return res.status(400).json({ status: "error", message: "Password must be at least 6 characters long" });
+  
+  if (!code || !newPassword || !type || !emailAddress) {
+    return res.status(400).json({ status: "error", message: "Missing required fields" });
+  }
+  
+  if (newPassword.length < 6) {
+    return res.status(400).json({ status: "error", message: "Password must be at least 6 characters long" });
+  }
   
   try {
     const Model = type === "user" ? User : Tasker;
-    const user = await Model.findOne({ emailAddress, passwordResetToken: hashToken(code), passwordResetExpires: { $gt: Date.now() } });
+    const user = await Model.findOne({ 
+      emailAddress, 
+      passwordResetToken: hashToken(code), 
+      passwordResetExpires: { $gt: Date.now() } 
+    });
     
     if (!user) {
-      // LOG FAILED ATTEMPT (Possibly a brute force attempt on reset codes)
-      // Since we don't have a 'user' object if they aren't found, we log it generally if possible or skip.
-      // Better to log if user is found but code is wrong, but here we'll log success:
+      // Note: If you ever want to log failed password resets, you would 
+      // need to look up the user by email first, regardless of the token, 
+      // to attach their ID to the req object before calling logActivity.
       return res.status(400).json({ status: "error", message: "Invalid or expired reset code, or email address does not match" });
     }
 
@@ -612,7 +643,10 @@ export const resetPassword = async (req, res) => {
     await user.save();
 
     // --- ACTIVITY LOG: PASSWORD RESET SUCCESS ---
-    await logActivity({ ...req, user, userType: type }, 'PASSWORD_RESET_SUCCESS');
+    // FIX: Attach directly to the existing req object
+    req.user = user;
+    req.userType = type;
+    await logActivity(req, 'PASSWORD_RESET_SUCCESS');
 
     res.status(200).json({ status: "success", message: "Password reset successfully" });
   } catch (error) {
@@ -699,29 +733,23 @@ export const updateProfile = async (req, res) => {
 
     Object.assign(req.user, updates);
     await req.user.save();
-    // ... after req.user.save() ...
 
     // --- ACTIVITY LOG: PROFILE UPDATE ---
     await logActivity(req, 'PROFILE_UPDATED', { 
         fieldsChanged: Object.keys(updates) 
     });
 
+    // Just ONE response!
     res.status(200).json({
       status: "success",
       message: "Profile updated successfully",
       user: req.user,
     });
 
-    res.status(200).json({
-      status: "success",
-      message: "Profile updated successfully",
-      user: req.user,
-    });
   } catch (error) {
     res.status(500).json({ status: "error", message: "Error updating profile", error: error.message });
   }
 };
-
 export const logout = async (req, res) => {
   try {
     res.status(200).json({ status: "success", message: "Logged out successfully" });
@@ -733,14 +761,20 @@ export const logout = async (req, res) => {
 export const updateProfilePicture = async (req, res) => {
   const { profilePicture } = req.body;
   if (!profilePicture) return res.status(400).json({ status: "error", message: "Profile picture URL is required" });
+  
   try {
     new URL(profilePicture);
   } catch (error) {
     return res.status(400).json({ status: "error", message: "Invalid profile picture URL format" });
   }
+  
   try {
     req.user.profilePicture = profilePicture;
     await req.user.save();
+    
+    // --- ACTIVITY LOG: PICTURE UPDATED (Using the safe method!) ---
+    await logActivity(req, 'PROFILE_PICTURE_UPDATED');
+
     res.status(200).json({ status: "success", message: "Profile picture updated successfully", profilePicture: req.user.profilePicture });
   } catch (error) {
     res.status(500).json({ status: "error", message: "Error updating profile picture", error: error.message });
@@ -902,19 +936,35 @@ export const updateTaskerCategories = async (req, res) => {
 };
 
 // ... Location, DIDIT, and Notification ID handlers remain exactly the same ...
+ // Make sure this exact top line is present!
 export const deactivateAccount = async (req, res) => {
   const { password } = req.body;
-  if (!password) return res.status(400).json({ status: "error", message: "Password is required to deactivate account" });
+
+  if (!password) {
+      return res.status(400).json({ status: "error", message: "Password is required to deactivate account" });
+  }
+  
   try {
     const isValidPassword = await bcrypt.compare(password, req.user.password);
-    if (!isValidPassword) return res.status(400).json({ status: "error", message: "Incorrect password" });
+    if (!isValidPassword) {
+      // --- ACTIVITY LOG: FAILED DEACTIVATION ATTEMPT ---
+      await logActivity(req, 'ACCOUNT_DEACTIVATION_FAILED', { reason: 'incorrect_password' }, 'failed');
+      return res.status(400).json({ status: "error", message: "Incorrect password" });
+    }
+    
     req.user.isActive = false;
     await req.user.save();
+
+    // --- ACTIVITY LOG: ACCOUNT DEACTIVATED ---
+    await logActivity(req, 'ACCOUNT_DEACTIVATED');
+
     res.status(200).json({ status: "success", message: "Account deactivated successfully" });
   } catch (error) {
     res.status(500).json({ status: "error", message: "Error deactivating account", error: error.message });
   }
-};
+}; // Make sure it ends cleanly with this bracket!
+ 
+
 
 export const updateTaskerLocation = async (req, res) => {
   const { latitude, longitude } = req.body;
