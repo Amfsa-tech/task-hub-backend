@@ -10,7 +10,8 @@ import {
     exportUserReport,     
     exportTaskerReport,
     getAllActivityLogs,
-    getReportDetails   
+    getReportDetails,
+    getUserSecuritySummary
 } from '../controllers/adminReportController.js';
 
 const router = express.Router();

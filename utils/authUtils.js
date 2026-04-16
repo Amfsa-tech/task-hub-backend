@@ -4,10 +4,18 @@ import { JWT_SECRET_KEY } from '../config/envConfig.js';
 
 export const JWT_SECRET = JWT_SECRET_KEY;
 
+
 // Generate JWT token (no expiry)
 export const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: '24h', // Change this to '1d', '7d', or '30d' depending on your preference
+  // Read it directly from process.env AT RUNTIME, or fall back to the imported key
+  const secret = process.env.JWT_SECRET_KEY || JWT_SECRET_KEY;
+  
+  if (!secret) {
+      console.error("CRITICAL ERROR: JWT Secret is totally missing at runtime!");
+  }
+
+  return jwt.sign({ id }, secret, {
+    expiresIn: '24h', 
   });
 };
 // Generate random tokens for email verification and password reset
