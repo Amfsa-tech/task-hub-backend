@@ -2,10 +2,11 @@ import KYCVerification from '../models/kycVerification.js';
 import { ninVerificationService } from '../services/nin_service.js';
 
 /**
- * Tasker submits NIN + full name for manual admin review.
+ * User or Tasker submits NIN + full name for manual admin review.
  * One-time submission only — no QoreID call, stored as Pending.
+ * Requires protectAny middleware (sets req.user and req.userType).
  */
-export const submitTaskerNIN = async (req, res) => {
+export const submitNINForReview = async (req, res) => {
     try {
         const { nin, fullName } = req.body;
 
@@ -23,7 +24,10 @@ export const submitTaskerNIN = async (req, res) => {
             });
         }
 
-        const existing = await KYCVerification.findOne({ user: req.tasker._id, userType: 'Tasker' });
+        const userType = req.userType === 'tasker' ? 'Tasker' : 'User';
+        const userId = req.user._id;
+
+        const existing = await KYCVerification.findOne({ user: userId, userType });
         if (existing) {
             return res.status(409).json({
                 status: 'error',
@@ -32,8 +36,8 @@ export const submitTaskerNIN = async (req, res) => {
         }
 
         const kyc = await KYCVerification.create({
-            user: req.tasker._id,
-            userType: 'Tasker',
+            user: userId,
+            userType,
             maskedNin: nin.slice(0, 3) + '****' + nin.slice(-4),
             provider: 'qoreid',
             status: 'Pending',

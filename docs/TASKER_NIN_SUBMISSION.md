@@ -1,21 +1,21 @@
-# Tasker NIN Submission (Manual Review)
+# NIN Submission (Manual Review)
 
-A lightweight alternative to the Didit identity verification flow. Taskers submit their NIN and full name once — an admin reviews and approves/rejects it later.
+A lightweight alternative to the Didit identity verification flow. Users or Taskers submit their NIN and full name once — an admin reviews and approves/rejects it later.
 
 Use this when the Didit SDK flow is unavailable, unsupported on the client platform, or you want a simpler fallback.
 
 ## Endpoint
 
 ```
-POST /api/tasker/nin/submit-nin
+POST /api/nin/submit-nin
 ```
 
 ## Authentication
 
-Requires a valid **Tasker** JWT token in the `Authorization` header.
+Requires a valid **User** or **Tasker** JWT token in the `Authorization` header.
 
 ```
-Authorization: Bearer <tasker_jwt_token>
+Authorization: Bearer <jwt_token>
 Content-Type: application/json
 ```
 
@@ -80,7 +80,7 @@ Returned when the JWT is missing, expired, or invalid.
 
 ```js
 const submitNIN = async (nin, fullName, token) => {
-  const res = await fetch('https://api.ngtaskhub.com/api/tasker/nin/submit-nin', {
+  const res = await fetch('https://api.ngtaskhub.com/api/nin/submit-nin', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -106,7 +106,7 @@ import axios from 'axios';
 
 const submitNIN = (nin, fullName, token) =>
   axios.post(
-    '/api/tasker/nin/submit-nin',
+    '/api/nin/submit-nin',
     { nin, fullName },
     { headers: { Authorization: `Bearer ${token}` } }
   );
@@ -115,21 +115,22 @@ const submitNIN = (nin, fullName, token) =>
 ## Flow
 
 ```
-Tasker enters NIN + full name
+User or Tasker enters NIN + full name
         ↓
-  POST /api/tasker/nin/submit-nin
+  POST /api/nin/submit-nin
         ↓
   Server stores masked NIN (e.g. 123****8901) as Pending
         ↓
   Admin reviews via admin KYC panel
         ↓
-  Approved → tasker.isKYCVerified = true
-  Rejected → tasker notified with reason
+  Approved → user.isKYCVerified / tasker.isKYCVerified = true
+  Rejected → user/tasker notified with reason
 ```
 
 ## Notes
 
-- **One-time only** — a tasker cannot resubmit after the first submission.
+- **One-time only** — a user or tasker cannot resubmit after the first submission.
 - **No third-party API call** — the NIN is not verified in real-time. It is stored (masked) for admin review.
 - **Privacy** — the raw NIN is never persisted. Only the masked form (`123****8901`) is saved.
 - **Didit alternative** — use this endpoint when the Didit SDK session flow isn't viable on the client. Both flows write to the same `KYCVerification` model, so admin tooling works identically.
+- **User type detection** — the server automatically identifies whether the token belongs to a User or Tasker and records the KYC entry accordingly.

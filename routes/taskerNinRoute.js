@@ -1,9 +1,9 @@
 import express from 'express';
-import { protectTasker } from '../middlewares/authMiddleware.js';
-import { submitTaskerNIN } from '../controllers/ninController.js';
+import { protectAny } from '../middlewares/authMiddleware.js';
+import { submitNINForReview } from '../controllers/ninController.js';
 
 const router = express.Router();
 
-router.post('/submit-nin', protectTasker, submitTaskerNIN);
+router.post('/submit-nin', protectAny, submitNINForReview);
 
 export default router;
