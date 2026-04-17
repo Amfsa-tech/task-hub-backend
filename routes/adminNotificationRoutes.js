@@ -4,7 +4,8 @@ import { allowAdminRoles } from '../middlewares/adminRoleGuard.js';
 import { 
     getNotificationStats, 
     getAllNotifications, 
-    sendNotification 
+    sendNotification,
+    getAllUserAndTaskerNotifications
 } from '../controllers/adminNotificationController.js';
 
 const router = express.Router();
@@ -22,5 +23,6 @@ router.get('/', getAllNotifications);
 
 // 3. Send Notification
 router.post('/send', sendNotification);
+router.get('/all-users', getAllUserAndTaskerNotifications); // <-- ADD THIS LINE
 
 export default router;

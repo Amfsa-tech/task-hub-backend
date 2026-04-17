@@ -4,6 +4,10 @@ import Tasker from '../models/tasker.js';
 import { logAdminAction } from '../utils/auditLogger.js';
 import Notification from '../models/notification.js'; // <-- ADD THIS IMPORT AT THE TOP
 import { sendEmail } from '../services/emailService.js'; // Adjust the path as needed
+// Make sure this is at the top of adminNotificationController.js
+
+
+// GET /api/admin/notifications/all-users
 
 // GET /api/admin/notifications/stats
 export const getNotificationStats = async (req, res) => {
@@ -188,5 +192,49 @@ export const sendNotification = async (req, res) => {
     } catch (error) {
         console.error('Send notification error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to send notification' });
+    }
+};
+
+export const getAllUserAndTaskerNotifications = async (req, res) => {
+    try {
+        // 1. Pagination setup (Defaults to page 1, 50 items per page)
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 50;
+        const skip = (page - 1) * limit;
+
+        // 2. Optional Filtering (Allows frontend to filter by specific tabs)
+        const query = {};
+        if (req.query.target === 'user') {
+            query.user = { $exists: true }; // Only fetch standard user notifications
+        } else if (req.query.target === 'tasker') {
+            query.tasker = { $exists: true }; // Only fetch tasker notifications
+        }
+        if (req.query.isRead !== undefined) {
+            query.read = req.query.isRead === 'true'; // Filter by read/unread
+        }
+
+        // 3. Fetch total count for frontend pagination UI
+        const total = await Notification.countDocuments(query);
+
+        // 4. Fetch the actual data with User/Tasker details attached
+        const notifications = await Notification.find(query)
+            .populate('user', 'firstName lastName emailAddress')     // Grabs User details
+            .populate('tasker', 'firstName lastName emailAddress')   // Grabs Tasker details
+            .sort({ createdAt: -1 }) // Newest first
+            .skip(skip)
+            .limit(limit);
+
+        res.status(200).json({
+            status: 'success',
+            results: notifications.length,
+            totalRecords: total,
+            currentPage: page,
+            totalPages: Math.ceil(total / limit),
+            data: notifications
+        });
+
+    } catch (error) {
+        console.error('Fetch all individual notifications error:', error);
+        res.status(500).json({ status: 'error', message: 'Failed to fetch user/tasker notifications' });
     }
 };
