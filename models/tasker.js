@@ -21,8 +21,16 @@ const taskerSchema = new Schema({
     // Add this line to your Schema if you want the Rating feature to work in the future:
     averageRating: { type: Number, default: 0, index: true },
     
-    password: { type: String, required: true, unique: true },
+    password: { type: String },
     wallet: { type: Number, default: 0 },
+
+    // Linked auth providers (e.g. 'local', 'google')
+    authProviders: {
+        type: [String],
+        enum: ['local', 'google'],
+        default: ['local']
+    },
+    googleId: { type: String, unique: true, sparse: true },
     
     // Bank account for withdrawals
     bankAccount: {

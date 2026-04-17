@@ -11,8 +11,16 @@ const userSchema = new Schema({
     residentState: { type: String, required: true },
     area: { type: String,  },
     address: { type: String, required: true },
-    password: { type: String, required: true, unique: true },
+    password: { type: String },
     wallet: { type: Number, default: 0 },
+
+    // Linked auth providers (e.g. 'local', 'google')
+    authProviders: {
+        type: [String],
+        enum: ['local', 'google'],
+        default: ['local']
+    },
+    googleId: { type: String, unique: true, sparse: true },
     
     // Push notification configuration
     notificationId: { 
