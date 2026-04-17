@@ -3,7 +3,7 @@ import {
     newTaskEmailHtml, 
     bidAcceptedEmailHtml, 
     bidRejectedEmailHtml, 
-    taskCancelledEmailHtml 
+    taskCancelledEmailHtml,
 } from '../utils/taskerEmailTemplates.js'; // Adjust path if needed
 
 const resend = new Resend(process.env.RESEND_API_KEY);

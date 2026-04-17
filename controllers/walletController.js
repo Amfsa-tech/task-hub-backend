@@ -5,12 +5,60 @@ import Withdrawal from '../models/withdrawal.js'; // NEW IMPORT
 import paystackService from '../services/paystack_service.js';
 import bcrypt from 'bcryptjs'; // NEW IMPORT
 import Tasker from '../models/tasker.js';
+import axios from 'axios'; // Make sure this is at the top of your controller file if it isn't already!
 
 /**
  * POST /api/wallet/fund/initialize
  * Creates a pending transaction and returns a Paystack authorization URL.
  * Requires: protectUser middleware (req.user populated)
  */
+// ==========================================
+// BANK ACCOUNTS & PAYSTACK BANKS
+// ==========================================
+
+/**
+ * GET /api/wallet/banks
+ * Fetches the official list of Nigerian banks from Paystack
+ */
+export const getBanks = async (req, res) => {
+    try {
+        const response = await axios.get('https://api.paystack.co/bank?country=nigeria', {
+            headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` }
+        });
+        
+        return res.status(200).json({
+            status: 'success',
+            data: response.data.data
+        });
+    } catch (error) {
+        console.error('Fetch banks error:', error.message);
+        return res.status(500).json({ status: 'error', message: 'Failed to fetch bank list' });
+    }
+};
+
+/**
+ * GET /api/wallet/tasker/bank-account
+ * Fetches the tasker's saved bank account details
+ */
+export const getTaskerBankAccount = async (req, res) => {
+    try {
+        const tasker = await Tasker.findById(req.user._id).select('bankDetails');
+        
+        if (!tasker) {
+            return res.status(404).json({ status: 'error', message: 'Tasker not found' });
+        }
+
+        return res.status(200).json({
+            status: 'success',
+            data: tasker.bankDetails || null // Returns null if they haven't saved one yet
+        });
+    } catch (error) {
+        console.error('Get bank account error:', error);
+        return res.status(500).json({ status: 'error', message: 'Failed to fetch bank account details' });
+    }
+};
+
+
 export const initializeFunding = async (req, res) => {
     try {
         const { amount } = req.body;

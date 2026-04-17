@@ -8,10 +8,11 @@ import {
     requestWithdrawal,
     getTaskerBalance,
     getTaskerTransactions,
-    setupTransactionPin
+    setupTransactionPin,
+    getBanks,               // <-- ADDED BACK
+    getTaskerBankAccount    // <-- ADDED BACK
 } from '../controllers/walletController.js';
 
-// TODO: Ensure this import matches the exact name and path of your authentication middleware
 import { protectAny } from '../middlewares/authMiddleware.js'; 
 
 const router = express.Router();
@@ -19,8 +20,13 @@ const router = express.Router();
 // ==========================================
 // SECURITY: Protect all wallet routes
 // ==========================================
-// Every route below this line requires the user to be logged in with a valid token
 router.use(protectAny);
+
+// ==========================================
+// BANK LIST
+// ==========================================
+// GET /api/wallet/banks
+router.get('/banks', getBanks);
 
 // ==========================================
 // FIAT FUNDING (PAYSTACK)
@@ -31,7 +37,6 @@ router.post('/fund/initialize', initializeFunding);
 // GET /api/wallet/fund/verify?reference=...
 router.get('/fund/verify', verifyFunding);
 
-
 // ==========================================
 // USER BALANCES & HISTORY
 // ==========================================
@@ -41,19 +46,21 @@ router.get('/user/balance', getUserBalance);
 // GET /api/wallet/user/transactions
 router.get('/user/transactions', getUserTransactions);
 
-
 // ==========================================
 // CRYPTO BRIDGE (STELLAR DEPOSITS & WITHDRAWALS)
 // ==========================================
 // GET /api/wallet/stellar/deposit-info
-// Returns Master Public Key and User's Memo ID for the QR code screen
 router.get('/stellar/deposit-info', getStellarDepositInfo);
 
 // POST /api/wallet/withdraw
-// Submits a withdrawal request (handles both Bank Transfers and Stellar Crypto)
 router.post('/withdraw', requestWithdrawal);
-// TASKER BALANCES & HISTORY (NEW)
+
 // ==========================================
+// TASKER BALANCES, BANK & HISTORY 
+// ==========================================
+// GET /api/wallet/tasker/bank-account
+router.get('/tasker/bank-account', getTaskerBankAccount);
+
 router.get('/tasker/balance', getTaskerBalance);
 router.get('/tasker/transactions', getTaskerTransactions);
 router.post('/tasker/pin/setup', setupTransactionPin);

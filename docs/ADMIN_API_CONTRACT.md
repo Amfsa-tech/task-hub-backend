@@ -1,7 +1,3 @@
-Here is the updated Markdown block containing the new **Category Management** section.
-
-I have added it as Section 13. You can either copy this entire block and replace your current `API_DOCUMENTATION.md` file, or just copy Section 13 and paste it at the bottom of your existing file.
-
 ```markdown
 # TaskHub Admin Dashboard: REST API Documentation
 
@@ -195,9 +191,64 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 | **PATCH** | `/api/admin/withdrawals/:id/reject` | Rejects request and **automatically refunds** NGN back to the Tasker's wallet. Requires `{"reason": "string"}`. | `super_admin`, `operations` |
 | **PATCH** | `/api/admin/withdrawals/:id/complete` | Manual override to mark a Bank withdrawal as finished. (Crypto withdrawals auto-complete). | `super_admin`, `operations` |
 
+---
+
+## 16. User & Tasker Wallet (`/api/wallet`)
+
+*Note: All endpoints here require the standard User or Tasker JWT via `protectAny` middleware.*
+
+| Method | Endpoint | Description | Target |
+| :--- | :--- | :--- | :--- |
+| **POST** | `/api/wallet/fund/initialize` | Initialize Paystack funding. Returns Auth URL and access code. | User |
+| **GET** | `/api/wallet/fund/verify` | Verify Paystack payment. Requires `?reference=` query parameter. | User |
+| **GET** | `/api/wallet/user/balance` | Get wallet balance and active escrow totals. | User |
+| **GET** | `/api/wallet/user/transactions` | List history. Queries: `?page=X&limit=Y&purpose=wallet_funding`. | User |
+| **GET** | `/api/wallet/stellar/deposit-info` | Get Master Public Key and User's unique Memo ID for crypto deposits. | User/Tasker |
+| **POST** | `/api/wallet/withdraw` | Submit withdrawal request (Stellar or Bank Transfer). Deducts balance. | Tasker |
+| **POST** | `/api/wallet/tasker/pin/setup` | Setup or reset 4-digit transaction PIN. | Tasker |
+| **GET** | `/api/wallet/tasker/balance` | Get wallet balance, pending withdrawals, and available cash. | Tasker |
+| **GET** | `/api/wallet/tasker/transactions` | List Tasker transaction history. Queries: `?page=X&limit=Y`. | Tasker |
+
+
+### Key Payloads for Frontend (Wallet Endpoints)
+
+**Initialize Funding (`POST /api/wallet/fund/initialize`)**
+```json
+{
+  "amount": 5000 
+}
+```
+*(Note: Amount is expected in Naira. Backend automatically converts to kobo for Paystack. Minimum is ₦100).*
+
+**Setup Transaction PIN (`POST /api/wallet/tasker/pin/setup`)**
+```json
+{
+  "pin": "1234",
+  "password": "current_account_password"
+}
 ```
 
+**Request Withdrawal (Crypto) (`POST /api/wallet/withdraw`)**
+```json
+{
+  "amount": 10000,
+  "payoutMethod": "stellar_crypto",
+  "transactionPin": "1234",
+  "stellarAddress": "GBX..."
+}
+```
 
-
-
+**Request Withdrawal (Bank Transfer) (`POST /api/wallet/withdraw`)**
+```json
+{
+  "amount": 10000,
+  "payoutMethod": "bank_transfer",
+  "transactionPin": "1234",
+  "bankDetails": {
+    "accountNumber": "0123456789",
+    "bankName": "GTBank",
+    "accountName": "John Doe"
+  }
+}
+```
 ```
