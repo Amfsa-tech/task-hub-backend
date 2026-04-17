@@ -19,6 +19,7 @@ import {
   MAX_LOGIN_ATTEMPTS,
   LOCK_TIME,
 } from "../utils/authUtils.js";
+import { verifyGoogleToken } from "../services/googleAuthService.js";
 
 // Helper to calculate exact age
 const calculateAge = (dobString) => {
@@ -635,18 +636,28 @@ export const resetPassword = async (req, res) => {
       return res.status(400).json({ status: "error", message: "Invalid or expired reset code, or email address does not match" });
     }
 
+    const hadPassword = Boolean(user.password);
     user.password = await bcrypt.hash(newPassword, 10);
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
     user.loginAttempts = 0;
     user.lockUntil = undefined;
+
+    // If this is the first password on a Google-linked account, also mark
+    // 'local' as an available auth provider so the account becomes dual-auth.
+    if (!hadPassword) {
+      const providers = Array.isArray(user.authProviders) ? user.authProviders : [];
+      if (!providers.includes('local')) providers.push('local');
+      user.authProviders = providers;
+    }
+
     await user.save();
 
     // --- ACTIVITY LOG: PASSWORD RESET SUCCESS ---
     // FIX: Attach directly to the existing req object
     req.user = user;
     req.userType = type;
-    await logActivity(req, 'PASSWORD_RESET_SUCCESS');
+    await logActivity(req, 'PASSWORD_RESET_SUCCESS', { firstPassword: !hadPassword });
 
     res.status(200).json({ status: "success", message: "Password reset successfully" });
   } catch (error) {
@@ -660,6 +671,14 @@ export const changePassword = async (req, res) => {
   if (newPassword.length < 6) return res.status(400).json({ status: "error", message: "New password must be at least 6 characters long" });
   
   try {
+    if (!req.user.password) {
+      return res.status(400).json({
+        status: "error",
+        code: "no_password_set",
+        message: "This account has no password set. Use set-password instead.",
+      });
+    }
+
     const isValidPassword = await bcrypt.compare(currentPassword, req.user.password);
     
     if (!isValidPassword) {
@@ -677,6 +696,58 @@ export const changePassword = async (req, res) => {
     res.status(200).json({ status: "success", message: "Password changed successfully" });
   } catch (error) {
     res.status(500).json({ status: "error", message: "Error changing password", error: error.message });
+  }
+};
+
+// Set an initial local password for an authenticated Google-only account.
+// Only valid when the account currently has no password stored. Adds 'local'
+// to authProviders on success.
+export const setPassword = async (req, res) => {
+  const { newPassword } = req.body || {};
+
+  if (!newPassword) {
+    return res.status(400).json({
+      status: "error",
+      code: "invalid_request",
+      message: "newPassword is required",
+    });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({
+      status: "error",
+      code: "weak_password",
+      message: "Password must be at least 6 characters long",
+    });
+  }
+
+  try {
+    if (req.user.password) {
+      return res.status(400).json({
+        status: "error",
+        code: "password_already_set",
+        message: "A password is already set for this account. Use change-password instead.",
+      });
+    }
+
+    req.user.password = await bcrypt.hash(newPassword, 10);
+    const providers = Array.isArray(req.user.authProviders) ? req.user.authProviders : [];
+    if (!providers.includes('local')) providers.push('local');
+    req.user.authProviders = providers;
+    await req.user.save();
+
+    await logActivity(req, 'PASSWORD_SET');
+
+    return res.status(200).json({
+      status: "success",
+      message: "Password set successfully. You can now sign in with email and password.",
+      authProviders: req.user.authProviders,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+      message: "Error setting password",
+      error: error.message,
+    });
   }
 };
 
@@ -938,25 +1009,57 @@ export const updateTaskerCategories = async (req, res) => {
 // ... Location, DIDIT, and Notification ID handlers remain exactly the same ...
  // Make sure this exact top line is present!
 export const deactivateAccount = async (req, res) => {
-  const { password } = req.body;
+  const { password, idToken } = req.body || {};
 
-  if (!password) {
-      return res.status(400).json({ status: "error", message: "Password is required to deactivate account" });
-  }
-  
   try {
-    const isValidPassword = await bcrypt.compare(password, req.user.password);
-    if (!isValidPassword) {
-      // --- ACTIVITY LOG: FAILED DEACTIVATION ATTEMPT ---
-      await logActivity(req, 'ACCOUNT_DEACTIVATION_FAILED', { reason: 'incorrect_password' }, 'failed');
-      return res.status(400).json({ status: "error", message: "Incorrect password" });
+    const hasLocalPassword = Boolean(req.user.password);
+
+    // For Google-only accounts (no local password), require a fresh Google
+    // ID token whose identity matches the linked googleId on the account.
+    if (!hasLocalPassword) {
+      if (!idToken) {
+        return res.status(400).json({
+          status: "error",
+          code: "google_reauth_required",
+          message: "Please re-authenticate with Google to deactivate this account.",
+        });
+      }
+
+      let profile;
+      try {
+        profile = await verifyGoogleToken(idToken);
+      } catch (err) {
+        await logActivity(req, 'ACCOUNT_DEACTIVATION_FAILED', { reason: 'invalid_google_token' }, 'failed');
+        return res.status(401).json({
+          status: "error",
+          code: err.code || "invalid_token",
+          message: err.message || "Invalid Google token",
+        });
+      }
+
+      if (!req.user.googleId || profile.googleId !== req.user.googleId) {
+        await logActivity(req, 'ACCOUNT_DEACTIVATION_FAILED', { reason: 'google_identity_mismatch' }, 'failed');
+        return res.status(401).json({
+          status: "error",
+          code: "google_identity_mismatch",
+          message: "Google identity does not match this account.",
+        });
+      }
+    } else {
+      if (!password) {
+        return res.status(400).json({ status: "error", message: "Password is required to deactivate account" });
+      }
+      const isValidPassword = await bcrypt.compare(password, req.user.password);
+      if (!isValidPassword) {
+        await logActivity(req, 'ACCOUNT_DEACTIVATION_FAILED', { reason: 'incorrect_password' }, 'failed');
+        return res.status(400).json({ status: "error", message: "Incorrect password" });
+      }
     }
-    
+
     req.user.isActive = false;
     await req.user.save();
 
-    // --- ACTIVITY LOG: ACCOUNT DEACTIVATED ---
-    await logActivity(req, 'ACCOUNT_DEACTIVATED');
+    await logActivity(req, 'ACCOUNT_DEACTIVATED', { via: hasLocalPassword ? 'password' : 'google' });
 
     res.status(200).json({ status: "success", message: "Account deactivated successfully" });
   } catch (error) {
@@ -1059,4 +1162,398 @@ export const getMe = async (req, res) => {
   const user = await User.findById(req.user._id).select("fullName email isKYCVerified");
   const kyc = await KYCVerification.findOne({ user: req.user._id }).sort({ createdAt: -1 });
   res.json({ status: "success", data: { user, kycStatus: kyc ? kyc.status : "none" } });
+};
+
+// ==========================================
+// GOOGLE AUTH: Shared identity/conflict helpers (Phase 3)
+// ==========================================
+
+// Returns the Mongoose models for the selected and opposite roles.
+const resolveRoleModels = (user_type) => ({
+  SelectedModel: user_type === "user" ? User : Tasker,
+  OtherModel: user_type === "user" ? Tasker : User,
+});
+
+// Checks whether the given googleId is already linked to an account in the
+// opposite role. Returns an error descriptor if so, otherwise null.
+const findCrossRoleGoogleConflict = async (OtherModel, googleId) => {
+  const match = await OtherModel.findOne({ googleId });
+  if (!match) return null;
+  return {
+    http: 409,
+    code: "account_conflict",
+    message: "This Google account is already linked to a different account type.",
+  };
+};
+
+// Checks whether the given email is already registered in the opposite role.
+// Returns an error descriptor if so, otherwise null.
+const findCrossRoleEmailConflict = async (OtherModel, email) => {
+  const match = await OtherModel.findOne({ emailAddress: email });
+  if (!match) return null;
+  return {
+    http: 409,
+    code: "role_conflict",
+    message: "This email is registered with a different account type.",
+  };
+};
+
+// Maps a verifyGoogleToken error onto an HTTP response descriptor.
+const mapGoogleVerifyError = (err) => ({
+  http: err.code === "provider_not_configured" ? 500 : 401,
+  code: err.code || "invalid_token",
+  message: err.message || "Invalid Google token",
+});
+
+// Sends a conflict/error descriptor as a JSON response.
+const sendAuthError = (res, descriptor) =>
+  res.status(descriptor.http).json({
+    status: "error",
+    code: descriptor.code,
+    message: descriptor.message,
+  });
+
+// ==========================================
+// GOOGLE AUTH (Phase 1: Linked sign-in for existing accounts)
+// ==========================================
+// Verifies a Google ID token and signs in an existing TaskHub account in the
+// selected role. If the account exists with a matching email but has not yet
+// been linked to Google, it is linked and signed in. If no account exists in
+// the selected role, a 404-like response is returned so the client can start
+// the Google sign-up completion flow (Phase 2).
+export const googleAuth = async (req, res) => {
+  const { idToken, user_type } = req.body || {};
+
+  if (!idToken) {
+    return res.status(400).json({
+      status: "error",
+      code: "invalid_request",
+      message: "idToken is required",
+    });
+  }
+
+  if (user_type !== "user" && user_type !== "tasker") {
+    return res.status(400).json({
+      status: "error",
+      code: "unsupported_role",
+      message: "user_type must be either 'user' or 'tasker'",
+    });
+  }
+
+  // 1. Verify Google token
+  let profile;
+  try {
+    profile = await verifyGoogleToken(idToken);
+  } catch (err) {
+    return sendAuthError(res, mapGoogleVerifyError(err));
+  }
+
+  const { SelectedModel, OtherModel } = resolveRoleModels(user_type);
+
+  try {
+    // 2. Try to find an already-linked account by googleId in the selected role
+    let account = await SelectedModel.findOne({ googleId: profile.googleId });
+    let linkedNow = false;
+
+    // 3. Cross-role Google identity guard
+    if (!account) {
+      const conflict = await findCrossRoleGoogleConflict(OtherModel, profile.googleId);
+      if (conflict) return sendAuthError(res, conflict);
+    }
+
+    // 4. If no linked account yet, try to link an existing local account by email
+    if (!account) {
+      // Cross-role email guard: if the email is already registered in the
+      // opposite role, reject explicitly so the client can recover instead of
+      // being pushed into the sign-up completion path.
+      const emailCrossRole = await findCrossRoleEmailConflict(OtherModel, profile.email);
+      if (emailCrossRole) return sendAuthError(res, emailCrossRole);
+
+      account = await SelectedModel.findOne({ emailAddress: profile.email });
+
+      if (account) {
+        // Cross-role email guard: if the email is also used in the other role,
+        // we still allow linking the one in the selected role, but we do not
+        // silently connect across roles.
+        account.googleId = profile.googleId;
+        const providers = Array.isArray(account.authProviders)
+          ? account.authProviders
+          : [];
+        if (!providers.includes("google")) providers.push("google");
+        if (account.password && !providers.includes("local")) providers.push("local");
+        account.authProviders = providers;
+        // Google has already verified the email
+        account.isEmailVerified = true;
+        await account.save();
+        linkedNow = true;
+      }
+    }
+
+    // 5. Phase 1 does not create new accounts. Signal the client to start
+    //    the Google sign-up completion flow.
+    if (!account) {
+      return res.status(404).json({
+        status: "error",
+        code: "account_not_found",
+        message:
+          "No existing account for this Google identity. Sign-up completion required.",
+        googleProfile: {
+          email: profile.email,
+          name: profile.name,
+          givenName: profile.givenName,
+          familyName: profile.familyName,
+          picture: profile.picture,
+        },
+      });
+    }
+
+    // 6. Standard account state checks (parity with existing login)
+    if (!account.isActive) {
+      req.user = { _id: account._id };
+      req.userType = user_type;
+      await logActivity(
+        req,
+        "GOOGLE_AUTH_FAILED",
+        { reason: "account_deactivated" },
+        "failed"
+      );
+      return res.status(401).json({
+        status: "error",
+        code: "account_deactivated",
+        message: "Account has been deactivated. Please contact support.",
+      });
+    }
+
+    if (account.isLocked) {
+      req.user = { _id: account._id };
+      req.userType = user_type;
+      await logActivity(
+        req,
+        "GOOGLE_AUTH_FAILED",
+        { reason: "account_locked" },
+        "failed"
+      );
+      return res.status(401).json({
+        status: "error",
+        code: "account_locked",
+        message: "Account is temporarily locked.",
+      });
+    }
+
+    // 7. Reset any failed-login counters on successful Google auth
+    if (account.loginAttempts && account.loginAttempts > 0) {
+      await account.updateOne({ $unset: { loginAttempts: 1, lockUntil: 1 } });
+    }
+    account.lastLogin = new Date();
+    await account.save();
+
+    // 8. Issue standard JWT
+    const token = generateToken(account._id);
+
+    req.user = account;
+    req.userType = user_type;
+    if (linkedNow) {
+      await logActivity(req, "GOOGLE_ACCOUNT_LINKED", { email: profile.email });
+    }
+    await logActivity(req, "GOOGLE_AUTH_SUCCESS", {
+      email: profile.email,
+      linkedNow,
+    });
+
+    return res.status(200).json({
+      status: "success",
+      token,
+      user_type,
+      isEmailVerified: account.isEmailVerified,
+      expiresIn: "24h",
+      linkedNow,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+      code: "server_error",
+      message: "Error processing Google authentication",
+      error: error.message,
+    });
+  }
+};
+
+// ==========================================
+// GOOGLE AUTH (Phase 2: Sign-up completion)
+// ==========================================
+// Creates a brand-new User or Tasker account after the client has collected
+// the remaining role-specific registration fields. Requires a valid Google
+// ID token. On success, the account is created with Google linked as an
+// additional auth method and a standard JWT is issued.
+export const googleCompleteSignup = async (req, res) => {
+  const { idToken, user_type } = req.body || {};
+
+  if (!idToken) {
+    return res.status(400).json({
+      status: "error",
+      code: "invalid_request",
+      message: "idToken is required",
+    });
+  }
+
+  if (user_type !== "user" && user_type !== "tasker") {
+    return res.status(400).json({
+      status: "error",
+      code: "unsupported_role",
+      message: "user_type must be either 'user' or 'tasker'",
+    });
+  }
+
+  // 1. Verify Google token
+  let profile;
+  try {
+    profile = await verifyGoogleToken(idToken);
+  } catch (err) {
+    return sendAuthError(res, mapGoogleVerifyError(err));
+  }
+
+  const { SelectedModel, OtherModel } = resolveRoleModels(user_type);
+
+  try {
+    // 2. Idempotency + conflict checks. If an account already exists, direct
+    //    the client back to the sign-in route instead of creating a duplicate.
+    const alreadyLinked = await SelectedModel.findOne({ googleId: profile.googleId });
+    if (alreadyLinked) {
+      return sendAuthError(res, {
+        http: 409,
+        code: "account_exists",
+        message: "An account already exists for this Google identity. Please sign in.",
+      });
+    }
+
+    const googleCrossRole = await findCrossRoleGoogleConflict(OtherModel, profile.googleId);
+    if (googleCrossRole) return sendAuthError(res, googleCrossRole);
+
+    const emailCrossRole = await findCrossRoleEmailConflict(OtherModel, profile.email);
+    if (emailCrossRole) return sendAuthError(res, emailCrossRole);
+
+    const emailTaken = await SelectedModel.findOne({ emailAddress: profile.email });
+    if (emailTaken) {
+      return sendAuthError(res, {
+        http: 409,
+        code: "email_in_use",
+        message: "An account with this email already exists. Please sign in with Google to link it.",
+      });
+    }
+
+    // 3. Collect & validate role-specific required fields
+    const body = req.body || {};
+    const sharedRequired = {
+      phoneNumber: body.phoneNumber,
+      country: body.country,
+      residentState: body.residentState,
+      address: body.address,
+      dateOfBirth: body.dateOfBirth,
+    };
+
+    let roleFields;
+    let requiredFields;
+    if (user_type === "user") {
+      const fullName = body.fullName || profile.name;
+      roleFields = { fullName };
+      requiredFields = { fullName, ...sharedRequired };
+    } else {
+      const firstName = body.firstName || profile.givenName;
+      const lastName = body.lastName || profile.familyName;
+      const originState = body.originState;
+      roleFields = { firstName, lastName, originState };
+      requiredFields = { firstName, lastName, originState, ...sharedRequired };
+    }
+
+    const missingFields = Object.entries(requiredFields)
+      .filter(([, v]) => v === undefined || v === null || v === "")
+      .map(([k]) => k);
+
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        status: "error",
+        code: "missing_fields",
+        message: "Missing required fields",
+        missingFields,
+      });
+    }
+
+    // 4. Age gate (parity with local register)
+    if (calculateAge(requiredFields.dateOfBirth) < 16) {
+      return res.status(400).json({
+        status: "error",
+        code: "age_restricted",
+        message: "You must be at least 16 years old to register on TaskHub.",
+      });
+    }
+
+    // 5. Phone uniqueness in the selected role (parity with local register)
+    const phoneTaken = await SelectedModel.findOne({ phoneNumber: requiredFields.phoneNumber });
+    if (phoneTaken) {
+      return res.status(409).json({
+        status: "error",
+        code: "phone_in_use",
+        message: "Phone number is already in use",
+      });
+    }
+
+    // 6. Build the new account
+    const base = {
+      emailAddress: profile.email,
+      phoneNumber: requiredFields.phoneNumber,
+      country: requiredFields.country,
+      residentState: requiredFields.residentState,
+      address: requiredFields.address,
+      dateOfBirth: requiredFields.dateOfBirth,
+      profilePicture: profile.picture || "",
+      wallet: 0,
+      isEmailVerified: true,
+      googleId: profile.googleId,
+      authProviders: ["google"],
+    };
+
+    let account;
+    if (user_type === "user") {
+      account = new User({ ...base, fullName: roleFields.fullName });
+    } else {
+      account = new Tasker({
+        ...base,
+        firstName: roleFields.firstName,
+        lastName: roleFields.lastName,
+        originState: roleFields.originState,
+      });
+    }
+
+    await account.save();
+
+    // 7. Issue JWT + log
+    const token = generateToken(account._id);
+
+    req.user = account;
+    req.userType = user_type;
+    await logActivity(req, "REGISTER_SUCCESS", {
+      email: profile.email,
+      via: "google",
+    });
+    await logActivity(req, "GOOGLE_AUTH_SUCCESS", {
+      email: profile.email,
+      created: true,
+    });
+
+    return res.status(201).json({
+      status: "success",
+      token,
+      user_type,
+      isEmailVerified: true,
+      expiresIn: "24h",
+      created: true,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+      code: "server_error",
+      message: "Error completing Google sign-up",
+      error: error.message,
+    });
+  }
 };

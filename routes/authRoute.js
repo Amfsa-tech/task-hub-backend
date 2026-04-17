@@ -25,7 +25,10 @@ import {
     removeTaskerNotificationId,
     verifyTaskerIdentity,
     getTaskerVerificationStatus, 
-    getMe
+    getMe,
+    googleAuth,
+    googleCompleteSignup,
+    setPassword
 } from '../controllers/auth-controller.js';
 import { protectUser, protectTasker, protectAny } from '../middlewares/authMiddleware.js';
 import { uploadTaskImages, handleMulterError } from '../middlewares/uploadMiddleware.js';
@@ -42,6 +45,11 @@ router.post('/tasker-register', taskerRegister);
 router.post('/tasker-login', taskerLogin);
 router.get('/tasker', protectTasker, getTasker);
 
+// Google auth (Phase 1: linked sign-in for existing accounts)
+router.post('/google', googleAuth);
+// Google auth (Phase 2: sign-up completion for brand-new accounts)
+router.post('/google/complete-signup', googleCompleteSignup);
+
 // Email verification routes (public)
 router.post('/verify-email', verifyEmail);
 router.post('/resend-verification', resendEmailVerification);
@@ -52,6 +60,7 @@ router.post('/reset-password', resetPassword);
 
 // Protected routes (require authentication)
 router.post('/change-password', protectAny, changePassword);
+router.post('/set-password', protectAny, setPassword);
 router.put('/profile', protectAny, updateProfile);
 router.put('/profile-picture', protectAny, updateProfilePicture);
 router.post('/previous-work', protectTasker, uploadTaskImages, handleMulterError, uploadPreviousWork);
