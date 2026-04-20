@@ -174,8 +174,9 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 | Method | Endpoint | Description | Roles |
 | :--- | :--- | :--- | :--- |
 | **GET** | `/api/admin/notifications/stats` | Fetches aggregate analytics for the notification dashboard, including `totalSent` and global `openRate`. | `super_admin`, `operations`, `support` |
-| **GET** | `/api/admin/notifications` | Retrieves a chronological list of all broadcasted notifications for the "Sent Notifications" table. Includes sender details. | `super_admin`, `operations`, `support` |
-| **POST** | `/api/admin/notifications/send` | Broadcasts a new notification. Payload requires `title`, `message`, and `audience` (Options: 'All Users', 'All Taskers', 'Everyone', 'Selected Users'). Optional: `type`, `selectedUserIds`. | `super_admin`, `operations`, `support` |
+| **GET** | `/api/admin/notifications` | Retrieves a chronological list of all broadcasted notifications (The admin receipts). | `super_admin`, `operations`, `support` |
+| **GET** | `/api/admin/notifications/all-users` | Fetches individual user and tasker notifications. Supports pagination and filtering (Queries: `?page=X&limit=Y&target=user|tasker&isRead=true|false`). | `super_admin`, `operations`, `support` |
+| **POST** | `/api/admin/notifications/send` | Broadcasts a new notification. Payload requires `title`, `message`, and `audience`. Optional: `type`, `selectedUserIds`. | `super_admin`, `operations`, `support` |
 
 
 

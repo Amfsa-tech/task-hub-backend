@@ -402,7 +402,7 @@ export const sendAdminInviteEmail = async (email, token) => {
     console.log("sending admin invite email");
     
     // Ensure FRONTEND_URL is set in your .env, fallback to localhost for development
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl = process.env.FRONTEND_URL || 'https://www.ngtaskhub.com';
     const inviteLink = `${frontendUrl}/admin/setup-account?token=${token}`;
 
     const html = `

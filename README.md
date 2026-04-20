@@ -3,7 +3,7 @@
 ## Purpose
 This repository contains the core backend services that power the entire TaskHub platform. It serves as the single source of truth for business logic, data management, and platform operations.
 
-## Stellar Network Integration (Grant Reviewers)
+## Stellar Network Integration
 TaskHub is built on the **Stellar Network** to provide low-cost, near-instant financial rails. We leverage Stellar for:
 - **Non-Custodial Bridges:** Automated NGN-to-XLM inbound payment detection.
 - **Automated Payouts:** Instant blockchain off-ramping for Taskers.
