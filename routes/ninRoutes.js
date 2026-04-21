@@ -1,9 +1,9 @@
 import express from 'express';
-import { protectUser } from '../middlewares/authMiddleware.js';
+import { protectAny } from '../middlewares/authMiddleware.js';
 import { submitNIN } from '../controllers/ninController.js';
 
 const router = express.Router();
 
-router.post('/verify-nin', protectUser, submitNIN);
+router.post('/verify-nin', protectAny, submitNIN);
 
 export default router;
