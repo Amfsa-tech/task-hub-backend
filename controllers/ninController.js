@@ -41,7 +41,7 @@ export const submitNINForReview = async (req, res) => {
             existing.nin = nin;
             existing.maskedNin = nin.slice(0, 3) + '****' + nin.slice(-4);
             existing.ninResubmissionRequired = false;
-            existing.status = 'Pending';
+            existing.status = 'pending';
             existing.verificationData = { fullName };
             kyc = await existing.save();
         } else {
@@ -51,7 +51,7 @@ export const submitNINForReview = async (req, res) => {
                 nin,
                 maskedNin: nin.slice(0, 3) + '****' + nin.slice(-4),
                 provider: 'qoreid',
-                status: 'Pending',
+                status: 'pending',
                 verificationData: { fullName }
             });
         }
@@ -113,7 +113,7 @@ export const submitNIN = async (req, res) => {
             user: req.user._id,
             userType: 'User',
             maskedNin: nin.slice(0, 3) + '****' + nin.slice(-4),
-            status: result.isVerified ? 'Approved' : 'Pending',
+            status: result.isVerified ? 'approved' : 'pending',
             verificationData: {
                 matchStatus: result.validationResult?.matchStatus,
                 mismatches: result.validationResult?.mismatches
