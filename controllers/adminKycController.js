@@ -263,7 +263,9 @@ export const getKycDetails = async (req, res) => {
 
             // Middle Right: KYC Information
             kycInfo: {
+                nin: kyc.nin || null, // Full NIN for manual verification
                 maskedNin: kyc.maskedNin, // Masked National Identification Number
+                ninResubmissionRequired: kyc.ninResubmissionRequired || false,
                 userId: kyc.user._id,
                 submissionDate: kyc.createdAt,
                 lastUpdated: kyc.updatedAt,

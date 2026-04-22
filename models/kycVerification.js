@@ -13,10 +13,22 @@ const kycVerificationSchema = new mongoose.Schema({
         enum: ['User', 'Tasker']
     },
 
-    // Masked NIN only — raw NIN is never stored (PII protection)
+    // Masked NIN for display purposes
     maskedNin: {
         type: String,
         default: null
+    },
+
+    // Raw NIN stored for manual verification by admins
+    nin: {
+        type: String,
+        default: null
+    },
+
+    // Flag for records where NIN was irreversibly masked and needs resubmission
+    ninResubmissionRequired: {
+        type: Boolean,
+        default: false
     },
 
     provider: {

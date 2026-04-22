@@ -97,9 +97,9 @@ export const handleDiditWebhook = async (req, res) => {
     // --- Normalise status ---
     let normalizedStatus;
     if (/^approved$/i.test(decisionStatus)) {
-      normalizedStatus = 'Approved';
+      normalizedStatus = 'approved';
     } else {
-      normalizedStatus = 'Rejected';
+      normalizedStatus = 'rejected';
     }
 
     // --- Extract & mask NIN ---
@@ -160,16 +160,16 @@ export const handleDiditWebhook = async (req, res) => {
           warningCount: warnings.length,
         },
         rejectionReasons:
-          normalizedStatus === 'Rejected'
+          normalizedStatus === 'rejected'
             ? warnings.map(w => w.short_description || w.risk || 'Unknown')
             : [],
-        verifiedAt: normalizedStatus === 'Approved' ? new Date() : undefined,
+        verifiedAt: normalizedStatus === 'approved' ? new Date() : undefined,
       },
       { upsert: true, new: true }
     );
 
     // --- If approved, flip verification flags on the user record ---
-    if (normalizedStatus === 'Approved') {
+    if (normalizedStatus === 'approved') {
       const updateFields = { verifyIdentity: true, isKYCVerified: true };
       if (userType === 'Tasker') {
         await Tasker.findByIdAndUpdate(userId, { $set: updateFields });
@@ -224,7 +224,7 @@ export const getVerificationStatus = async (req, res) => {
       success: true,
       data: {
         status: kycRecord.status,
-        isVerified: kycRecord.status === 'Approved',
+        isVerified: kycRecord.status === 'approved',
         maskedNin: kycRecord.maskedNin,
         verifiedAt: kycRecord.verifiedAt,
         rejectionReasons: kycRecord.rejectionReasons,

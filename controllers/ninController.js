@@ -29,21 +29,33 @@ export const submitNINForReview = async (req, res) => {
         const userId = req.user._id;
 
         const existing = await KYCVerification.findOne({ user: userId, userType });
-        if (existing) {
+        if (existing && !existing.ninResubmissionRequired) {
             return res.status(409).json({
                 status: 'error',
                 message: 'NIN has already been submitted'
             });
         }
 
-        const kyc = await KYCVerification.create({
-            user: userId,
-            userType,
-            maskedNin: nin.slice(0, 3) + '****' + nin.slice(-4),
-            provider: 'qoreid',
-            status: 'Pending',
-            verificationData: { fullName }
-        });
+        let kyc;
+        if (existing && existing.ninResubmissionRequired) {
+            // Update existing record that was flagged for resubmission
+            existing.nin = nin;
+            existing.maskedNin = nin.slice(0, 3) + '****' + nin.slice(-4);
+            existing.ninResubmissionRequired = false;
+            existing.status = 'pending';
+            existing.verificationData = { fullName };
+            kyc = await existing.save();
+        } else {
+            kyc = await KYCVerification.create({
+                user: userId,
+                userType,
+                nin,
+                maskedNin: nin.slice(0, 3) + '****' + nin.slice(-4),
+                provider: 'qoreid',
+                status: 'pending',
+                verificationData: { fullName }
+            });
+        }
 
         res.status(201).json({
             status: 'success',
