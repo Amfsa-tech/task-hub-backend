@@ -78,12 +78,12 @@ const getVuvaaAccessToken = async () => {
 /**
  * Validates the NIN using the Vuvaa API
  */
-export const verifyNINWithVuvaa = async (nin, referenceId, selfieBase64 = null) => {
+export const verifyNINWithVuvaa = async (nin, referenceId) => {
     try {
         // 1. Get the Auth Token
         const token = await getVuvaaAccessToken();
 
-        // 2. Prepare the base payload (Using 'nyscCheck' as the default reason per their docs)
+        // 2. Prepare the payload (Using 'nyscCheck' as the default reason per their docs)
         const requestData = {
             username: process.env.VUVAA_USERNAME,
             nin: nin.toString(),
@@ -91,19 +91,11 @@ export const verifyNINWithVuvaa = async (nin, referenceId, selfieBase64 = null) 
             reference_id: referenceId
         };
 
-        // 3. If a selfie is provided, add it to the payload
-        if (selfieBase64) {
-            requestData.selfieImage = selfieBase64;
-        }
-
         const encryptedPayload = encryptPayload(requestData);
 
-        // 4. Dynamically choose the endpoint based on whether we have a photo
-        const endpoint = selfieBase64 ? '/in_person_verification' : '/verify_nin';
-
-        // 5. Make the API Call
+        // 3. Make the API Call
         const response = await axios.post(
-            `${process.env.VUVAA_BASE_URL}${endpoint}`,
+            `${VUVAA_BASE_URL}/verify_nin`,
             { payload: encryptedPayload },
             {
                 headers: {
@@ -113,7 +105,7 @@ export const verifyNINWithVuvaa = async (nin, referenceId, selfieBase64 = null) 
             }
         );
 
-        // 6. Decrypt and handle the response
+        // 4. Decrypt and handle the response
         const decryptedResponse = decryptPayload(response.data.payload);
 
         if (decryptedResponse.status === 200) {

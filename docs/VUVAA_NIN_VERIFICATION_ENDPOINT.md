@@ -6,8 +6,7 @@ Important Change: The frontend no longer needs to send firstName, lastName, or d
 
 JSON
 {
-  "nin": "12345678901",
-  "selfieImage": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ..." 
+  "nin": "12345678901" // Exactly 11 digits
 }
 Success Response (200 OK)
 Returns the official NIMC data, including the Base64 image string which can be rendered directly in an <img src="data:image/jpeg;base64,..."> tag.

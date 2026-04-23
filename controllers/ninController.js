@@ -72,32 +72,20 @@ export const submitNINForReview = async (req, res) => {
 
 export const submitNIN = async (req, res) => {
     try {
-        // 1. Grab both the NIN and the Selfie Image from the frontend
-        const { nin, selfieImage } = req.body; 
+        // 1. We ONLY ask the frontend for the NIN now!
+        const { nin } = req.body; 
 
-        // Require both since the CTO wants photo ID to be mandatory
-        if (!nin || !selfieImage) {
-            return res.status(400).json({ 
-                status: 'error', 
-                message: 'Both NIN and a live selfie photo are strictly required' 
-            });
+        if (!nin) {
+            return res.status(400).json({ status: 'error', message: 'NIN is strictly required' });
         }
 
-        // 2. Clean the Base64 string. 
-        // Frontends often send "data:image/jpeg;base64,/9j/4AAQ..."
-        // Vuvaa strictly wants JUST the raw base64 part: "/9j/4AAQ..."
-        let cleanSelfieBase64 = selfieImage;
-        if (selfieImage.includes('base64,')) {
-            cleanSelfieBase64 = selfieImage.split('base64,')[1];
-        }
-
-        // 3. Generate the Unique Reference ID
+        // 2. Generate the Unique Reference ID
         const referenceId = `REF-${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
 
-        // 4. CALL VUVAA SERVICE (Now passing the cleaned photo as the 3rd argument!)
-        const result = await verifyNINWithVuvaa(nin, referenceId, cleanSelfieBase64);
+        // 3. CALL VUVAA SERVICE FIRST
+        const result = await verifyNINWithVuvaa(nin, referenceId);
 
-        // 5. If Vuvaa failed, return immediately
+        // 4. If Vuvaa failed, return immediately
         if (!result.isVerified) {
              return res.status(400).json({
                 status: 'error',
@@ -107,7 +95,7 @@ export const submitNIN = async (req, res) => {
             });
         }
 
-        // 6. SECURITY CHECK: Validate Age based on the REAL government data
+        // 5. SECURITY CHECK: Validate Age based on the REAL government data
         // Vuvaa returns DOB in "DD-MM-YYYY" format (e.g., "11-11-1995")
         const nimcDobString = result.data.dob; 
         if (nimcDobString) {
@@ -128,7 +116,7 @@ export const submitNIN = async (req, res) => {
             }
         }
 
-        // 7. Update the KYC model with the Vuvaa response data
+        // 6. Update the KYC model with the Vuvaa response data
         const kyc = await KYCVerification.create({
             user: req.user._id,
             userType: req.userType === 'tasker' ? 'Tasker' : 'User', 
@@ -139,10 +127,10 @@ export const submitNIN = async (req, res) => {
             verifiedAt: new Date()
         });
 
-        // 8. Send final success to frontend
+        // 7. Send final success to frontend
         res.json({
             status: 'success',
-            message: 'NIN and Photo ID verified successfully',
+            message: 'NIN verified successfully',
             isVerified: true,
             kycId: kyc._id,
             ninDetails: result.data 
