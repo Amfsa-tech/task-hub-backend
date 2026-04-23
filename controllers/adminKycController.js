@@ -131,6 +131,9 @@ export const approveKyc = async (req, res) => {
 
         // 3. Handle Notifications if account exists
         if (targetAccount) {
+            console.log("1. Target Account Found:", targetAccount._id);
+            console.log("2. The Email Field Contains:", targetAccount.email || targetAccount.emailAddress);
+            console.log("3. Full Account Object:", targetAccount);
             // OneSignal Push
             if (targetAccount.notificationId) {
                 await sendKycNotification(targetAccount.notificationId, 'approved');
@@ -144,10 +147,12 @@ export const approveKyc = async (req, res) => {
                 type: 'kyc'
             });
 
-           // ✉️ NEW: Send Email Notification
-            if (targetAccount.email) {
+            // ✉️ NEW: Send Email Notification
+            const recipientEmail = targetAccount.email || targetAccount.emailAddress; // Checks both!
+            
+            if (recipientEmail) {
                 await sendEmail({
-                    to: targetAccount.email,
+                    to: recipientEmail, // Use the new variable here
                     subject: 'Your KYC Verification is Approved! 🎉',
                     html: `
                         <p>Hello,</p>
@@ -229,9 +234,11 @@ export const rejectKyc = async (req, res) => {
             });
 
             // ✉️ NEW: Send Email Notification
-            if (targetAccount.email) {
+            const recipientEmail = targetAccount.email || targetAccount.emailAddress; // Checks both!
+
+            if (recipientEmail) {
                 await sendEmail({
-                    to: targetAccount.email,
+                    to: recipientEmail, // Use the new variable here
                     subject: 'Update on your KYC Verification',
                     html: `
                         <p>Hello,</p>
