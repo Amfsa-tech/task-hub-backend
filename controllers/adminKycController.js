@@ -151,6 +151,22 @@ export const approveKyc = async (req, res) => {
             const recipientEmail = targetAccount.email || targetAccount.emailAddress; // Checks both!
             
             if (recipientEmail) {
+<<<<<<< HEAD
+=======
+                const title = 'KYC Verification Approved 🎉';
+                const bodyHtml = `
+                    <p>Hello ${targetAccount.firstName || ''},</p>
+                    <p>We are pleased to inform you that your KYC verification on Taskhub has been successfully approved.</strong>. You now have full access to all features on the platform.</p>
+                    <p>Thank you for completing the verification process. If you have any questions or need assistance, feel free to reach out to our support team. 
+                    Best regards,
+                    Taskhub Team</p>
+                    
+                    <div style="text-align: center;">
+                        <a href="${process.env.FRONTEND_URL || 'https://www.ngtaskhub.com'}/dashboard" class="cta-button">Go to Dashboard</a>
+                    </div>
+                `;
+
+>>>>>>> 9d4718e (feat: add Resend email notifications for KYC approval and rejection)
                 await sendEmail({
                     to: recipientEmail, // Use the new variable here
                     subject: 'Your KYC Verification is Approved! 🎉',
@@ -237,6 +253,29 @@ export const rejectKyc = async (req, res) => {
             const recipientEmail = targetAccount.email || targetAccount.emailAddress; // Checks both!
 
             if (recipientEmail) {
+<<<<<<< HEAD
+=======
+                const title = 'Update on your KYC Verification';
+                const bodyHtml = `
+                    <p>Hello ${targetAccount.firstName || ''},</p>
+                    <p>Thank you for submitting your KYC details on Taskhub. Unfortunately, your verification could not be completed at this time due to the following reason(s).</p>
+                    
+                    <div class="highlight-box" style="border-left-color: #ff4d4d; background-color: #fff5f5;">
+                        <p class="task-title" style="color: #cc0000; font-size: 16px;">Reason for Rejection:</p>
+                        <p class="detail" style="font-size: 15px; color: #333; font-weight: 500;">${kyc.rejectionReason}</p>
+                    </div>
+                    
+                    <p>Kindly review your submission and re-upload the required or corrected documents to proceed with your verification.
+                        If you need assistance, please contact our support team.
+                        Best regards,
+                        Taskhub Team</p>
+                    
+                    <div style="text-align: center;">
+                        <a href="${process.env.FRONTEND_URL || 'https://www.ngtaskhub.com'}/dashboard/kyc" class="cta-button">Submit New KYC</a>
+                    </div>
+                `;
+
+>>>>>>> 9d4718e (feat: add Resend email notifications for KYC approval and rejection)
                 await sendEmail({
                     to: recipientEmail, // Use the new variable here
                     subject: 'Update on your KYC Verification',
