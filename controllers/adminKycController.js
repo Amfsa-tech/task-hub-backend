@@ -5,6 +5,7 @@ import { sendKycNotification } from '../services/onesignal.js';
 import { logAdminAction } from '../utils/auditLogger.js';
 import { saveNotification } from '../services/notificationService.js';
 import { escapeRegex } from '../utils/searchUtils.js';
+import { sendEmail } from '../services/emailService.js'; // Added email service import
 
 // GET /api/admin/kyc/stats (Matches the 6 Top Cards)
 export const getKycStats = async (req, res) => {
@@ -130,18 +131,38 @@ export const approveKyc = async (req, res) => {
 
         // 3. Handle Notifications if account exists
         if (targetAccount) {
-            //  OneSignal Push
+            console.log("1. Target Account Found:", targetAccount._id);
+            console.log("2. The Email Field Contains:", targetAccount.email || targetAccount.emailAddress);
+            console.log("3. Full Account Object:", targetAccount);
+            // OneSignal Push
             if (targetAccount.notificationId) {
                 await sendKycNotification(targetAccount.notificationId, 'approved');
             }
 
-            //  In-app Notification
+            // In-app Notification
             await saveNotification({
                 userId: targetAccount._id,
                 title: 'KYC Approved',
                 message: 'Your identity verification has been approved.',
                 type: 'kyc'
             });
+
+            // ✉️ NEW: Send Email Notification
+            const recipientEmail = targetAccount.email || targetAccount.emailAddress; // Checks both!
+            
+            if (recipientEmail) {
+                await sendEmail({
+                    to: recipientEmail, // Use the new variable here
+                    subject: 'Your KYC Verification is Approved! 🎉',
+                    html: `
+                        <p>Hello,</p>
+                        <p>Great news! Your identity verification (KYC) has been successfully <strong>approved</strong>. You now have full access to all features on the platform.</p>
+                        <p>Thank you for verifying your identity.</p>
+                        <br>
+                        <p>Best regards,<br><strong>TaskHub Team</strong></p>
+                    `
+                }); 
+            }
         }
 
         // 4. Log Admin Action
@@ -195,6 +216,7 @@ export const rejectKyc = async (req, res) => {
 
         // 3. Handle Notifications
         if (targetAccount) {
+            // OneSignal Push
             if (targetAccount.notificationId) {
                 await sendKycNotification(
                     targetAccount.notificationId, 
@@ -203,12 +225,33 @@ export const rejectKyc = async (req, res) => {
                 );
             }
 
+            // In-app Notification
             await saveNotification({
                 userId: targetAccount._id,
                 title: 'KYC Rejected',
                 message: kyc.rejectionReason,
                 type: 'kyc'
             });
+
+            // ✉️ NEW: Send Email Notification
+            const recipientEmail = targetAccount.email || targetAccount.emailAddress; // Checks both!
+
+            if (recipientEmail) {
+                await sendEmail({
+                    to: recipientEmail, // Use the new variable here
+                    subject: 'Update on your KYC Verification',
+                    html: `
+                        <p>Hello,</p>
+                        <p>Unfortunately, your recent identity verification (KYC) request was <strong>rejected</strong>.</p>
+                        <div style="background-color: #ffe6e6; border-left: 4px solid #ff4d4d; padding: 12px; margin: 15px 0;">
+                            <p style="margin: 0; color: #cc0000;"><strong>Reason:</strong> ${kyc.rejectionReason}</p>
+                        </div>
+                        <p>Please log in to your dashboard to review your details and submit a new request.</p>
+                        <br>
+                        <p>Best regards,<br><strong>TaskHub Team</strong></p>
+                    `
+                });
+            }
         }
 
         // 4. Log Admin Action
@@ -227,7 +270,6 @@ export const rejectKyc = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Failed to reject KYC' });
     }
 };
-
 // GET /api/admin/kyc/:id (Matches the "KYC Verification Details" Page)
 export const getKycDetails = async (req, res) => {
     try {
