@@ -33,7 +33,7 @@ const kycVerificationSchema = new mongoose.Schema({
 
     provider: {
         type: String,
-        enum: ['didit', 'vuvaa'],
+        enum: ['didit', 'qoreid'],
         default: 'didit'
     },
 
