@@ -5,6 +5,7 @@ import { sendKycNotification } from '../services/onesignal.js';
 import { logAdminAction } from '../utils/auditLogger.js';
 import { saveNotification } from '../services/notificationService.js';
 import { escapeRegex } from '../utils/searchUtils.js';
+import { baseLayout } from '../utils/taskerEmailTemplates.js'; // <-- Change this path to wherever your baseLayout file is!
 import { sendEmail } from '../services/emailService.js'; // Added email service import
 
 // GET /api/admin/kyc/stats (Matches the 6 Top Cards)
