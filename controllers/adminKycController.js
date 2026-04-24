@@ -151,22 +151,6 @@ export const approveKyc = async (req, res) => {
             const recipientEmail = targetAccount.email || targetAccount.emailAddress; // Checks both!
             
             if (recipientEmail) {
-<<<<<<< HEAD
-=======
-                const title = 'KYC Verification Approved 🎉';
-                const bodyHtml = `
-                    <p>Hello ${targetAccount.firstName || ''},</p>
-                    <p>We are pleased to inform you that your KYC verification on Taskhub has been successfully approved.</strong>. You now have full access to all features on the platform.</p>
-                    <p>Thank you for completing the verification process. If you have any questions or need assistance, feel free to reach out to our support team. 
-                    Best regards,
-                    Taskhub Team</p>
-                    
-                    <div style="text-align: center;">
-                        <a href="${process.env.FRONTEND_URL || 'https://www.ngtaskhub.com'}/dashboard" class="cta-button">Go to Dashboard</a>
-                    </div>
-                `;
-
->>>>>>> 9d4718e (feat: add Resend email notifications for KYC approval and rejection)
                 await sendEmail({
                     to: recipientEmail, // Use the new variable here
                     subject: 'Your KYC Verification is Approved! 🎉',
