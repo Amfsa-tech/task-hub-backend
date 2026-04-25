@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import * as Sentry from '@sentry/node';
 import User from '../models/user.js';
 import Tasker from '../models/tasker.js';
 import { JWT_SECRET } from '../utils/authUtils.js';
@@ -29,6 +30,7 @@ export const protectUser = async (req, res, next) => {
 
     req.user = user;
     req.userType = 'user';
+    Sentry.setUser({ id: user._id.toString(), userType: 'user' });
     next();
   } catch (err) {
     return res.status(401).json({ status: "error", message: err.name === 'TokenExpiredError' ? 'Token expired.' : 'Invalid token.' });
@@ -62,6 +64,7 @@ export const protectTasker = async (req, res, next) => {
     req.user = tasker; // Note: We still use req.user for consistency in common controllers
     req.tasker = tasker; // Extra layer for tasker-specific logic
     req.userType = 'tasker';
+    Sentry.setUser({ id: tasker._id.toString(), userType: 'tasker' });
     next();
   } catch (err) {
     return res.status(401).json({ status: "error", message: err.name === 'TokenExpiredError' ? 'Token expired.' : 'Invalid token.' });
@@ -102,6 +105,7 @@ export const protectAny = async (req, res, next) => {
 
     req.user = account;
     req.userType = type;
+    Sentry.setUser({ id: account._id.toString(), userType: type });
     next();
   } catch (err) {
     return res.status(401).json({ status: "error", message: err.name === 'TokenExpiredError' ? 'Token expired.' : 'Invalid token.' });
@@ -137,6 +141,7 @@ export const optionalAuth = async (req, res, next) => {
     if (account && account.isActive && !account.isLocked) {
       req.user = account;
       req.userType = account.constructor.modelName.toLowerCase();
+      Sentry.setUser({ id: account._id.toString(), userType: req.userType });
     }
     next();
   } catch (err) {

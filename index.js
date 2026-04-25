@@ -1,6 +1,8 @@
+import './instrument.js';
+import * as Sentry from '@sentry/node';
 import express from 'express';
 import cors from 'cors';
-import { connectDB, setupConnectionHandlers, PORT } from './config/index.js';
+import { connectDB, setupConnectionHandlers, PORT, NODE_ENV } from './config/index.js';
 import authRoutes from './routes/authRoute.js';
 import taskRoutes from './routes/taskRoute.js';
 import bidRoutes from './routes/bidRoute.js';
@@ -156,12 +158,23 @@ app.get('/', (req, res) => {
     res.send('TaskHub API is running');
 });     
 
+// Debug Sentry route (non-production only)
+if (NODE_ENV !== 'production') {
+    app.get('/debug-sentry', function mainHandler(req, res) {
+        throw new Error("My first Sentry error!");
+    });
+}
+
+// The error handler must be registered before any other error middleware and after all controllers
+Sentry.setupExpressErrorHandler(app);
+
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({
         status: "error", 
         message: 'Something went wrong',
+        sentryEventId: res.sentry || null,
         error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
 });
