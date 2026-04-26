@@ -843,16 +843,20 @@ export const logout = async (req, res) => {
 };
 
 export const updateProfilePicture = async (req, res) => {
-  const { profilePicture } = req.body;
-  if (!profilePicture) return res.status(400).json({ status: "error", message: "Profile picture URL is required" });
-  
   try {
-    new URL(profilePicture);
-  } catch (error) {
-    return res.status(400).json({ status: "error", message: "Invalid profile picture URL format" });
-  }
-  
-  try {
+    const { profilePicture } = req.body;
+    if (!profilePicture) return res.status(400).json({ status: "error", message: "Profile picture URL is required" });
+    
+    try {
+      new URL(profilePicture);
+    } catch (error) {
+      return res.status(400).json({ status: "error", message: "Invalid profile picture URL format" });
+    }
+    
+    if (!req.user) {
+      return res.status(401).json({ status: "error", message: "User not authenticated" });
+    }
+
     req.user.profilePicture = profilePicture;
     await req.user.save();
     
@@ -861,6 +865,7 @@ export const updateProfilePicture = async (req, res) => {
 
     res.status(200).json({ status: "success", message: "Profile picture updated successfully", profilePicture: req.user.profilePicture });
   } catch (error) {
+    console.error('[updateProfilePicture ERROR]', error);
     Sentry.captureException(error);
     res.status(500).json({ status: "error", message: "Error updating profile picture", error: error.message });
   }

@@ -1,4 +1,5 @@
 import ActivityLog from '../models/ActivityLog.js';
+import * as Sentry from '@sentry/node';
 
 /**
  * Logs a user or tasker activity to the database.
@@ -23,5 +24,6 @@ export const logActivity = async (req, action, metadata = {}, status = 'success'
     } catch (error) {
         // We console.error but don't throw, so a logging failure doesn't crash the main app
         console.error('Activity Logging Failed:', error);
+        Sentry.captureException(error);
     }
 };

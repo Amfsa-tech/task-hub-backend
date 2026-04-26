@@ -198,7 +198,9 @@ process.on('uncaughtException', (err) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error(err.stack);
+    // Always capture with Sentry first
+    Sentry.captureException(err);
+    console.error('[GLOBAL ERROR HANDLER]', err.stack || err);
     res.status(500).json({
         status: "error", 
         message: 'Something went wrong',
