@@ -61,6 +61,7 @@ app.get('/debug/outbound-ip', async (req, res) => {
 const defaultAllowedOrigins = [
     'https://www.ngtaskhub.com',
     'http://localhost:3000',
+    'http://localhost:3001',
     'http://localhost:5173'
 ];
 
