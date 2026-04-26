@@ -112,8 +112,8 @@ export const sendAdminMessage = async (req, res) => {
         });
 
         res.status(201).json({ status: 'success', data: newMessage });
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to send message' });
     }
 };

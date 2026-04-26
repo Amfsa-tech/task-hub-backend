@@ -54,8 +54,8 @@ export const getAuditFilters = async (req, res) => {
         const actions = await AdminAuditLog.distinct('action');
         const resources = await AdminAuditLog.distinct('resourceType');
         res.json({ status: 'success', actions, resources });
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch filters' });
     }
 };

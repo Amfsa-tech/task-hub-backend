@@ -188,8 +188,8 @@ export const approveKyc = async (req, res) => {
             data: kyc
         });
 
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         console.error('Approve KYC error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to approve KYC' });
     }

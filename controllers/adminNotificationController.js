@@ -60,8 +60,8 @@ export const getAllNotifications = async (req, res) => {
             results: notifications.length,
             data: notifications
         });
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch notifications' });
     }
 };
@@ -192,8 +192,8 @@ export const sendNotification = async (req, res) => {
             data: newNotification
         });
 
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         console.error('Send notification error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to send notification' });
     }

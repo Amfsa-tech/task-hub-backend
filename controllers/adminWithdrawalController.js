@@ -132,8 +132,8 @@ export const getWithdrawalById = async (req, res) => {
         if (!withdrawal) return res.status(404).json({ status: 'error', message: 'Withdrawal not found' });
 
         return res.json({ status: 'success', data: withdrawal });
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         return res.status(500).json({ status: 'error', message: 'Failed to fetch withdrawal' });
     }
 };

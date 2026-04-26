@@ -178,8 +178,8 @@ export const getTaskById = async (req, res) => {
             }
         });
 
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         console.error('Get task details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch task details' });
     }
@@ -270,8 +270,7 @@ export const forceCompleteTask = async (req, res) => {
             status: 'success',
             message: 'Task force completed by admin'
         });
-Sentry.captureException(error);
-        
+
     } catch (error) {
         console.error('SAVE FAILED:', error);
         res.status(500).json({

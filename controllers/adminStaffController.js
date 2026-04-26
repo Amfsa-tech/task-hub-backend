@@ -209,8 +209,8 @@ export const updateStaffStatus = async (req, res) => {
 
         res.json({ status: 'success', message: `Admin ${isActive ? 'activated' : 'suspended'}` });
 
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Update failed' });
     }
 };

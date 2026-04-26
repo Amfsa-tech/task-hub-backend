@@ -89,8 +89,8 @@ export const updateMainCategory = async (req, res) => {
         await logAdminAction({ adminId: req.admin._id, action: 'UPDATE_MAIN_CATEGORY', resourceType: 'MainCategory', resourceId: mainCategory._id, req });
 
         res.status(200).json({ status: 'success', mainCategory });
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to update main category' });
     }
 };

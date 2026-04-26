@@ -118,8 +118,8 @@ export const getAllPayments = async (req, res) => {
             transactions // Returning the mapped array
         });
 
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         console.error('Payment history error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch payment history' });
     }
@@ -200,8 +200,8 @@ export const getPaymentById = async (req, res) => {
             }
         });
 
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         console.error('Get transaction details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch transaction details' });
     }
@@ -332,8 +332,8 @@ export const getDepositById = async (req, res) => {
             status: 'success',
             data: deposit
         });
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         console.error('Get deposit by id error:', error);
         return res.status(500).json({ status: 'error', message: 'Failed to fetch deposit details' });
     }

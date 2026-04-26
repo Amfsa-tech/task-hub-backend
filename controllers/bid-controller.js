@@ -360,8 +360,8 @@ const getTaskBids = async (req, res) => {
             taskBiddingEnabled: task.isBiddingEnabled,
             bids: enhancedBids
         });
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         console.error("Get task bids error:", error);
         res.status(500).json({
             status: "error",
@@ -549,8 +549,8 @@ const acceptBid = async (req, res) => {
             message: "Bid accepted successfully",
             bid
         });
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         console.error("Accept bid error:", error);
         res.status(500).json({
             status: "error",

@@ -166,8 +166,8 @@ export const getAdminCategoryDetails = async (req, res) => {
                 taskers: mappedTaskers
             }
         });
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Failed to load category details' });
     }
@@ -281,8 +281,8 @@ export const deleteAdminCategory = async (req, res) => {
         });
 
         res.status(200).json({ status: 'success', message: 'Category deleted successfully' });
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to delete category' });
     }
 };

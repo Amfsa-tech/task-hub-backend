@@ -157,8 +157,8 @@ export const exportPaymentReport = async (req, res) => {
         const fields = ['txId', 'party', 'amount', 'currency', 'type', 'purpose', 'provider', 'status', 'reference', 'date'];
         
         return sendExportResponse(res, reportData, fields, 'Financial_Payments_Report', format);
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         console.error('Payment export error:', error);
         res.status(500).json({ status: 'error', message: 'Payment export failed' });
     }
@@ -190,8 +190,8 @@ export const exportDashboardSummary = async (req, res) => {
         const fields = ['totalUsers', 'totalTaskers', 'activeTasks', 'totalRevenue', 'reportGeneratedAt'];
 
         return sendExportResponse(res, summaryData, fields, 'Dashboard_Snapshot', format);
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Summary export failed' });
     }
 };
@@ -310,8 +310,8 @@ export const getReportDetails = async (req, res) => {
             status: 'success',
             data: report
         });
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         console.error('Fetch report details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch report details' });
     }
@@ -340,8 +340,8 @@ export const getUserSecuritySummary = async (req, res) => {
                 recentActions: stats.slice(0, 5)
             }
         });
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Could not fetch security summary' });
     }
 };

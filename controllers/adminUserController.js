@@ -354,8 +354,8 @@ export const softDeleteUser = async (req, res) => {
             message: 'User soft deleted successfully'
         });
 
-    } caSentry.captureException(error);
-        tch (error) {
+    } catch (error) {
+        Sentry.captureException(error);
         console.error('Soft delete user error:', error);
         res.status(500).json({
             status: 'error',
