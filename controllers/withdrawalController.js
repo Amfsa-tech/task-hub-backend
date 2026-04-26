@@ -136,6 +136,7 @@ export const setBankAccount = async (req, res) => {
         });
     } catch (error) {
         if (error?.name === 'PaystackRequestError') {
+            Sentry.captureException(error);
             return res.status(400).json({
                 status: 'error',
                 message: error.publicMessage

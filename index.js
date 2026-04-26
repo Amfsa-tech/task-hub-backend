@@ -171,16 +171,14 @@ Sentry.setupExpressErrorHandler(app);
 
 // Clear Sentry user context and add request tags after each request
 app.use((req, res, next) => {
-  Sentry.configureScope(scope => {
-    scope.setTag('route', req.route?.path || req.path);
-    scope.setTag('method', req.method);
-  });
+  const scope = Sentry.getCurrentScope();
+  scope.setTag('route', req.route?.path || req.path);
+  scope.setTag('method', req.method);
   res.on('finish', () => {
     Sentry.setUser(null);
-    Sentry.configureScope(scope => {
-      scope.setTag('route', null);
-      scope.setTag('method', null);
-    });
+    const finishScope = Sentry.getCurrentScope();
+    finishScope.setTag('route', null);
+    finishScope.setTag('method', null);
   });
   next();
 });
