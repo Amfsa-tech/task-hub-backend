@@ -107,6 +107,9 @@ export const protectAny = async (req, res, next) => {
 
     req.user = account;
     req.userType = type;
+    if (type === 'tasker') {
+      req.tasker = account;
+    }
     Sentry.setUser({ id: account._id.toString(), userType: type });
     next();
   } catch (err) {
@@ -144,6 +147,9 @@ export const optionalAuth = async (req, res, next) => {
     if (account && account.isActive && !account.isLocked) {
       req.user = account;
       req.userType = account.constructor.modelName.toLowerCase();
+      if (req.userType === 'tasker') {
+        req.tasker = account;
+      }
       Sentry.setUser({ id: account._id.toString(), userType: req.userType });
     }
     next();
