@@ -42,7 +42,7 @@ export const getBanks = async (req, res) => {
  */
 export const getTaskerBankAccount = async (req, res) => {
     try {
-        const tasker = await Tasker.findById(req.user._id).select('bankDetails');
+        const tasker = await Tasker.findById(req.user._id).select('bankAccount');
         
         if (!tasker) {
             return res.status(404).json({ status: 'error', message: 'Tasker not found' });
@@ -50,7 +50,7 @@ export const getTaskerBankAccount = async (req, res) => {
 
         return res.status(200).json({
             status: 'success',
-            data: tasker.bankDetails || null // Returns null if they haven't saved one yet
+            data: tasker.bankAccount || null // Returns null if they haven't saved one yet
         });
     } catch (error) {
         console.error('Get bank account error:', error);
