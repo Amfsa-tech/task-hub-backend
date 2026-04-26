@@ -268,6 +268,7 @@ export const userLogin = async (req, res) => {
       expiresIn: "24h",
     });
   } catch (error) {
+    Sentry.captureException(error);
     res.status(500).json({
       status: "error",
       message: "Error logging in",
@@ -304,6 +305,7 @@ export const getUser = async (req, res) => {
       user: userInfo,
     });
   } catch (error) {
+    Sentry.captureException(error);
     res.status(500).json({ status: "error", message: error.message });
   }
 };
@@ -901,6 +903,7 @@ export const uploadPreviousWork = async (req, res) => {
     });
   } catch (error) {
     console.error("Upload previous work error:", error);
+    Sentry.captureException(error);
     const isTransient =
       error.name === 'TimeoutError' ||
       [499, 500, 502, 503, 504].includes(error.http_code);
@@ -1398,6 +1401,7 @@ export const googleAuth = async (req, res) => {
       linkedNow,
     });
   } catch (error) {
+    Sentry.captureException(error);
     return res.status(500).json({
       status: "error",
       code: "server_error",
@@ -1578,6 +1582,7 @@ export const googleCompleteSignup = async (req, res) => {
       created: true,
     });
   } catch (error) {
+    Sentry.captureException(error);
     return res.status(500).json({
       status: "error",
       code: "server_error",

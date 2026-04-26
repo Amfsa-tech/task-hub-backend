@@ -131,6 +131,7 @@ export const submitNIN = async (req, res) => {
         });
 
     } catch (error) {
+        Sentry.captureException(error);
         res.status(error.status || 500).json({
             status: 'error',
             message: error.message || 'NIN verification failed'

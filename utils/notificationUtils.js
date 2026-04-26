@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/node';
 import Tasker from '../models/tasker.js';
 import User from '../models/user.js';
 import { calculateDistance, milesToMeters } from './locationUtils.js';
@@ -140,6 +141,7 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
         
     } catch (error) {
         console.error('Error notifying matching taskers:', error);
+        Sentry.captureException(error);
     }
 };
 
@@ -165,6 +167,7 @@ export const notifyUserAboutNewBid = async (userId, task, bid, tasker) => {
         console.log(`✅ Bid notification sent to user ${user.fullName}`);
     } catch (error) {
         console.error('Error notifying user about new bid:', error);
+        Sentry.captureException(error);
     }
 };
 
@@ -206,6 +209,7 @@ export const notifyTaskerAboutBidAcceptance = async (taskerId, task, bid) => {
         }
     } catch (error) {
         console.error('Error notifying tasker about bid acceptance:', error);
+        Sentry.captureException(error);
     }
 };
 
@@ -247,6 +251,7 @@ export const notifyTaskerAboutBidRejection = async (taskerId, task, bid) => {
         }
     } catch (error) {
         console.error('Error notifying tasker about bid rejection:', error);
+        Sentry.captureException(error);
     }
 };
 
@@ -271,6 +276,7 @@ export const notifyUserAboutTaskCompletion = async (userId, task, tasker) => {
         console.log(`✅ Task completion notification sent to user ${user.fullName}`);
     } catch (error) {
         console.error('Error notifying user about task completion:', error);
+        Sentry.captureException(error);
     }
 };
 
@@ -311,6 +317,7 @@ export const notifyTaskerAboutTaskCancellation = async (taskerId, task) => {
         }
     } catch (error) {
         console.error('Error notifying tasker about task cancellation:', error);
+        Sentry.captureException(error);
     }
 };
 
@@ -336,6 +343,7 @@ export const sendWelcomeNotificationToUser = async (userId) => {
         console.log(`✅ Welcome notification sent to user ${user.fullName}`);
     } catch (error) {
         console.error('Error sending welcome notification to user:', error);
+        Sentry.captureException(error);
     }
 };
 
@@ -361,6 +369,7 @@ export const sendWelcomeNotificationToTasker = async (taskerId) => {
         console.log(`✅ Welcome notification sent to tasker ${tasker.firstName} ${tasker.lastName}`);
     } catch (error) {
         console.error('Error sending welcome notification to tasker:', error);
+        Sentry.captureException(error);
     }
 };
 
@@ -432,5 +441,6 @@ export const notifyOnNewChatMessage = async (recipientType, recipientId, convers
         );
     } catch (error) {
         console.error('Error sending chat message notification:', error);
+        Sentry.captureException(error);
     }
 };

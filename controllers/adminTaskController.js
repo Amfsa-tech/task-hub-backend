@@ -224,10 +224,10 @@ export const forceCancelTask = async (req, res) => {
             status: 'success',
             message: 'Task cancelled by admin'
         });
-Sentry.captureException(error);
         
     } catch (error) {
         console.error('Cancel task failed:', error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: 'error',
             message: error.message
@@ -273,6 +273,7 @@ export const forceCompleteTask = async (req, res) => {
 
     } catch (error) {
         console.error('SAVE FAILED:', error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: 'error',
             message: error.message

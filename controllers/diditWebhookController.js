@@ -189,6 +189,7 @@ export const handleDiditWebhook = async (req, res) => {
     });
   } catch (error) {
     console.error('[Didit Webhook] Error processing webhook:', error);
+    Sentry.captureException(error);
     // Return 200 to prevent Didit from retrying on transient errors
     return res.status(200).json({
       success: true,
@@ -234,6 +235,7 @@ export const getVerificationStatus = async (req, res) => {
     });
   } catch (error) {
     console.error('[KYC] Error fetching verification status:', error);
+    Sentry.captureException(error);
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch verification status',
@@ -296,6 +298,7 @@ export const registerSession = async (req, res) => {
     });
   } catch (error) {
     console.error('[KYC] Error registering session:', error);
+    Sentry.captureException(error);
     return res.status(500).json({
       success: false,
       message: 'Failed to register session',

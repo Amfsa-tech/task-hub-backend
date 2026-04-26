@@ -293,10 +293,10 @@ export const rejectKyc = async (req, res) => {
             message: 'KYC rejected successfully',
             data: kyc
         });
-Sentry.captureException(error);
         
     } catch (error) {
         console.error('Reject KYC error:', error);
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to reject KYC' });
     }
 };

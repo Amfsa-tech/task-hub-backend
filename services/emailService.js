@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import * as Sentry from '@sentry/node';
 import { 
     newTaskEmailHtml, 
     bidAcceptedEmailHtml, 
@@ -22,6 +23,7 @@ export const sendEmail = async ({ to, subject, html }) => {
         return { success: true, data };
     } catch (error) {
         console.error('Email Send Error:', error);
+        Sentry.captureException(error);
         return { success: false, error };
     }
 };

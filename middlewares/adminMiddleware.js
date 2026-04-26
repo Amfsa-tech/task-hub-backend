@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import * as Sentry from '@sentry/node';
 import Admin from '../models/admin.js';
 import { JWT_SECRET } from '../utils/authUtils.js';
 
@@ -34,6 +35,7 @@ export const protectAdmin = async (req, res, next) => {
         next();
 
     } catch (error) {
+        Sentry.captureException(error);
         return res.status(401).json({ status: 'error', message: 'Invalid or expired admin token' });
     }
 };

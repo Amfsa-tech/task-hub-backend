@@ -33,6 +33,7 @@ export const protectUser = async (req, res, next) => {
     Sentry.setUser({ id: user._id.toString(), userType: 'user' });
     next();
   } catch (err) {
+    Sentry.captureException(err);
     return res.status(401).json({ status: "error", message: err.name === 'TokenExpiredError' ? 'Token expired.' : 'Invalid token.' });
   }
 };
@@ -67,6 +68,7 @@ export const protectTasker = async (req, res, next) => {
     Sentry.setUser({ id: tasker._id.toString(), userType: 'tasker' });
     next();
   } catch (err) {
+    Sentry.captureException(err);
     return res.status(401).json({ status: "error", message: err.name === 'TokenExpiredError' ? 'Token expired.' : 'Invalid token.' });
   }
 };
@@ -108,6 +110,7 @@ export const protectAny = async (req, res, next) => {
     Sentry.setUser({ id: account._id.toString(), userType: type });
     next();
   } catch (err) {
+    Sentry.captureException(err);
     return res.status(401).json({ status: "error", message: err.name === 'TokenExpiredError' ? 'Token expired.' : 'Invalid token.' });
   }
 };
@@ -145,6 +148,10 @@ export const optionalAuth = async (req, res, next) => {
     }
     next();
   } catch (err) {
+    // Optional auth — don't report TokenExpiredError (expected for expired sessions)
+    if (err.name !== 'TokenExpiredError') {
+      Sentry.captureException(err);
+    }
     next();
   }
 };

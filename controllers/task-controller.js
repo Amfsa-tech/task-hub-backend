@@ -249,6 +249,7 @@ const createTask = async (req, res) => {
         });
     } catch (error) {
         console.error("Create task error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error creating task",
@@ -307,6 +308,7 @@ const getAllTasks = async (req, res) => {
         });
     } catch (error) {
         console.error("Get all tasks error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error fetching tasks",
@@ -347,6 +349,7 @@ const getTaskById = async (req, res) => {
         });
     } catch (error) {
         console.error("Get task by ID error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error fetching task",
@@ -494,6 +497,7 @@ const updateTask = async (req, res) => {
         });
     } catch (error) {
         console.error("Update task error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error updating task",
@@ -548,6 +552,7 @@ const deleteTask = async (req, res) => {
         });
     } catch (error) {
         console.error("Delete task error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error deleting task",
@@ -592,6 +597,7 @@ const getUserTasks = async (req, res) => {
         });
     } catch (error) {
         console.error("Get user tasks error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error fetching tasks",
@@ -940,6 +946,7 @@ const changeTaskStatus = async (req, res) => {
         });
     } catch (error) {
         console.error("Change task status error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error updating task status",
@@ -1156,6 +1163,7 @@ const getTaskerFeed = async (req, res) => {
         
     } catch (error) {
         console.error("Get tasker feed error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error retrieving tasker feed",
@@ -1215,6 +1223,7 @@ const getCompletionCode = async (req, res) => {
         });
     } catch (error) {
         console.error("Get completion code error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error fetching completion code",
@@ -1254,6 +1263,7 @@ const getTaskerTasks = async (req, res) => {
         });
     } catch (error) {
         console.error("Get tasker tasks error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error fetching tasker tasks",

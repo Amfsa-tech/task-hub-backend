@@ -113,6 +113,7 @@ const getAllCategoriesAdmin = async (req, res) => {
         });
     } catch (error) {
         console.error("Get all categories admin error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error fetching categories",
@@ -150,6 +151,7 @@ const getCategoryById = async (req, res) => {
         });
     } catch (error) {
         console.error("Get category by ID error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error fetching category",
@@ -212,6 +214,7 @@ const updateCategory = async (req, res) => {
         });
     } catch (error) {
         console.error("Update category error:", error);
+        Sentry.captureException(error);
         
         // Handle unique index violation
         if (error.code === 11000) {
@@ -275,6 +278,7 @@ const deactivateCategory = async (req, res) => {
         });
     } catch (error) {
         console.error("Deactivate category error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error deactivating category",
@@ -328,6 +332,7 @@ const getCategoryStats = async (req, res) => {
         });
     } catch (error) {
         console.error("Get category stats error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error fetching category statistics",

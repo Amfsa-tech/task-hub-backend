@@ -265,10 +265,10 @@ export const getStaffById = async (req, res) => {
                 recentActivities: formattedActivities 
             }
         });
-Sentry.captureException(error);
         
     } catch (error) {
         console.error('Get staff details error:', error);
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch staff details' });
     }
 };

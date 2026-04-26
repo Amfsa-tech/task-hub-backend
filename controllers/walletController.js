@@ -402,6 +402,7 @@ export const getStellarDepositInfo = async (req, res) => {
         });
     } catch (error) {
         console.error('Get deposit info error:', error);
+        Sentry.captureException(error);
         return res.status(500).json({ status: 'error', message: 'Failed to fetch deposit details' });
     }
 };
@@ -483,6 +484,7 @@ export const requestWithdrawal = async (req, res) => {
 
     } catch (error) {
         console.error('Withdrawal request error:', error);
+        Sentry.captureException(error);
         return res.status(500).json({ status: 'error', message: 'Failed to submit withdrawal request' });
     }
 };
@@ -518,6 +520,7 @@ export const setupTransactionPin = async (req, res) => {
 
     } catch (error) {
         console.error('Setup PIN error:', error);
+        Sentry.captureException(error);
         return res.status(500).json({ status: 'error', message: 'Failed to set PIN' });
     }
 };
@@ -550,6 +553,7 @@ export const getTaskerBalance = async (req, res) => {
         });
     } catch (error) {
         console.error('Get tasker balance error:', error);
+        Sentry.captureException(error);
         return res.status(500).json({ status: 'error', message: 'Could not fetch balance' });
     }
 };
@@ -585,6 +589,7 @@ export const getTaskerTransactions = async (req, res) => {
         });
     } catch (error) {
         console.error('Get tasker transactions error:', error);
+        Sentry.captureException(error);
         return res.status(500).json({ status: 'error', message: 'Could not fetch transactions' });
     }
 };
