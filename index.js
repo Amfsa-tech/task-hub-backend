@@ -111,7 +111,7 @@ app.use(cors({
 // Paystack webhook needs raw body for HMAC signature verification — must come before express.json()
 app.use('/api/wallet/paystack-webhook', express.raw({ type: 'application/json' }));
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 app.use('/api/admin/auth', adminAuthRoutes);
 app.use('/api/admin/me', adminProtectedRoutes); // ONLY for /me and system stuff
@@ -201,6 +201,15 @@ app.use((err, req, res, next) => {
     // Always capture with Sentry first
     Sentry.captureException(err);
     console.error('[GLOBAL ERROR HANDLER]', err.stack || err);
+
+    // Handle payload too large errors with a friendly message
+    if (err.type === 'entity.too.large' || err.status === 413) {
+        return res.status(413).json({
+            status: "error",
+            message: 'The data you submitted is too large. Please reduce the file size and try again. Maximum allowed size is 10MB.',
+        });
+    }
+
     res.status(500).json({
         status: "error", 
         message: 'Something went wrong',
