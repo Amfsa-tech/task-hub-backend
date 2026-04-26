@@ -5,6 +5,7 @@ import { logAdminAction } from '../utils/auditLogger.js';
 import mongoose from 'mongoose';
 import Bid from '../models/bid.js'
 import { escapeRegex } from '../utils/searchUtils.js';
+import * as Sentry from '@sentry/node';
 
 // --- NEW: GET /api/admin/tasks/stats (For the 5 Top Cards) ---
 export const getTaskStats = async (req, res) => {
@@ -34,6 +35,7 @@ export const getTaskStats = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Task stats error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch task stats' });
     }
@@ -100,6 +102,7 @@ export const getAllTasks = async (req, res) => {
             tasks
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Admin get tasks error:', error);
         res.status(500).json({
             status: 'error',
@@ -175,7 +178,8 @@ export const getTaskById = async (req, res) => {
             }
         });
 
-    } catch (error) {
+    } caSentry.captureException(error);
+        tch (error) {
         console.error('Get task details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch task details' });
     }
@@ -220,7 +224,8 @@ export const forceCancelTask = async (req, res) => {
             status: 'success',
             message: 'Task cancelled by admin'
         });
-
+Sentry.captureException(error);
+        
     } catch (error) {
         console.error('Cancel task failed:', error);
         res.status(500).json({
@@ -265,7 +270,8 @@ export const forceCompleteTask = async (req, res) => {
             status: 'success',
             message: 'Task force completed by admin'
         });
-
+Sentry.captureException(error);
+        
     } catch (error) {
         console.error('SAVE FAILED:', error);
         res.status(500).json({

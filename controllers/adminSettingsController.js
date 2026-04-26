@@ -1,5 +1,6 @@
 import AdminSettings from '../models/adminSettings.js';
 import { logAdminAction } from '../utils/auditLogger.js';
+import * as Sentry from '@sentry/node';
 
 // GET /api/admin/settings
 export const getSettings = async (req, res) => {
@@ -13,6 +14,7 @@ export const getSettings = async (req, res) => {
 
         res.json({ status: 'success', data: settings });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch settings' });
     }
 };
@@ -37,6 +39,7 @@ export const updateSettings = async (req, res) => {
 
         res.json({ status: 'success', message: 'Settings updated', data: settings });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to update settings' });
     }
 };

@@ -2,6 +2,7 @@ import Category from '../models/category.js';
 import Task from '../models/task.js';
 import Tasker from '../models/tasker.js';
 import mongoose from 'mongoose';
+import * as Sentry from '@sentry/node';
 
 // Helper function to check if ID is valid
 const isValidObjectId = (id) => {
@@ -51,6 +52,7 @@ const createCategory = async (req, res) => {
             category
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error("Create category error:", error);
         
         // Handle unique index violation
@@ -84,6 +86,7 @@ const getAllCategories = async (req, res) => {
             categories
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error("Get all categories error:", error);
         res.status(500).json({
             status: "error",

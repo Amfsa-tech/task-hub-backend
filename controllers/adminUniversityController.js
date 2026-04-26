@@ -2,6 +2,7 @@ import University from '../models/university.js';
 import Task from '../models/task.js';
 import Tasker from '../models/tasker.js';
 import { logAdminAction } from '../utils/auditLogger.js';
+import * as Sentry from '@sentry/node';
 
 // List all universities (including inactive)
 export const getAllUniversities = async (req, res) => {
@@ -13,6 +14,7 @@ export const getAllUniversities = async (req, res) => {
             data: { universities }
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to load universities' });
     }
 };
@@ -44,6 +46,7 @@ export const createUniversity = async (req, res) => {
 
         res.status(201).json({ status: 'success', university });
     } catch (error) {
+        Sentry.captureException(error);
         if (error.code === 11000) {
             return res.status(400).json({ status: 'error', message: 'University with this name already exists' });
         }
@@ -74,6 +77,7 @@ export const updateUniversity = async (req, res) => {
 
         res.status(200).json({ status: 'success', university });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to update university' });
     }
 };
@@ -102,6 +106,7 @@ export const deleteUniversity = async (req, res) => {
 
         res.status(200).json({ status: 'success', message: 'University deleted successfully' });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to delete university' });
     }
 };

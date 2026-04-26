@@ -1,4 +1,5 @@
 import Notification from '../models/notification.js';
+import * as Sentry from '@sentry/node';
 
 /**
  * GET /api/notifications
@@ -26,6 +27,7 @@ export const getMyNotifications = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Get notifications error:', error);
         return res.status(500).json({ status: 'error', message: 'Failed to fetch notifications' });
     }
@@ -56,6 +58,7 @@ export const markNotificationRead = async (req, res) => {
 
         return res.json({ status: 'success', message: 'Marked as read' });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Mark read error:', error);
         return res.status(500).json({ status: 'error', message: 'Failed to update notification' });
     }

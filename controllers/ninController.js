@@ -1,5 +1,6 @@
 import KYCVerification from '../models/kycVerification.js';
 import { ninVerificationService } from '../services/nin_service.js';
+import * as Sentry from '@sentry/node';
 
 /**
  * User or Tasker submits NIN + full name for manual admin review.
@@ -62,6 +63,7 @@ export const submitNINForReview = async (req, res) => {
             kycId: kyc._id
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(error.status || 500).json({
             status: 'error',
             message: error.message || 'Failed to submit NIN'

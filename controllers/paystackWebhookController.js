@@ -1,6 +1,7 @@
 import Transaction from '../models/transaction.js';
 import paystackService from '../services/paystack_service.js';
 import { creditWallet } from '../controllers/walletController.js';
+import * as Sentry from '@sentry/node';
 
 /**
  * POST /api/wallet/paystack-webhook

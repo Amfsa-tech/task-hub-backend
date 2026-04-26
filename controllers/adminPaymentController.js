@@ -2,6 +2,7 @@ import Task from '../models/task.js';
 import User from '../models/user.js';
 import Transaction from '../models/transaction.js';
 import { escapeRegex } from '../utils/searchUtils.js';
+import * as Sentry from '@sentry/node';
 
 const PLATFORM_FEE_RATE = 0.15;
 
@@ -49,6 +50,7 @@ export const getPaymentStats = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Payment stats error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch payment stats' });
     }
@@ -116,7 +118,8 @@ export const getAllPayments = async (req, res) => {
             transactions // Returning the mapped array
         });
 
-    } catch (error) {
+    } caSentry.captureException(error);
+        tch (error) {
         console.error('Payment history error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch payment history' });
     }
@@ -197,7 +200,8 @@ export const getPaymentById = async (req, res) => {
             }
         });
 
-    } catch (error) {
+    } caSentry.captureException(error);
+        tch (error) {
         console.error('Get transaction details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch transaction details' });
     }
@@ -247,6 +251,7 @@ export const getDepositStats = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Deposit stats error:', error);
         return res.status(500).json({ status: 'error', message: 'Failed to fetch deposit stats' });
     }
@@ -302,6 +307,7 @@ export const getAllDeposits = async (req, res) => {
             deposits
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Get deposits error:', error);
         return res.status(500).json({ status: 'error', message: 'Failed to fetch deposits' });
     }
@@ -326,7 +332,8 @@ export const getDepositById = async (req, res) => {
             status: 'success',
             data: deposit
         });
-    } catch (error) {
+    } caSentry.captureException(error);
+        tch (error) {
         console.error('Get deposit by id error:', error);
         return res.status(500).json({ status: 'error', message: 'Failed to fetch deposit details' });
     }

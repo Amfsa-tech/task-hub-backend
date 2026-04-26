@@ -2,6 +2,7 @@ import KYCVerification from '../models/kycVerification.js';
 import DiditSession from '../models/diditSession.js';
 import User from '../models/user.js';
 import Tasker from '../models/tasker.js';
+import * as Sentry from '@sentry/node';
 
 /**
  * Masks a NIN string, showing only the last 4 characters.

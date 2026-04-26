@@ -7,6 +7,7 @@ import { saveNotification } from '../services/notificationService.js';
 import { escapeRegex } from '../utils/searchUtils.js';
 import { baseLayout } from '../utils/taskerEmailTemplates.js'; // <-- Change this path to wherever your baseLayout file is!
 import { sendEmail } from '../services/emailService.js'; // Added email service import
+import * as Sentry from '@sentry/node';
 
 // GET /api/admin/kyc/stats (Matches the 6 Top Cards)
 export const getKycStats = async (req, res) => {
@@ -39,6 +40,7 @@ export const getKycStats = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({
             status: 'error',
             message: 'Failed to fetch KYC statistics'
@@ -85,6 +87,7 @@ export const getAllKycRequests = async (req, res) => {
             records: kycRecords
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({
             status: 'error',
             message: 'Failed to fetch KYC records'
@@ -185,7 +188,8 @@ export const approveKyc = async (req, res) => {
             data: kyc
         });
 
-    } catch (error) {
+    } caSentry.captureException(error);
+        tch (error) {
         console.error('Approve KYC error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to approve KYC' });
     }
@@ -289,7 +293,8 @@ export const rejectKyc = async (req, res) => {
             message: 'KYC rejected successfully',
             data: kyc
         });
-
+Sentry.captureException(error);
+        
     } catch (error) {
         console.error('Reject KYC error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to reject KYC' });
@@ -355,6 +360,7 @@ export const getKycDetails = async (req, res) => {
         });
 
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Get KYC details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch KYC details' });
     }

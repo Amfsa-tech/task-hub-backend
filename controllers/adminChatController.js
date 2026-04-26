@@ -1,5 +1,6 @@
 import Conversation from '../models/conversation.js';
 import Message from '../models/message.js';
+import * as Sentry from '@sentry/node';
 
 // GET /api/admin/messages/stats
 export const getChatStats = async (req, res) => {
@@ -26,6 +27,7 @@ export const getChatStats = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch chat stats' });
     }
 };
@@ -55,6 +57,7 @@ export const getAllConversations = async (req, res) => {
             conversations
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch conversations' });
     }
 };
@@ -85,6 +88,7 @@ export const getChatHistory = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch history' });
     }
 };
@@ -108,7 +112,8 @@ export const sendAdminMessage = async (req, res) => {
         });
 
         res.status(201).json({ status: 'success', data: newMessage });
-    } catch (error) {
+    } caSentry.captureException(error);
+        tch (error) {
         res.status(500).json({ status: 'error', message: 'Failed to send message' });
     }
 };

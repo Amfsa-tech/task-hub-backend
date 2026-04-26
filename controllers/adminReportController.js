@@ -21,6 +21,7 @@ import { sendExportResponse } from '../utils/exportUtils.js'; // The CSV/JSON ut
 // --- EXTERNAL LIBRARIES ---
 import mongoose from 'mongoose';
 import { Parser } from 'json2csv';
+import * as Sentry from '@sentry/node';
 
 // --- SECTION 1: MODERATION REPORTS (User Disputes/Spam) ---
 
@@ -63,6 +64,7 @@ export const getAllReports = async (req, res) => {
             reports
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch reports' });
     }
 };
@@ -88,6 +90,7 @@ export const resolveReport = async (req, res) => {
 
         res.json({ status: 'success', message: 'Report resolved' });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to resolve report' });
     }
 };
@@ -122,6 +125,7 @@ export const exportTaskReport = async (req, res) => {
         
         return sendExportResponse(res, reportData, fields, 'Tasks_Operational_Report', format);
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Task export error:', error);
         res.status(500).json({ status: 'error', message: 'Task export failed' });
     }
@@ -153,7 +157,8 @@ export const exportPaymentReport = async (req, res) => {
         const fields = ['txId', 'party', 'amount', 'currency', 'type', 'purpose', 'provider', 'status', 'reference', 'date'];
         
         return sendExportResponse(res, reportData, fields, 'Financial_Payments_Report', format);
-    } catch (error) {
+    } caSentry.captureException(error);
+        tch (error) {
         console.error('Payment export error:', error);
         res.status(500).json({ status: 'error', message: 'Payment export failed' });
     }
@@ -185,7 +190,8 @@ export const exportDashboardSummary = async (req, res) => {
         const fields = ['totalUsers', 'totalTaskers', 'activeTasks', 'totalRevenue', 'reportGeneratedAt'];
 
         return sendExportResponse(res, summaryData, fields, 'Dashboard_Snapshot', format);
-    } catch (error) {
+    } caSentry.captureException(error);
+        tch (error) {
         res.status(500).json({ status: 'error', message: 'Summary export failed' });
     }
 };
@@ -198,6 +204,7 @@ export const exportUserReport = async (req, res) => {
 
         const fields = ['fullName', 'emailAddress', 'phoneNumber', 'country', 'residentState', 'wallet', 'isActive', 'createdAt'];
         
+        Sentry.captureException(error);
         return sendExportResponse(res, users, fields, 'Users_Report', format);
     } catch (error) {
         res.status(500).json({ status: 'error', message: 'User export failed' });
@@ -214,6 +221,7 @@ export const exportTaskerReport = async (req, res) => {
         
         return sendExportResponse(res, taskers, fields, 'Taskers_Report', format);
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Tasker export failed' });
     }
 };
@@ -277,6 +285,7 @@ export const getAllActivityLogs = async (req, res) => {
             logs
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Search failed' });
     }
 };
@@ -301,7 +310,8 @@ export const getReportDetails = async (req, res) => {
             status: 'success',
             data: report
         });
-    } catch (error) {
+    } caSentry.captureException(error);
+        tch (error) {
         console.error('Fetch report details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch report details' });
     }
@@ -330,7 +340,8 @@ export const getUserSecuritySummary = async (req, res) => {
                 recentActions: stats.slice(0, 5)
             }
         });
-    } catch (error) {
+    } caSentry.captureException(error);
+        tch (error) {
         res.status(500).json({ status: 'error', message: 'Could not fetch security summary' });
     }
 };

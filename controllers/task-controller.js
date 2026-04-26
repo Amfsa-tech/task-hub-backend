@@ -1,6 +1,7 @@
 import Task from '../models/task.js';
 import { Types } from 'mongoose';
 import crypto from 'crypto';
+import * as Sentry from '@sentry/node';
 import { calculateDistance, milesToMeters } from '../utils/locationUtils.js';
 import Category from '../models/category.js';
 import University from '../models/university.js';

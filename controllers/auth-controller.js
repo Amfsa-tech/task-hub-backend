@@ -20,6 +20,7 @@ import {
   LOCK_TIME,
 } from "../utils/authUtils.js";
 import { verifyGoogleToken } from "../services/googleAuthService.js";
+import * as Sentry from '@sentry/node';
 
 // Helper to calculate exact age
 const calculateAge = (dobString) => {
@@ -195,6 +196,7 @@ export const userRegister = async (req, res) => {
       emailToken: emailToken,
     });
   } catch (error) {
+    Sentry.captureException(error);
     res.status(500).json({
       status: "error",
       message: "Error registering user",
@@ -414,6 +416,7 @@ export const taskerRegister = async (req, res) => {
       emailVerificationRequired: true,
     });
   } catch (error) {
+    Sentry.captureException(error);
     res.status(500).json({
       status: "error",
       message: "Error registering tasker",
@@ -493,6 +496,7 @@ export const taskerLogin = async (req, res) => {
     });
 
   } catch (error) {
+    Sentry.captureException(error);
     res.status(500).json({
       status: "error",
       message: "Error logging in",
@@ -550,6 +554,7 @@ export const getTasker = async (req, res) => {
       user: taskerInfo,
     });
   } catch (error) {
+    Sentry.captureException(error);
     res.status(500).json({ status: "error", message: error.message });
   }
 };
@@ -569,6 +574,7 @@ export const verifyEmail = async (req, res) => {
     await user.save();
     res.status(200).json({ status: "success", message: "Email verified successfully" });
   } catch (error) {
+    Sentry.captureException(error);
     res.status(500).json({ status: "error", message: "Error verifying email", error: error.message });
   }
 };
@@ -588,6 +594,7 @@ export const resendEmailVerification = async (req, res) => {
     await sendVerificationEmail(emailAddress, emailCode, type);
     res.status(200).json({ status: "success", message: "Verification code sent successfully" });
   } catch (error) {
+    Sentry.captureException(error);
     res.status(500).json({ status: "error", message: "Error sending verification code", error: error.message });
   }
 };
@@ -606,6 +613,7 @@ export const forgotPassword = async (req, res) => {
     await sendPasswordResetEmail(emailAddress, resetCode, type);
     res.status(200).json({ status: "success", message: "If the email exists, a password reset code has been sent" });
   } catch (error) {
+    Sentry.captureException(error);
     res.status(500).json({ status: "error", message: "Error processing password reset request", error: error.message });
   }
 };
@@ -661,6 +669,7 @@ export const resetPassword = async (req, res) => {
 
     res.status(200).json({ status: "success", message: "Password reset successfully" });
   } catch (error) {
+    Sentry.captureException(error);
     res.status(500).json({ status: "error", message: "Error resetting password", error: error.message });
   }
 };
@@ -694,7 +703,8 @@ export const changePassword = async (req, res) => {
     await logActivity(req, 'PASSWORD_CHANGE_SUCCESS');
 
     res.status(200).json({ status: "success", message: "Password changed successfully" });
-  } catch (error) {
+  } Sentry.captureException(error);
+    catch (error) {
     res.status(500).json({ status: "error", message: "Error changing password", error: error.message });
   }
 };
@@ -741,6 +751,7 @@ export const setPassword = async (req, res) => {
       status: "success",
       message: "Password set successfully. You can now sign in with email and password.",
       authProviders: req.user.authProviders,
+    Sentry.captureException(error);
     });
   } catch (error) {
     return res.status(500).json({
@@ -818,6 +829,7 @@ export const updateProfile = async (req, res) => {
     });
 
   } catch (error) {
+    Sentry.captureException(error);
     res.status(500).json({ status: "error", message: "Error updating profile", error: error.message });
   }
 };
@@ -825,6 +837,7 @@ export const logout = async (req, res) => {
   try {
     res.status(200).json({ status: "success", message: "Logged out successfully" });
   } catch (error) {
+    Sentry.captureException(error);
     res.status(500).json({ status: "error", message: "Error logging out", error: error.message });
   }
 };
@@ -847,7 +860,8 @@ export const updateProfilePicture = async (req, res) => {
     await logActivity(req, 'PROFILE_PICTURE_UPDATED');
 
     res.status(200).json({ status: "success", message: "Profile picture updated successfully", profilePicture: req.user.profilePicture });
-  } catch (error) {
+  } Sentry.captureException(error);
+    catch (error) {
     res.status(500).json({ status: "error", message: "Error updating profile picture", error: error.message });
   }
 };
@@ -914,7 +928,8 @@ export const deletePreviousWork = async (req, res) => {
       message: "Previous work image removed",
       previousWork: tasker.previousWork,
     });
-  } catch (error) {
+  } Sentry.captureException(error);
+    catch (error) {
     res.status(500).json({ status: "error", message: "Error removing image", error: error.message });
   }
 };
@@ -996,6 +1011,7 @@ export const updateTaskerCategories = async (req, res) => {
           subCategories: req.tasker.subCategories,
           university: req.tasker.university
       }
+    Sentry.captureException(error);
     });
   } catch (error) {
     res.status(500).json({
@@ -1063,6 +1079,7 @@ export const deactivateAccount = async (req, res) => {
 
     res.status(200).json({ status: "success", message: "Account deactivated successfully" });
   } catch (error) {
+    Sentry.captureException(error);
     res.status(500).json({ status: "error", message: "Error deactivating account", error: error.message });
   }
 }; // Make sure it ends cleanly with this bracket!
@@ -1085,6 +1102,7 @@ export const updateTaskerLocation = async (req, res) => {
       location: req.tasker.location,
     });
   } catch (error) {
+    Sentry.captureException(error);
     res.status(500).json({ status: "error", message: "Error updating location", error: error.message });
   }
 };
@@ -1105,7 +1123,8 @@ export const getTaskerVerificationStatus = async (req, res) => {
       status: "success",
       data: { taskerId: tasker._id, firstName: tasker.firstName, lastName: tasker.lastName, isVerified: tasker.verifyIdentity },
     });
-  } catch (error) {
+  } Sentry.captureException(error);
+    catch (error) {
     return res.status(500).json({ status: "error", message: "Internal server error" });
   }
 };
@@ -1118,7 +1137,8 @@ export const updateUserNotificationId = async (req, res) => {
     const user = await User.findByIdAndUpdate(userId, { notificationId: notificationId.trim(), updatedAt: new Date() }, { new: true }).select("_id fullName notificationId");
     if (!user) return res.status(404).json({ status: "error", message: "User not found" });
     return res.status(200).json({ status: "success", message: "Notification ID updated successfully", data: { userId: user._id, fullName: user.fullName, notificationId: user.notificationId }});
-  } catch (error) {
+  } Sentry.captureException(error);
+    catch (error) {
     return res.status(500).json({ status: "error", message: "Internal server error" });
   }
 };
@@ -1130,6 +1150,7 @@ export const updateTaskerNotificationId = async (req, res) => {
     if (!notificationId || typeof notificationId !== "string") return res.status(400).json({ status: "error", message: "Valid notification ID is required" });
     const tasker = await Tasker.findByIdAndUpdate(taskerId, { notificationId: notificationId.trim(), updatedAt: new Date() }, { new: true }).select("_id firstName lastName notificationId");
     if (!tasker) return res.status(404).json({ status: "error", message: "Tasker not found" });
+    Sentry.captureException(error);
     return res.status(200).json({ status: "success", message: "Notification ID updated successfully", data: { taskerId: tasker._id, firstName: tasker.firstName, lastName: tasker.lastName, notificationId: tasker.notificationId }});
   } catch (error) {
     return res.status(500).json({ status: "error", message: "Internal server error" });
@@ -1143,6 +1164,7 @@ export const removeUserNotificationId = async (req, res) => {
     if (!user) return res.status(404).json({ status: "error", message: "User not found" });
     return res.status(200).json({ status: "success", message: "Notification ID removed successfully", data: { userId: user._id, fullName: user.fullName, notificationId: user.notificationId }});
   } catch (error) {
+    Sentry.captureException(error);
     return res.status(500).json({ status: "error", message: "Internal server error" });
   }
 };
@@ -1154,6 +1176,7 @@ export const removeTaskerNotificationId = async (req, res) => {
     if (!tasker) return res.status(404).json({ status: "error", message: "Tasker not found" });
     return res.status(200).json({ status: "success", message: "Notification ID removed successfully", data: { taskerId: tasker._id, firstName: tasker.firstName, lastName: tasker.lastName, notificationId: tasker.notificationId }});
   } catch (error) {
+    Sentry.captureException(error);
     return res.status(500).json({ status: "error", message: "Internal server error" });
   }
 };

@@ -6,6 +6,7 @@ import paystackService from '../services/paystack_service.js';
 import bcrypt from 'bcryptjs'; // NEW IMPORT
 import Tasker from '../models/tasker.js';
 import axios from 'axios'; // Make sure this is at the top of your controller file if it isn't already!
+import * as Sentry from '@sentry/node';
 
 /**
  * POST /api/wallet/fund/initialize
@@ -31,6 +32,7 @@ export const getBanks = async (req, res) => {
             data: response.data.data
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Fetch banks error:', error.message);
         return res.status(500).json({ status: 'error', message: 'Failed to fetch bank list' });
     }
@@ -53,6 +55,7 @@ export const getTaskerBankAccount = async (req, res) => {
             data: tasker.bankAccount || null // Returns null if they haven't saved one yet
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Get bank account error:', error);
         return res.status(500).json({ status: 'error', message: 'Failed to fetch bank account details' });
     }
@@ -118,6 +121,7 @@ export const initializeFunding = async (req, res) => {
             },
         });
     } catch (error) {
+        Sentry.captureException(error);
         if (error?.name === 'PaystackRequestError') {
             console.error('[Wallet Fund] Initialize error:', {
                 message: error.message,
@@ -229,6 +233,7 @@ export const verifyFunding = async (req, res) => {
             },
         });
     } catch (error) {
+        Sentry.captureException(error);
         if (error?.name === 'PaystackRequestError') {
             console.error('[Wallet Fund] Verify error:', {
                 message: error.message,
@@ -311,6 +316,7 @@ export const getUserBalance = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Get user balance error:', error);
         return res.status(500).json({
             status: 'error',
@@ -354,6 +360,7 @@ export const getUserTransactions = async (req, res) => {
             transactions
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Get user transactions error:', error);
         return res.status(500).json({
             status: 'error',

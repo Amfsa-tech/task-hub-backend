@@ -3,6 +3,7 @@ import Withdrawal from '../models/withdrawal.js';
 import Tasker from '../models/tasker.js';
 import Task from '../models/task.js';
 import paystackService from '../services/paystack_service.js';
+import * as Sentry from '@sentry/node';
 
 const MINIMUM_WITHDRAWAL = 5000;
 const WITHDRAWAL_COOLDOWN_HOURS = 24;

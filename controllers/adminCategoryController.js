@@ -3,6 +3,7 @@ import MainCategory from '../models/mainCategory.js';
 import Task from '../models/task.js';
 import Tasker from '../models/tasker.js';
 import { logAdminAction } from '../utils/auditLogger.js';
+import * as Sentry from '@sentry/node';
 
 // --- 1. MAIN CATEGORY PAGE (List & Top Stats) ---
 export const getAdminCategoriesDashboard = async (req, res) => {
@@ -54,6 +55,7 @@ export const getAdminCategoriesDashboard = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Failed to load category dashboard' });
     }
@@ -164,7 +166,8 @@ export const getAdminCategoryDetails = async (req, res) => {
                 taskers: mappedTaskers
             }
         });
-    } catch (error) {
+    } caSentry.captureException(error);
+        tch (error) {
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Failed to load category details' });
     }
@@ -203,6 +206,7 @@ export const createAdminCategory = async (req, res) => {
 
         res.status(201).json({ status: 'success', category });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to create category' });
     }
 };
@@ -228,6 +232,7 @@ export const updateAdminCategory = async (req, res) => {
 
         res.status(200).json({ status: 'success', category });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to update category' });
     }
 };
@@ -276,7 +281,8 @@ export const deleteAdminCategory = async (req, res) => {
         });
 
         res.status(200).json({ status: 'success', message: 'Category deleted successfully' });
-    } catch (error) {
+    } caSentry.captureException(error);
+        tch (error) {
         res.status(500).json({ status: 'error', message: 'Failed to delete category' });
     }
 };
