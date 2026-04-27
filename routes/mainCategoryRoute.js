@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import * as Sentry from '@sentry/node';
 import MainCategory from '../models/mainCategory.js';
 
 const router = Router();
@@ -16,6 +17,8 @@ router.get('/', async (req, res) => {
             mainCategories
         });
     } catch (error) {
+        console.error('Error fetching main categories:', error);
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Error fetching main categories' });
     }
 });

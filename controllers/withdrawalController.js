@@ -3,6 +3,7 @@ import Withdrawal from '../models/withdrawal.js';
 import Tasker from '../models/tasker.js';
 import Task from '../models/task.js';
 import paystackService from '../services/paystack_service.js';
+import * as Sentry from '@sentry/node';
 
 const MINIMUM_WITHDRAWAL = 5000;
 const WITHDRAWAL_COOLDOWN_HOURS = 24;
@@ -75,6 +76,7 @@ export const getTaskerBalance = async (req, res) => {
         });
     } catch (error) {
         console.error('Get tasker balance error:', error);
+        Sentry.captureException(error);
         return res.status(500).json({
             status: 'error',
             message: 'Could not fetch balance'
@@ -134,12 +136,14 @@ export const setBankAccount = async (req, res) => {
         });
     } catch (error) {
         if (error?.name === 'PaystackRequestError') {
+            Sentry.captureException(error);
             return res.status(400).json({
                 status: 'error',
                 message: error.publicMessage
             });
         }
         console.error('Set bank account error:', error);
+        Sentry.captureException(error);
         return res.status(500).json({
             status: 'error',
             message: 'Could not save bank account'
@@ -173,6 +177,7 @@ export const getBankAccount = async (req, res) => {
         });
     } catch (error) {
         console.error('Get bank account error:', error);
+        Sentry.captureException(error);
         return res.status(500).json({
             status: 'error',
             message: 'Could not fetch bank account'
@@ -286,6 +291,7 @@ export const requestWithdrawal = async (req, res) => {
         });
     } catch (error) {
         console.error('Request withdrawal error:', error);
+        Sentry.captureException(error);
         return res.status(500).json({
             status: 'error',
             message: 'Could not process withdrawal request'
@@ -320,6 +326,7 @@ export const getWithdrawalHistory = async (req, res) => {
         });
     } catch (error) {
         console.error('Get withdrawal history error:', error);
+        Sentry.captureException(error);
         return res.status(500).json({
             status: 'error',
             message: 'Could not fetch withdrawal history'
@@ -352,6 +359,7 @@ export const listBanks = async (req, res) => {
             });
         }
         console.error('List banks error:', error);
+        Sentry.captureException(error);
         return res.status(500).json({
             status: 'error',
             message: 'Could not fetch bank list'

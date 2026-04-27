@@ -3,6 +3,7 @@ import Task from '../models/task.js';
 import Tasker from '../models/tasker.js';
 import KYCVerification from '../models/kycVerification.js';
 import AuditLog from '../models/adminAuditLog.js'; // Ensure filename matches exactly
+import * as Sentry from '@sentry/node';
 
 export const getDashboardStats = async (req, res) => {
   try {
@@ -104,6 +105,7 @@ export const getDashboardStats = async (req, res) => {
     });
 
   } catch (error) {
+    Sentry.captureException(error);
     console.error('Dashboard error:', error);
     res.status(500).json({ status: 'error', message: 'Failed to fetch dashboard stats' });
   }

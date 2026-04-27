@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import Admin from '../models/admin.js';
 import { JWT_SECRET } from '../utils/authUtils.js';
 import { logAdminAction } from '../utils/auditLogger.js'; // <--- Don't forget this import!
+import * as Sentry from '@sentry/node';
 
 export const adminLogin = async (req, res) => {
     try {
@@ -70,6 +71,7 @@ export const adminLogin = async (req, res) => {
         });
 
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Admin login error:', error);
         res.status(500).json({
             status: 'error',

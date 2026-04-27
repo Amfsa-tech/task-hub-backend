@@ -1,5 +1,6 @@
 
 import fetch from 'node-fetch';
+import * as Sentry from '@sentry/node';
 import { ONESIGNAL_APP_ID, ONESIGNAL_REST_KEY } from '../config/envConfig.js';
 
 /**
@@ -31,7 +32,9 @@ export async function sendWelcomePush(playerId, heading, message) {
       let bodyText = '';
       try {
         bodyText = await response.text();
-      } catch {}
+      } catch (textErr) {
+        console.error('Failed to read OneSignal error response body:', textErr);
+      }
       throw new Error(`OneSignal API error: ${response.status} ${response.statusText} - ${bodyText}`);
     }
 
@@ -40,6 +43,7 @@ export async function sendWelcomePush(playerId, heading, message) {
     return result;
   } catch (error) {
     console.error('Error sending welcome push notification:', error);
+    Sentry.captureException(error);
     throw error;
   }
 }
@@ -78,7 +82,9 @@ export async function sendPushToUser(notificationId, heading, message, data = {}
       let bodyText = '';
       try {
         bodyText = await response.text();
-      } catch {}
+      } catch (textErr) {
+        console.error('Failed to read OneSignal error response body:', textErr);
+      }
       throw new Error(`OneSignal API error: ${response.status} ${response.statusText} - ${bodyText}`);
     }
 
@@ -87,6 +93,7 @@ export async function sendPushToUser(notificationId, heading, message, data = {}
     return result;
   } catch (error) {
     console.error('Error sending push notification:', error);
+    Sentry.captureException(error);
     throw error;
   }
 }
@@ -132,7 +139,9 @@ export async function sendPushToMultipleUsers(notificationIds, heading, message,
       let bodyText = '';
       try {
         bodyText = await response.text();
-      } catch {}
+      } catch (textErr) {
+        console.error('Failed to read OneSignal error response body:', textErr);
+      }
       throw new Error(`OneSignal API error: ${response.status} ${response.statusText} - ${bodyText}`);
     }
 
@@ -141,6 +150,7 @@ export async function sendPushToMultipleUsers(notificationIds, heading, message,
     return result;
   } catch (error) {
     console.error('Error sending push notifications:', error);
+    Sentry.captureException(error);
     throw error;
   }
 }

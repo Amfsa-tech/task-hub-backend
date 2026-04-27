@@ -5,15 +5,17 @@ import { sendKycNotification } from '../services/onesignal.js';
 import { logAdminAction } from '../utils/auditLogger.js';
 import { saveNotification } from '../services/notificationService.js';
 import { escapeRegex } from '../utils/searchUtils.js';
+import { baseLayout } from '../utils/taskerEmailTemplates.js'; // <-- Change this path to wherever your baseLayout file is!
 import { sendEmail } from '../services/emailService.js'; // Added email service import
+import * as Sentry from '@sentry/node';
 
 // GET /api/admin/kyc/stats (Matches the 6 Top Cards)
 export const getKycStats = async (req, res) => {
     try {
         const [
-            total, 
-            pending, 
-            approved, 
+            total,
+            pending,
+            approved,
             rejected,
             verifiedUsers,   // Card 5: Verified Users
             verifiedTaskers  // Card 6: Verified Taskers
@@ -28,16 +30,17 @@ export const getKycStats = async (req, res) => {
 
         res.json({
             status: 'success',
-            data: { 
-                total, 
-                pending, 
-                approved, 
+            data: {
+                total,
+                pending,
+                approved,
                 rejected,
                 verifiedUsers,
                 verifiedTaskers
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({
             status: 'error',
             message: 'Failed to fetch KYC statistics'
@@ -49,12 +52,12 @@ export const getKycStats = async (req, res) => {
 export const getAllKycRequests = async (req, res) => {
     try {
         const { status, search, page = 1, limit = 10, startDate, endDate } = req.query;
-        
+
         const filter = {};
-        
+
         // Tab Filtering (Matches UI tabs: All | Pending | Approved | Rejected)
         if (status && status !== 'All') filter.status = status;
-        
+
         if (startDate || endDate) {
             filter.createdAt = {};
             if (startDate) filter.createdAt.$gte = new Date(startDate);
@@ -68,7 +71,7 @@ export const getAllKycRequests = async (req, res) => {
         }
 
         const kycRecords = await KYCVerification.find(filter)
-            .populate('user', 'fullName emailAddress firstName lastName profilePicture') 
+            .populate('user', 'fullName emailAddress firstName lastName profilePicture')
             .sort({ createdAt: -1 })
             .limit(limit * 1)
             .skip((page - 1) * limit);
@@ -84,6 +87,7 @@ export const getAllKycRequests = async (req, res) => {
             records: kycRecords
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({
             status: 'error',
             message: 'Failed to fetch KYC records'
@@ -117,23 +121,21 @@ export const approveKyc = async (req, res) => {
         let targetAccount;
         if (kyc.userType === 'Tasker') {
             targetAccount = await Tasker.findByIdAndUpdate(
-                kyc.user, 
-                { verifyIdentity: true }, 
+                kyc.user,
+                { verifyIdentity: true },
                 { new: true }
             );
         } else {
             targetAccount = await User.findByIdAndUpdate(
-                kyc.user, 
-                { isKYCVerified: true }, 
+                kyc.user,
+                { isKYCVerified: true },
                 { new: true }
             );
         }
 
         // 3. Handle Notifications if account exists
         if (targetAccount) {
-            console.log("1. Target Account Found:", targetAccount._id);
-            console.log("2. The Email Field Contains:", targetAccount.email || targetAccount.emailAddress);
-            console.log("3. Full Account Object:", targetAccount);
+
             // OneSignal Push
             if (targetAccount.notificationId) {
                 await sendKycNotification(targetAccount.notificationId, 'approved');
@@ -149,22 +151,28 @@ export const approveKyc = async (req, res) => {
 
             // ✉️ NEW: Send Email Notification
             const recipientEmail = targetAccount.email || targetAccount.emailAddress; // Checks both!
-            
+
             if (recipientEmail) {
+                const title = 'KYC Verification Approved 🎉';
+                const bodyHtml = `
+                    <p>Hello ${targetAccount.firstName || ''},</p>
+                    <p>We are pleased to inform you that your KYC verification on Taskhub has been successfully <strong>approved</strong>. You now have full access to all features on the platform.</p>
+                    <p>Thank you for completing the verification process. If you have any questions or need assistance, feel free to reach out to our support team.</p>
+                    
+                    <div style="text-align: center; margin-top: 25px;">
+                        <a href="${process.env.FRONTEND_URL || 'https://www.ngtaskhub.com'}/login" class="cta-button" style="background-color: #8600AF; color: white; padding: 14px 28px; text-decoration: none; border-radius: 50px; font-weight: 600; display: inline-block;">Go to Dashboard</a>
+                    </div>
+                `;
+
                 await sendEmail({
-                    to: recipientEmail, // Use the new variable here
+                    to: recipientEmail,
                     subject: 'Your KYC Verification is Approved! 🎉',
-                    html: `
-                        <p>Hello,</p>
-                        <p>Great news! Your identity verification (KYC) has been successfully <strong>approved</strong>. You now have full access to all features on the platform.</p>
-                        <p>Thank you for verifying your identity.</p>
-                        <br>
-                        <p>Best regards,<br><strong>TaskHub Team</strong></p>
-                    `
-                }); 
+                    html: baseLayout(title, bodyHtml) // This is the key fix!
+                });
             }
         }
 
+        // 4. Log Admin Action
         // 4. Log Admin Action
         await logAdminAction({
             adminId: req.admin._id,
@@ -174,9 +182,14 @@ export const approveKyc = async (req, res) => {
             req
         });
 
-        res.json({ status: 'success', message: 'KYC approved successfully' });
+        res.json({
+            status: 'success',
+            message: 'KYC approved successfully',
+            data: kyc
+        });
 
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Approve KYC error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to approve KYC' });
     }
@@ -202,14 +215,14 @@ export const rejectKyc = async (req, res) => {
         let targetAccount;
         if (kyc.userType === 'Tasker') {
             targetAccount = await Tasker.findByIdAndUpdate(
-                kyc.user, 
-                { verifyIdentity: false }, 
+                kyc.user,
+                { verifyIdentity: false },
                 { new: true }
             );
         } else {
             targetAccount = await User.findByIdAndUpdate(
-                kyc.user, 
-                { isKYCVerified: false }, 
+                kyc.user,
+                { isKYCVerified: false },
                 { new: true }
             );
         }
@@ -219,8 +232,8 @@ export const rejectKyc = async (req, res) => {
             // OneSignal Push
             if (targetAccount.notificationId) {
                 await sendKycNotification(
-                    targetAccount.notificationId, 
-                    'rejected', 
+                    targetAccount.notificationId,
+                    'rejected',
                     kyc.rejectionReason
                 );
             }
@@ -237,23 +250,34 @@ export const rejectKyc = async (req, res) => {
             const recipientEmail = targetAccount.email || targetAccount.emailAddress; // Checks both!
 
             if (recipientEmail) {
+                const title = 'Update on your KYC Verification';
+                const bodyHtml = `
+                <p>Hello ${targetAccount.firstName || ''},</p>
+                <p>Thank you for submitting your KYC details on Taskhub. Unfortunately, your verification could not be completed at this time due to the following reason(s):</p>
+                
+                <div class="highlight-box" style="border-left-color: #ff4d4d; background-color: #fff5f5; padding: 15px; border-left: 4px solid #ff4d4d; border-radius: 4px; margin: 20px 0;">
+                    <p style="color: #cc0000; font-size: 16px; font-weight: bold; margin: 0 0 5px 0;">Reason for Rejection:</p>
+                    <p style="font-size: 15px; color: #333; font-weight: 500; margin: 0;">${kyc.rejectionReason}</p>
+                </div>
+                
+                <p>Kindly review your submission and re-upload the required or corrected documents to proceed with your verification.</p>
+                <p>If you need assistance, please contact our support team.</p>
+                
+                <div style="text-align: center; margin-top: 30px;">
+                    <a href="${process.env.FRONTEND_URL || 'https://www.ngtaskhub.com'}/login" class="cta-button" style="background-color: #8600AF; color: white; padding: 14px 28px; text-decoration: none; border-radius: 50px; font-weight: 600; display: inline-block;">Submit New KYC</a>
+                </div>
+            `;
+
+                // This is the call that actually sends the email
                 await sendEmail({
-                    to: recipientEmail, // Use the new variable here
-                    subject: 'Update on your KYC Verification',
-                    html: `
-                        <p>Hello,</p>
-                        <p>Unfortunately, your recent identity verification (KYC) request was <strong>rejected</strong>.</p>
-                        <div style="background-color: #ffe6e6; border-left: 4px solid #ff4d4d; padding: 12px; margin: 15px 0;">
-                            <p style="margin: 0; color: #cc0000;"><strong>Reason:</strong> ${kyc.rejectionReason}</p>
-                        </div>
-                        <p>Please log in to your dashboard to review your details and submit a new request.</p>
-                        <br>
-                        <p>Best regards,<br><strong>TaskHub Team</strong></p>
-                    `
+                    to: recipientEmail,
+                    subject: title,
+                    html: baseLayout(title, bodyHtml) // This wraps your text in the TaskHub template
                 });
             }
         }
 
+        // 4. Log Admin Action
         // 4. Log Admin Action
         await logAdminAction({
             adminId: req.admin._id,
@@ -263,10 +287,16 @@ export const rejectKyc = async (req, res) => {
             req
         });
 
-        res.json({ status: 'success', message: 'KYC rejected successfully' });
-
+        // 🔥 FIX: Return the updated kyc document here as well
+        res.json({
+            status: 'success',
+            message: 'KYC rejected successfully',
+            data: kyc
+        });
+        
     } catch (error) {
         console.error('Reject KYC error:', error);
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to reject KYC' });
     }
 };
@@ -289,11 +319,11 @@ export const getKycDetails = async (req, res) => {
             // Top Section: Verification Status
             status: kyc.status, // "pending", "approved", "rejected"
             submittedAt: kyc.createdAt,
-            
+
             // Middle Left: User Information
             userInformation: {
-                fullName: kyc.userType === 'Tasker' 
-                    ? `${kyc.user.firstName} ${kyc.user.lastName}` 
+                fullName: kyc.userType === 'Tasker'
+                    ? `${kyc.user.firstName} ${kyc.user.lastName}`
                     : kyc.user.fullName,
                 email: kyc.user.emailAddress,
                 phone: kyc.user.phoneNumber || 'N/A',
@@ -330,6 +360,7 @@ export const getKycDetails = async (req, res) => {
         });
 
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Get KYC details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch KYC details' });
     }

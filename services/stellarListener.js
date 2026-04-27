@@ -1,4 +1,5 @@
 import * as StellarSdk from 'stellar-sdk';
+import * as Sentry from '@sentry/node';
 import User from '../models/user.js'; 
 
 // Load credentials from your .env
@@ -29,7 +30,6 @@ export const startDepositListener = () => {
         .stream({
             onmessage: async (payment) => {
                 try {
-                    // --- ADD THIS DEBUG LINE RIGHT HERE ---
                     console.log(`[DEBUG] Saw a payment sent to: ${payment.to}`);
 
                     // 1. Verify it's incoming (not an outgoing payout we sent)
@@ -38,48 +38,53 @@ export const startDepositListener = () => {
                     // 2. Verify it is native XLM (not a custom token)
                     if (payment.asset_type !== 'native') return;
 
-                    console.log(`\n Incoming XLM Detected! Amount: ${payment.amount}`);
+                    console.log(`\n💰 Incoming XLM Detected! Amount: ${payment.amount}`);
 
                     // 3. Fetch the full transaction to read the Memo ID
                     const transaction = await payment.transaction();
                     const memo = transaction.memo;
 
                     if (!memo) {
-                        console.log('Deposit received but NO MEMO was attached. Cannot credit user.');
-                        // TODO: Log this to an "Unclaimed Funds" database table for manual admin review
+                        console.log('❌ Deposit received but NO MEMO was attached. Cannot credit user.');
                         return;
                     }
 
-                    console.log(`Checking Database for User with Memo ID: ${memo}`);
+                    console.log(`🔍 Checking Database for Account with Memo ID: ${memo}`);
 
-                    // 4. Find the user attached to this Memo ID
-                    const targetUser = await User.findOne({ stellarMemoId: memo });
+                    // 4. Clean the memo (removes invisible spaces and forces uppercase)
+                    const cleanMemo = String(memo).trim().toUpperCase();
 
-                    if (!targetUser) {
-                        console.log(`No user found for Memo ID: ${memo}. Deposit ignored.`);
+                    // 5. Check the User database first
+                    let targetAccount = await User.findOne({ stellarMemoId: cleanMemo });
+
+                    // 6. If not found in Users, check the Tasker database
+                    if (!targetAccount) {
+                        targetAccount = await Tasker.findOne({ stellarMemoId: cleanMemo });
+                    }
+
+                    // 7. CRITICAL: If STILL not found, stop here so the app doesn't crash!
+                    if (!targetAccount) {
+                        console.log(`⚠️ No User or Tasker found for Memo ID: ${cleanMemo}. Deposit ignored.`);
                         return;
                     }
 
-                    // 5. Calculate the Naira value
+                    // 8. Calculate the Naira value
                     const xlmAmount = parseFloat(payment.amount);
                     const nairaValue = xlmAmount * XLM_TO_NGN_RATE;
 
-                    // 6. Credit the user's wallet
-                    // --- FIX 1: Changed from walletBalance to just wallet ---
-                    targetUser.wallet += nairaValue;
-                    await targetUser.save();
+                    // 9. Credit the account's wallet
+                    targetAccount.wallet += nairaValue;
+                    await targetAccount.save();
 
-                    // --- FIX 2: Made the log safer so it prints the ID instead of undefined ---
-                    console.log(`Success! Credited ₦${nairaValue} to user ID: ${targetUser._id}`);
-                    // TODO: Create a "Transaction History" record in your DB here
-                    // TODO: Trigger a Push Notification / WebSocket event to update the user's app UI
+                    console.log(`✅ Success! Credited ₦${nairaValue} to account ID: ${targetAccount._id}`);
 
                 } catch (error) {
-                    console.error('Error processing Stellar deposit:', error);
+                    console.error('🚨 Error processing Stellar deposit:', error);
+                    Sentry.captureException(error);
                 }
             },
             onerror: (error) => {
-                console.error('Stellar stream error:', error);
+                console.error('🔌 Stellar stream error:', error);
             }
         });
 };

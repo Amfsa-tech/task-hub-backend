@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/node';
 import AdminAuditLog from '../models/adminAuditLog.js';
 
 export const logAdminAction = async ({
@@ -20,5 +21,6 @@ export const logAdminAction = async ({
         });
     } catch (error) {
         console.error('Admin audit log failed:', error.message);
+        Sentry.captureException(error);
     }
 };

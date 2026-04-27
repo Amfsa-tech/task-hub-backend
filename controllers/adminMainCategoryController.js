@@ -1,6 +1,7 @@
 import MainCategory from '../models/mainCategory.js';
 import Category from '../models/category.js';
 import { logAdminAction } from '../utils/auditLogger.js';
+import * as Sentry from '@sentry/node';
 
 // List all main categories (including inactive)
 export const getAllMainCategories = async (req, res) => {
@@ -26,6 +27,7 @@ export const getAllMainCategories = async (req, res) => {
             data: { mainCategories: categoriesWithStats }
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to load main categories' });
     }
 };
@@ -58,6 +60,7 @@ export const createMainCategory = async (req, res) => {
 
         res.status(201).json({ status: 'success', mainCategory });
     } catch (error) {
+        Sentry.captureException(error);
         if (error.code === 11000) {
             return res.status(400).json({ status: 'error', message: 'Main category with this name already exists' });
         }
@@ -87,6 +90,7 @@ export const updateMainCategory = async (req, res) => {
 
         res.status(200).json({ status: 'success', mainCategory });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to update main category' });
     }
 };
@@ -113,6 +117,7 @@ export const deleteMainCategory = async (req, res) => {
 
         res.status(200).json({ status: 'success', message: 'Main category deleted successfully' });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to delete main category' });
     }
 };

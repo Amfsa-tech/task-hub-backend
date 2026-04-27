@@ -1,4 +1,5 @@
 import { Parser } from 'json2csv';
+import * as Sentry from '@sentry/node';
 
 /**
  * Universal function to send data as CSV or JSON
@@ -19,6 +20,7 @@ export const sendExportResponse = (res, data, fields, filename, format = 'json')
             return res.send(csv);
         } catch (err) {
             console.error('CSV Export Error:', err);
+            Sentry.captureException(err);
             return res.status(500).json({ status: 'error', message: 'Failed to generate CSV' });
         }
     }

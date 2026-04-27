@@ -5,6 +5,7 @@ import Report from '../models/report.js';
 import KYCVerification from '../models/kycVerification.js';
 import { logAdminAction } from '../utils/auditLogger.js';
 import { escapeRegex } from '../utils/searchUtils.js';
+import * as Sentry from '@sentry/node';
 
 // GET /api/admin/taskers/stats
 export const getTaskerStats = async (req, res) => {
@@ -50,6 +51,7 @@ export const getTaskerStats = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Tasker stats error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch tasker stats' });
     }
@@ -113,6 +115,7 @@ export const getAllTaskers = async (req, res) => {
             taskers: formattedTaskers // Return the mapped data
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch taskers' });
     }
@@ -195,6 +198,7 @@ export const getTaskerById = async (req, res) => {
         });
 
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Get tasker details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch tasker details' });
     }
@@ -215,7 +219,10 @@ export const verifyTasker = async (req, res) => {
         });
         
         res.json({ status: 'success', message: 'Tasker verified' });
-    } catch (error) { res.status(500).json({ status: 'error', message: 'Failed to verify' }); }
+    } catch (error) { 
+        Sentry.captureException(error);
+        res.status(500).json({ status: 'error', message: 'Failed to verify' }); 
+    }
 };
 
 export const suspendTasker = async (req, res) => {
@@ -232,7 +239,7 @@ export const suspendTasker = async (req, res) => {
         });
         
         res.json({ status: 'success', message: 'Tasker suspended' });
-    } catch (error) { res.status(500).json({ status: 'error', message: 'Failed to suspend' }); }
+    } catch (error) { Sentry.captureException(error); res.status(500).json({ status: 'error', message: 'Failed to suspend' }); }
 };
 
 export const activateTasker = async (req, res) => {
@@ -249,5 +256,5 @@ export const activateTasker = async (req, res) => {
         });
         
         res.json({ status: 'success', message: 'Tasker activated' });
-    } catch (error) { res.status(500).json({ status: 'error', message: 'Failed to activate' }); }
+    } catch (error) { Sentry.captureException(error); res.status(500).json({ status: 'error', message: 'Failed to activate' }); }
 };

@@ -13,6 +13,8 @@ import {
     getTaskerBankAccount    // <-- ADDED BACK
 } from '../controllers/walletController.js';
 
+import { setBankAccount } from '../controllers/withdrawalController.js';
+
 import { protectAny } from '../middlewares/authMiddleware.js'; 
 
 const router = express.Router();
@@ -60,6 +62,9 @@ router.post('/withdraw', requestWithdrawal);
 // ==========================================
 // GET /api/wallet/tasker/bank-account
 router.get('/tasker/bank-account', getTaskerBankAccount);
+
+// POST /api/wallet/tasker/bank-account
+router.post('/tasker/bank-account', setBankAccount);
 
 router.get('/tasker/balance', getTaskerBalance);
 router.get('/tasker/transactions', getTaskerTransactions);

@@ -4,6 +4,7 @@ import KYCVerification from '../models/kycVerification.js';
 import Report from '../models/report.js';
 import { logAdminAction } from '../utils/auditLogger.js';
 import { escapeRegex } from '../utils/searchUtils.js';
+import * as Sentry from '@sentry/node';
 
 // GET /api/admin/users/stats (Top Cards)
 export const getUserStats = async (req, res) => {
@@ -48,6 +49,7 @@ export const getUserStats = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch user stats' });
     }
 };
@@ -94,6 +96,7 @@ export const getAllUsers = async (req, res) => {
             users
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch users' });
     }
 };
@@ -191,6 +194,7 @@ export const getUserById = async (req, res) => {
         });
 
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Get user details error:', error);
         res.status(500).json({
             status: 'error',
@@ -310,6 +314,7 @@ export const unlockUser = async (req, res) => {
         });
 
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Unlock user error:', error);
         res.status(500).json({
             status: 'error',
@@ -350,6 +355,7 @@ export const softDeleteUser = async (req, res) => {
         });
 
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Soft delete user error:', error);
         res.status(500).json({
             status: 'error',
@@ -389,8 +395,9 @@ export const restoreUser = async (req, res) => {
             status: 'success',
             message: 'User account restored'
         });
-
+        
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({
             status: 'error',
             message: 'Failed to restore user'

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import * as Sentry from '@sentry/node';
 import University from '../models/university.js';
 
 const router = Router();
@@ -16,6 +17,8 @@ router.get('/', async (req, res) => {
             universities
         });
     } catch (error) {
+        console.error('Error fetching universities:', error);
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Error fetching universities' });
     }
 });

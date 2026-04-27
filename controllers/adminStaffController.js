@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { logAdminAction } from '../utils/auditLogger.js';
 import { sendAdminInviteEmail } from '../utils/authUtils.js'; 
 import { escapeRegex } from '../utils/searchUtils.js';
+import * as Sentry from '@sentry/node';
 
 // GET /api/admin/staff/stats (Matches the 3 Top Cards)
 export const getStaffStats = async (req, res) => {
@@ -24,6 +25,7 @@ export const getStaffStats = async (req, res) => {
             data: { totalAdmin, activeToday, superAdmin }
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Staff stats error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch staff stats' });
     }
@@ -57,6 +59,7 @@ export const getAllStaff = async (req, res) => {
             staff
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch staff' });
     }
 };
@@ -117,6 +120,7 @@ export const inviteAdmin = async (req, res) => {
         });
 
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Invite Admin error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to send invitation' });
     }
@@ -174,6 +178,7 @@ export const setupAdminAccount = async (req, res) => {
         });
 
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Setup Admin error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to setup admin account' });
     }
@@ -205,6 +210,7 @@ export const updateStaffStatus = async (req, res) => {
         res.json({ status: 'success', message: `Admin ${isActive ? 'activated' : 'suspended'}` });
 
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Update failed' });
     }
 };
@@ -259,9 +265,10 @@ export const getStaffById = async (req, res) => {
                 recentActivities: formattedActivities 
             }
         });
-
+        
     } catch (error) {
         console.error('Get staff details error:', error);
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch staff details' });
     }
 };

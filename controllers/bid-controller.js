@@ -7,6 +7,7 @@ import { notifyUserAboutNewBid, notifyTaskerAboutBidAcceptance, notifyTaskerAbou
 import Conversation from '../models/conversation.js';
 import Message from '../models/message.js';
 import { Types } from 'mongoose';
+import * as Sentry from '@sentry/node';
 
 // Helper function to check if ID is valid
 const isValidObjectId = (id) => {
@@ -140,6 +141,7 @@ const createBid = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error("Create bid error:", error);
         
         // Handle unique index violation (duplicate bid)
@@ -244,6 +246,7 @@ const updateBid = async (req, res) => {
             bid
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error("Update bid error:", error);
         res.status(500).json({
             status: "error",
@@ -300,6 +303,7 @@ const deleteBid = async (req, res) => {
             message: "Bid deleted successfully"
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error("Delete bid error:", error);
         res.status(500).json({
             status: "error",
@@ -357,6 +361,7 @@ const getTaskBids = async (req, res) => {
             bids: enhancedBids
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error("Get task bids error:", error);
         res.status(500).json({
             status: "error",
@@ -545,6 +550,7 @@ const acceptBid = async (req, res) => {
             bid
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error("Accept bid error:", error);
         res.status(500).json({
             status: "error",
@@ -590,6 +596,7 @@ const getTaskerBids = async (req, res) => {
             bids
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error("Get tasker bids error:", error);
         res.status(500).json({
             status: "error",
@@ -642,6 +649,7 @@ const getBidById = async (req, res) => {
             bid
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error("Get bid by ID error:", error);
         res.status(500).json({
             status: "error",

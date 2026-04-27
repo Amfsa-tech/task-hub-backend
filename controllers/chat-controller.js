@@ -3,6 +3,7 @@ import Message from '../models/message.js';
 import Task from '../models/task.js';
 import Bid from '../models/bid.js';
 import { Types } from 'mongoose';
+import * as Sentry from '@sentry/node';
 import { notifyOnNewChatMessage } from '../utils/notificationUtils.js';
 import { uploadMultipleToCloudinary } from '../utils/uploadService.js';
 
@@ -96,6 +97,7 @@ export const createOrGetConversation = async (req, res) => {
 
     return res.status(200).json({ status: 'success', conversation: populated });
   } catch (error) {
+    Sentry.captureException(error);
     console.error('createOrGetConversation error:', error);
     return res.status(500).json({ status: 'error', message: 'Error creating conversation', error: error.message });
   }
@@ -125,6 +127,7 @@ export const listConversations = async (req, res) => {
       currentPage: page,
     });
   } catch (error) {
+    Sentry.captureException(error);
     console.error('listConversations error:', error);
     return res.status(500).json({ status: 'error', message: 'Error fetching conversations', error: error.message });
   }
@@ -144,6 +147,7 @@ export const getConversation = async (req, res) => {
 
     return res.status(200).json({ status: 'success', conversation });
   } catch (error) {
+    Sentry.captureException(error);
     console.error('getConversation error:', error);
     return res.status(500).json({ status: 'error', message: 'Error', error: error.message });
   }
@@ -172,6 +176,7 @@ export const listMessages = async (req, res) => {
 
     return res.status(200).json({ status: 'success', messages, hasMore });
   } catch (error) {
+    Sentry.captureException(error);
     console.error('listMessages error:', error);
     return res.status(500).json({ status: 'error', message: 'Error fetching messages', error: error.message });
   }
@@ -236,6 +241,7 @@ export const sendMessage = async (req, res) => {
 
     return res.status(201).json({ status: 'success', message: newMsg });
   } catch (error) {
+    Sentry.captureException(error);
     console.error('sendMessage error:', error);
     return res.status(500).json({ status: 'error', message: 'Error sending message', error: error.message });
   }
@@ -263,6 +269,7 @@ export const markRead = async (req, res) => {
 
     return res.status(200).json({ status: 'success' });
   } catch (error) {
+    Sentry.captureException(error);
     console.error('markRead error:', error);
     return res.status(500).json({ status: 'error', message: 'Error marking read', error: error.message });
   }

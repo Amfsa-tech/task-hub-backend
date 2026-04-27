@@ -1,6 +1,7 @@
 import Transaction from '../models/transaction.js';
 import paystackService from '../services/paystack_service.js';
 import { creditWallet } from '../controllers/walletController.js';
+import * as Sentry from '@sentry/node';
 
 /**
  * POST /api/wallet/paystack-webhook
@@ -23,6 +24,7 @@ export const handlePaystackWebhook = async (req, res) => {
         return res.status(200).json({ success: true });
     } catch (error) {
         console.error('[Paystack Webhook] Processing error:', error);
+        Sentry.captureException(error);
         // Return 200 so Paystack does not retry on transient errors
         return res.status(200).json({ success: true });
     }

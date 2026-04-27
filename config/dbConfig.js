@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import * as Sentry from '@sentry/node';
 import { MONGO_URI } from './envConfig.js';
 
 /**
@@ -24,6 +25,7 @@ const connectDB = async () => {
         return conn;
     } catch (error) {
         console.error('Database connection error:', error);
+        Sentry.captureException(error);
         process.exit(1);
     }
 };
@@ -37,6 +39,7 @@ const disconnectDB = async () => {
         console.log('MongoDB disconnected');
     } catch (error) {
         console.error('Error disconnecting from MongoDB:', error);
+        Sentry.captureException(error);
     }
 };
 

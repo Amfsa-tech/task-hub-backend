@@ -7,6 +7,7 @@ import { logAdminAction } from '../utils/auditLogger.js';
 import { escapeRegex } from '../utils/searchUtils.js';
 import { sendEmail, payoutSuccessEmailHtml } from '../services/emailService.js';
 import { baseLayout } from '../utils/taskerEmailTemplates.js';
+import * as Sentry from '@sentry/node';
 import * as StellarSdk from 'stellar-sdk';
 
 // Setup Stellar Server for payouts
@@ -63,6 +64,7 @@ export const getWithdrawalStats = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Withdrawal stats error:', error);
         return res.status(500).json({ status: 'error', message: 'Failed to fetch withdrawal stats' });
     }
@@ -113,6 +115,7 @@ export const getAllWithdrawals = async (req, res) => {
             withdrawals
         });
     } catch (error) {
+        Sentry.captureException(error);
         return res.status(500).json({ status: 'error', message: 'Failed to fetch withdrawals' });
     }
 };
@@ -130,6 +133,7 @@ export const getWithdrawalById = async (req, res) => {
 
         return res.json({ status: 'success', data: withdrawal });
     } catch (error) {
+        Sentry.captureException(error);
         return res.status(500).json({ status: 'error', message: 'Failed to fetch withdrawal' });
     }
 };
@@ -282,6 +286,7 @@ export const approveWithdrawal = async (req, res) => {
             });
 
             return res.json({ status: 'success', message: 'Bank withdrawal approved.' });
+        Sentry.captureException(error);
         }
     } catch (error) {
         return res.status(500).json({ status: 'error', message: 'Failed to approve withdrawal' });
@@ -323,6 +328,7 @@ export const rejectWithdrawal = async (req, res) => {
             details: { reason }
         });
 
+        Sentry.captureException(error);
         return res.json({ status: 'success', message: 'Withdrawal rejected and funds returned' });
     } catch (error) {
         return res.status(500).json({ status: 'error', message: 'Failed to reject withdrawal' });
@@ -372,6 +378,7 @@ export const completeWithdrawal = async (req, res) => {
 
         return res.json({ status: 'success', message: 'Bank Withdrawal marked as completed' });
     } catch (error) {
+        Sentry.captureException(error);
         return res.status(500).json({ status: 'error', message: 'Failed to complete withdrawal' });
     }
 };
