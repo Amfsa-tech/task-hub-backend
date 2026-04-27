@@ -5,19 +5,14 @@ import Report from '../models/report.js';
 import KYCVerification from '../models/kycVerification.js';
 import { logAdminAction } from '../utils/auditLogger.js';
 import { escapeRegex } from '../utils/searchUtils.js';
+import { sendEmail, customAdminEmailHtml } from '../services/emailService.js';
 
 // GET /api/admin/taskers/stats
 export const getTaskerStats = async (req, res) => {
     try {
         const [
-            totalTaskers,
-            activeTaskers,
-            verifiedTaskers,
-            pendingKyc,
-            suspendedTaskers,
-            completedTasks,
-            totalCategories,
-            disputes
+            totalTaskers, activeTaskers, verifiedTaskers, pendingKyc,
+            suspendedTaskers, completedTasks, totalCategories, disputes
         ] = await Promise.all([
             Tasker.countDocuments(),
             Tasker.countDocuments({ isActive: true }),
@@ -38,27 +33,20 @@ export const getTaskerStats = async (req, res) => {
         res.json({
             status: 'success',
             data: {
-                total: totalTaskers,
-                active: activeTaskers,
-                verified: verifiedTaskers,
-                suspended: suspendedTaskers,
-                pendingKyc,
-                completedTasks,
-                categories: totalCategories,
-                averageRating: avgRating,
-                disputes
+                total: totalTaskers, active: activeTaskers, verified: verifiedTaskers,
+                suspended: suspendedTaskers, pendingKyc, completedTasks,
+                categories: totalCategories, averageRating: avgRating, disputes
             }
         });
     } catch (error) {
-        console.error('Tasker stats error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch tasker stats' });
     }
 };
 
-// GET /api/admin/taskers (List View)
+// GET /api/admin/taskers
 export const getAllTaskers = async (req, res) => {
     try {
-        const { page = 1, limit = 10, search, verified, status, sort } = req.query;
+        const { page = 1, limit = 10, search, kycVerified, emailVerified, status, sort } = req.query;
 
         const query = {};
 
@@ -73,9 +61,15 @@ export const getAllTaskers = async (req, res) => {
         }
 
         // Filters
-        if (verified) query.verifyIdentity = verified === 'true'; 
         if (status === 'active') query.isActive = true;
         if (status === 'suspended') query.isActive = false;
+        
+        // Verification Filters (NEW)
+        if (kycVerified === 'true') query.verifyIdentity = true;
+        if (kycVerified === 'false') query.verifyIdentity = false;
+
+        if (emailVerified === 'true') query.isEmailVerified = true;
+        if (emailVerified === 'false') query.isEmailVerified = false;
 
         // Sorting
         let sortOption = { createdAt: -1 }; 
@@ -88,16 +82,16 @@ export const getAllTaskers = async (req, res) => {
             .limit(limit * 1)
             .skip((page - 1) * limit);
 
-        // --- THE FIX: Explicitly map the response to guarantee the profilePicture field exists ---
         const formattedTaskers = taskers.map(t => ({
             _id: t._id,
             firstName: t.firstName,
             lastName: t.lastName,
             emailAddress: t.emailAddress,
-            profilePicture: t.profilePicture || '', // <--- Always returns at least an empty string
+            profilePicture: t.profilePicture || '', 
             categories: t.subCategories,
             isActive: t.isActive,
             verifyIdentity: t.verifyIdentity,
+            isEmailVerified: t.isEmailVerified,
             updatedAt: t.updatedAt,
             averageRating: t.averageRating || 0
         }));
@@ -110,10 +104,9 @@ export const getAllTaskers = async (req, res) => {
             totalRecords: total,
             totalPages: Math.ceil(total / limit),
             currentPage: Number(page),
-            taskers: formattedTaskers // Return the mapped data
+            taskers: formattedTaskers 
         });
     } catch (error) {
-        console.error(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch taskers' });
     }
 };
@@ -122,24 +115,15 @@ export const getAllTaskers = async (req, res) => {
 export const getTaskerById = async (req, res) => {
     try {
         const taskerId = req.params.id;
+        const tasker = await Tasker.findById(taskerId).select('-password').populate('subCategories', 'name');
 
-        const tasker = await Tasker.findById(taskerId)
-            .select('-password')
-            .populate('subCategories', 'name');
+        if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
 
-        if (!tasker) {
-            return res.status(404).json({ status: 'error', message: 'Tasker not found' });
-        }
-
-        const kycRecord = await KYCVerification.findOne({ user: taskerId })
-            .select('idType idNumber status');
+        const kycRecord = await KYCVerification.findOne({ user: taskerId }).select('idType idNumber status');
 
         const totalAssigned = await Task.countDocuments({ assignedTasker: tasker._id });
         const completedCount = await Task.countDocuments({ assignedTasker: tasker._id, status: 'completed' });
-        
-        const completionRate = totalAssigned > 0 
-            ? Math.round((completedCount / totalAssigned) * 100) 
-            : 0;
+        const completionRate = totalAssigned > 0 ? Math.round((completedCount / totalAssigned) * 100) : 0;
 
         const revenueAgg = await Task.aggregate([
             { $match: { assignedTasker: tasker._id, status: 'completed' } },
@@ -147,107 +131,79 @@ export const getTaskerById = async (req, res) => {
         ]);
         const totalTransaction = revenueAgg[0]?.total || 0;
 
-        const recentReviews = await Task.find({ 
-                assignedTasker: tasker._id, 
-                status: 'completed',
-                rating: { $exists: true } 
-            })
+        const recentReviews = await Task.find({ assignedTasker: tasker._id, status: 'completed', rating: { $exists: true } })
             .populate('user', 'fullName profilePicture') 
             .select('rating reviewText createdAt user') 
-            .sort({ createdAt: -1 })
-            .limit(5);
+            .sort({ createdAt: -1 }).limit(5);
 
         const reviewsFormatted = recentReviews.map(r => ({
-            id: r._id,
-            reviewerName: r.user?.fullName || 'Anonymous',
-            reviewerImage: r.user?.profilePicture || '',
-            rating: r.rating || 0,
-            comment: r.reviewText || 'No comment provided',
-            date: r.createdAt
+            id: r._id, reviewerName: r.user?.fullName || 'Anonymous',
+            reviewerImage: r.user?.profilePicture || '', rating: r.rating || 0,
+            comment: r.reviewText || 'No comment provided', date: r.createdAt
         }));
 
         res.json({
             status: 'success',
             data: {
                 kyc: {
-                    type: kycRecord?.idType || 'N/A',
-                    number: kycRecord?.idNumber || 'Not Submitted',
+                    type: kycRecord?.idType || 'N/A', number: kycRecord?.idNumber || 'Not Submitted',
                     status: kycRecord?.status || 'unverified'
                 },
                 stats: {
-                    rating: tasker.averageRating || 0,
-                    completionRate: `${completionRate}%`,
-                    completedTasks: completedCount,
-                    totalTransaction, 
-                    currentBalance: tasker.wallet || 0 
+                    rating: tasker.averageRating || 0, completionRate: `${completionRate}%`,
+                    completedTasks: completedCount, totalTransaction, currentBalance: tasker.wallet || 0 
                 },
                 account: {
-                    userId: tasker._id,
-                    role: 'Tasker',
-                    fullName: `${tasker.firstName} ${tasker.lastName}`,
-                    emailAddress: tasker.emailAddress, // Added to match list view
-                    profilePicture: tasker.profilePicture || '', // <--- THE FIX for Details Page
+                    userId: tasker._id, role: 'Tasker', fullName: `${tasker.firstName} ${tasker.lastName}`,
+                    emailAddress: tasker.emailAddress, profilePicture: tasker.profilePicture || '', 
                     lastUpdated: tasker.updatedAt
                 },
                 categories: tasker.subCategories.map(c => c.name),
                 reviews: reviewsFormatted
             }
         });
-
     } catch (error) {
-        console.error('Get tasker details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch tasker details' });
     }
 };
 
 // ACTIONS
 export const verifyTasker = async (req, res) => {
-    try {
-        const tasker = await Tasker.findByIdAndUpdate(req.params.id, { verifyIdentity: true }, { new: true }); 
-        if (!tasker) return res.status(404).json({ message: 'Tasker not found' });
-        
-        await logAdminAction({ 
-            adminId: req.admin._id, 
-            action: 'VERIFY_TASKER', 
-            resourceType: 'Tasker', 
-            resourceId: tasker._id, 
-            req 
-        });
-        
-        res.json({ status: 'success', message: 'Tasker verified' });
-    } catch (error) { res.status(500).json({ status: 'error', message: 'Failed to verify' }); }
+    const tasker = await Tasker.findByIdAndUpdate(req.params.id, { verifyIdentity: true }, { new: true }); 
+    if (!tasker) return res.status(404).json({ message: 'Tasker not found' });
+    await logAdminAction({ adminId: req.admin._id, action: 'VERIFY_TASKER', resourceType: 'Tasker', resourceId: tasker._id, req });
+    res.json({ status: 'success', message: 'Tasker verified' });
 };
 
 export const suspendTasker = async (req, res) => {
-    try {
-        const tasker = await Tasker.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
-        if (!tasker) return res.status(404).json({ message: 'Tasker not found' });
-        
-        await logAdminAction({ 
-            adminId: req.admin._id, 
-            action: 'SUSPEND_TASKER', 
-            resourceType: 'Tasker', 
-            resourceId: tasker._id, 
-            req 
-        });
-        
-        res.json({ status: 'success', message: 'Tasker suspended' });
-    } catch (error) { res.status(500).json({ status: 'error', message: 'Failed to suspend' }); }
+    const tasker = await Tasker.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true });
+    if (!tasker) return res.status(404).json({ message: 'Tasker not found' });
+    await logAdminAction({ adminId: req.admin._id, action: 'SUSPEND_TASKER', resourceType: 'Tasker', resourceId: tasker._id, req });
+    res.json({ status: 'success', message: 'Tasker suspended' });
 };
 
 export const activateTasker = async (req, res) => {
+    const tasker = await Tasker.findByIdAndUpdate(req.params.id, { isActive: true }, { new: true });
+    if (!tasker) return res.status(404).json({ message: 'Tasker not found' });
+    await logAdminAction({ adminId: req.admin._id, action: 'ACTIVATE_TASKER', resourceType: 'Tasker', resourceId: tasker._id, req });
+    res.json({ status: 'success', message: 'Tasker activated' });
+};
+
+// NEW: POST /api/admin/taskers/:id/send-email
+export const sendTaskerEmail = async (req, res) => {
     try {
-        const tasker = await Tasker.findByIdAndUpdate(req.params.id, { isActive: true }, { new: true });
-        if (!tasker) return res.status(404).json({ message: 'Tasker not found' });
+        const { subject, message } = req.body;
+        const tasker = await Tasker.findById(req.params.id);
         
-        await logAdminAction({ 
-            adminId: req.admin._id, 
-            action: 'ACTIVATE_TASKER', 
-            resourceType: 'Tasker', 
-            resourceId: tasker._id, 
-            req 
-        });
+        if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
         
-        res.json({ status: 'success', message: 'Tasker activated' });
-    } catch (error) { res.status(500).json({ status: 'error', message: 'Failed to activate' }); }
+        const html = customAdminEmailHtml({ name: `${tasker.firstName} ${tasker.lastName}`, message });
+        await sendEmail({ to: tasker.emailAddress, subject, html });
+
+        await logAdminAction({ adminId: req.admin._id, action: 'SENT_EMAIL_TO_TASKER', resourceType: 'Tasker', resourceId: tasker._id, req });
+
+        res.json({ status: 'success', message: 'Email sent successfully' });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: 'Failed to send email' });
+    }
 };

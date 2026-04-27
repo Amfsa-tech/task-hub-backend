@@ -7,7 +7,8 @@ import {
   getTaskerById,
   verifyTasker,
   suspendTasker,
-  activateTasker // <--- ADDED THIS IMPORT
+  activateTasker,
+  sendTaskerEmail
 } from '../controllers/adminTaskerController.js';
 
 const router = express.Router();
@@ -47,5 +48,8 @@ router.patch(
   allowAdminRoles('super_admin', 'operations'),
   activateTasker
 );
+
+router.post('/taskers/:id/send-email', protectAdmin,
+  allowAdminRoles('super_admin', 'operations'), sendTaskerEmail);
 
 export default router;

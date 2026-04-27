@@ -10,7 +10,8 @@ import {
     lockUser,
     unlockUser,
     softDeleteUser,
-    restoreUser
+    restoreUser,
+    sendUserEmail
 } from '../controllers/adminUserController.js';
 
 const router = express.Router();
@@ -77,5 +78,6 @@ router.patch(
     allowAdminRoles('super_admin'),
     restoreUser
 );
+router.post('/:id/send-email', allowAdminRoles('super_admin'), sendUserEmail);
 
 export default router;
