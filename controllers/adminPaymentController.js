@@ -6,46 +6,47 @@ import { escapeRegex } from '../utils/searchUtils.js';
 const PLATFORM_FEE_RATE = 0.15;
 
 // GET /api/admin/payments/stats
+// GET /api/admin/payments/stats
 export const getPaymentStats = async (req, res) => {
     try {
-        // 1. "Total Credits" (Money In) — escrow currently held
-        const creditAgg = await Task.aggregate([
-            { $match: { isEscrowHeld: true } },
-            { $group: { _id: null, total: { $sum: '$escrowAmount' } } }
+        // Group by status to apply the exact 15% / 85% business logic
+        const tasksAgg = await Task.aggregate([
+            { 
+                $group: { 
+                    _id: '$status', 
+                    count: { $sum: 1 },
+                    totalBudget: { $sum: '$budget' } 
+                } 
+            }
         ]);
-        const totalCredits = creditAgg[0]?.total || 0;
 
-        // 2. "Total Debits" (Money Out) — escrow released to taskers
-        const debitAgg = await Task.aggregate([
-            { $match: { escrowStatus: 'released' } },
-            { $group: { _id: null, total: { $sum: '$taskerPayout' } } }
-        ]);
-        const totalDebits = debitAgg[0]?.total || 0;
+        const budgetByStatus = { open: 0, assigned: 0, 'in-progress': 0, completed: 0, cancelled: 0 };
+        let totalTransactionsCount = 0;
 
-        // 3. Platform fees earned
-        const feeAgg = await Task.aggregate([
-            { $match: { escrowStatus: 'released', platformFee: { $gt: 0 } } },
-            { $group: { _id: null, total: { $sum: '$platformFee' } } }
-        ]);
-        const totalPlatformFees = feeAgg[0]?.total || 0;
-
-        // 4. "Net Flow"
-        const netFlow = totalCredits - totalDebits;
-
-        // 5. "Total Transactions"
-        const totalTransactions = await Task.countDocuments({ 
-            $or: [{ isEscrowHeld: true }, { escrowStatus: 'released' }, { escrowStatus: 'refunded' }]
+        tasksAgg.forEach(item => { 
+            budgetByStatus[item._id] = item.totalBudget || 0;
+            // Count tasks that actually moved money
+            if (['assigned', 'in-progress', 'completed'].includes(item._id)) {
+                totalTransactionsCount += item.count;
+            }
         });
+
+        // Apply Financial Rules
+        const totalTransactionVolume = budgetByStatus['assigned'] + budgetByStatus['in-progress'] + budgetByStatus['completed'];
+        const escrowHeld = budgetByStatus['assigned'] + budgetByStatus['in-progress'];
+        const platformFees = budgetByStatus['completed'] * 0.15;
+        const taskerPayouts = budgetByStatus['completed'] * 0.85;
 
         res.json({
             status: 'success',
             data: {
-                totalTransactions,
-                totalCredits,
-                totalDebits,
-                netFlow,
-                totalPlatformFees,
-                platformFeeRate: `${PLATFORM_FEE_RATE * 100}%`
+                totalTransactions: totalTransactionsCount,
+                totalTransactionVolume,         // 100% of all assigned/active/completed tasks
+                totalCredits: escrowHeld,       // Money currently held in escrow
+                totalDebits: taskerPayouts,     // 85% of completed tasks (Outgoing fees)
+                totalPlatformFees: platformFees,// 15% of completed tasks (Revenue)
+                netFlow: escrowHeld - taskerPayouts, 
+                platformFeeRate: '15%'
             }
         });
     } catch (error) {

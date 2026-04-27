@@ -198,13 +198,22 @@ export const sendUserEmail = async (req, res) => {
         
         if (!user) return res.status(404).json({ status: 'error', message: 'User not found' });
         
+        // 1. Send Professional Branded Email
         const html = customAdminEmailHtml({ name: user.fullName, message });
         await sendEmail({ to: user.emailAddress, subject, html });
 
+        // 2. NEW: Send In-App Notification
+        await Notification.create({
+            user: user._id,
+            title: subject,
+            message: message,
+            type: 'Direct Message' // Or whatever type categorizes admin messages
+        });
+
         await logAdminAction({ adminId: req.admin._id, action: 'SENT_EMAIL_TO_USER', resourceType: 'User', resourceId: user._id, req });
 
-        res.json({ status: 'success', message: 'Email sent successfully' });
+        res.json({ status: 'success', message: 'Email and In-App Notification sent successfully' });
     } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Failed to send email' });
+        res.status(500).json({ status: 'error', message: 'Failed to send communication' });
     }
 };

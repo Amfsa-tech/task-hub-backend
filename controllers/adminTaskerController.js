@@ -197,13 +197,59 @@ export const sendTaskerEmail = async (req, res) => {
         
         if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
         
+        // 1. Send Professional Branded Email
         const html = customAdminEmailHtml({ name: `${tasker.firstName} ${tasker.lastName}`, message });
         await sendEmail({ to: tasker.emailAddress, subject, html });
 
+        // 2. NEW: Send In-App Notification
+        await Notification.create({
+            tasker: tasker._id,
+            title: subject,
+            message: message,
+            type: 'Direct Message'
+        });
+
         await logAdminAction({ adminId: req.admin._id, action: 'SENT_EMAIL_TO_TASKER', resourceType: 'Tasker', resourceId: tasker._id, req });
 
-        res.json({ status: 'success', message: 'Email sent successfully' });
+        res.json({ status: 'success', message: 'Email and In-App Notification sent successfully' });
     } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Failed to send email' });
+        res.status(500).json({ status: 'error', message: 'Failed to send communication' });
+    }
+};
+
+// PATCH /api/admin/taskers/:id/lock
+export const lockTasker = async (req, res) => {
+    try {
+        const lockDuration = 24 * 60 * 60 * 1000; // 24 hours
+        const tasker = await Tasker.findByIdAndUpdate(
+            req.params.id, 
+            { lockUntil: Date.now() + lockDuration }, 
+            { new: true }
+        );
+
+        if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
+
+        await logAdminAction({ adminId: req.admin._id, action: 'LOCK_TASKER_ACCOUNT', resourceType: 'Tasker', resourceId: tasker._id, req });
+        res.json({ status: 'success', message: 'Tasker account locked for 24 hours' });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: 'Failed to lock tasker' });
+    }
+};
+
+// PATCH /api/admin/taskers/:id/unlock
+export const unlockTasker = async (req, res) => {
+    try {
+        const tasker = await Tasker.findByIdAndUpdate(
+            req.params.id, 
+            { lockUntil: null }, 
+            { new: true }
+        );
+
+        if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
+
+        await logAdminAction({ adminId: req.admin._id, action: 'UNLOCK_TASKER_ACCOUNT', resourceType: 'Tasker', resourceId: tasker._id, req });
+        res.json({ status: 'success', message: 'Tasker account unlocked' });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: 'Failed to unlock tasker' });
     }
 };
