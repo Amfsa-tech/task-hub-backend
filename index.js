@@ -1,6 +1,8 @@
+import './instrument.js';
+import * as Sentry from '@sentry/node';
 import express from 'express';
 import cors from 'cors';
-import { connectDB, setupConnectionHandlers, PORT } from './config/index.js';
+import { connectDB, setupConnectionHandlers, PORT, NODE_ENV } from './config/index.js';
 import authRoutes from './routes/authRoute.js';
 import taskRoutes from './routes/taskRoute.js';
 import bidRoutes from './routes/bidRoute.js';
@@ -59,6 +61,7 @@ app.get('/debug/outbound-ip', async (req, res) => {
 const defaultAllowedOrigins = [
     'https://www.ngtaskhub.com',
     'http://localhost:3000',
+    'http://localhost:3001',
     'http://localhost:5173'
 ];
 
@@ -109,7 +112,7 @@ app.use(cors({
 // Paystack webhook needs raw body for HMAC signature verification — must come before express.json()
 app.use('/api/wallet/paystack-webhook', express.raw({ type: 'application/json' }));
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 app.use('/api/admin/auth', adminAuthRoutes);
 app.use('/api/admin/me', adminProtectedRoutes); // ONLY for /me and system stuff
@@ -156,12 +159,60 @@ app.get('/', (req, res) => {
     res.send('TaskHub API is running');
 });     
 
+// Debug Sentry route (non-production only)
+if (NODE_ENV !== 'production') {
+    app.get('/debug-sentry', function mainHandler(req, res) {
+        throw new Error("My first Sentry error!");
+    });
+}
+
+// The error handler must be registered before any other error middleware and after all controllers
+Sentry.setupExpressErrorHandler(app);
+
+// Clear Sentry user context and add request tags after each request
+app.use((req, res, next) => {
+  const scope = Sentry.getCurrentScope();
+  scope.setTag('route', req.route?.path || req.path);
+  scope.setTag('method', req.method);
+  res.on('finish', () => {
+    Sentry.setUser(null);
+    const finishScope = Sentry.getCurrentScope();
+    finishScope.setTag('route', null);
+    finishScope.setTag('method', null);
+  });
+  next();
+});
+
+// Global process error handlers to ensure Sentry flushes before exit
+process.on('unhandledRejection', (reason) => {
+  Sentry.captureException(reason);
+  console.error('Unhandled Rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  Sentry.captureException(err);
+  console.error('Uncaught Exception:', err);
+  Sentry.close(2000).then(() => process.exit(1));
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error(err.stack);
+    // Always capture with Sentry first
+    Sentry.captureException(err);
+    console.error('[GLOBAL ERROR HANDLER]', err.stack || err);
+
+    // Handle payload too large errors with a friendly message
+    if (err.type === 'entity.too.large' || err.status === 413) {
+        return res.status(413).json({
+            status: "error",
+            message: 'The data you submitted is too large. Please reduce the file size and try again. Maximum allowed size is 10MB.',
+        });
+    }
+
     res.status(500).json({
         status: "error", 
         message: 'Something went wrong',
+        sentryEventId: res.sentry || null,
         error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
 });

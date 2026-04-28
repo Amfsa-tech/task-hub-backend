@@ -5,8 +5,9 @@ import { sendKycNotification } from '../services/onesignal.js';
 import { logAdminAction } from '../utils/auditLogger.js';
 import { saveNotification } from '../services/notificationService.js';
 import { escapeRegex } from '../utils/searchUtils.js';
-import { baseLayout } from '../utils/taskerEmailTemplates.js'; 
-import { sendEmail } from '../services/emailService.js';
+import { baseLayout } from '../utils/taskerEmailTemplates.js'; // <-- Change this path to wherever your baseLayout file is!
+import { sendEmail } from '../services/emailService.js'; // Added email service import
+import * as Sentry from '@sentry/node';
 
 // GET /api/admin/kyc/stats
 export const getKycStats = async (req, res) => {
@@ -32,7 +33,11 @@ export const getKycStats = async (req, res) => {
             data: { total, pending, approved, rejected, verifiedUsers, verifiedTaskers }
         });
     } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Failed to fetch KYC statistics' });
+        Sentry.captureException(error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to fetch KYC statistics'
+        });
     }
 };
 
@@ -76,7 +81,11 @@ export const getAllKycRequests = async (req, res) => {
             records: kycRecords
         });
     } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Failed to fetch KYC records' });
+        Sentry.captureException(error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to fetch KYC records'
+        });
     }
 };
 
@@ -169,6 +178,7 @@ export const approveKyc = async (req, res) => {
         });
 
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Approve KYC error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to approve KYC' });
     }
@@ -266,9 +276,10 @@ export const rejectKyc = async (req, res) => {
             message: 'KYC rejected successfully',
             data: kyc
         });
-
+        
     } catch (error) {
         console.error('Reject KYC error:', error);
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to reject KYC' });
     }
 };
@@ -327,6 +338,7 @@ export const getKycDetails = async (req, res) => {
         });
 
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Get KYC details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch KYC details' });
     }

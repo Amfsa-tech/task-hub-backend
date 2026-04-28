@@ -2,6 +2,7 @@ import Category from '../models/category.js';
 import Task from '../models/task.js';
 import Tasker from '../models/tasker.js';
 import mongoose from 'mongoose';
+import * as Sentry from '@sentry/node';
 
 // Helper function to check if ID is valid
 const isValidObjectId = (id) => {
@@ -51,6 +52,7 @@ const createCategory = async (req, res) => {
             category
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error("Create category error:", error);
         
         // Handle unique index violation
@@ -84,6 +86,7 @@ const getAllCategories = async (req, res) => {
             categories
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error("Get all categories error:", error);
         res.status(500).json({
             status: "error",
@@ -110,6 +113,7 @@ const getAllCategoriesAdmin = async (req, res) => {
         });
     } catch (error) {
         console.error("Get all categories admin error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error fetching categories",
@@ -147,6 +151,7 @@ const getCategoryById = async (req, res) => {
         });
     } catch (error) {
         console.error("Get category by ID error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error fetching category",
@@ -209,6 +214,7 @@ const updateCategory = async (req, res) => {
         });
     } catch (error) {
         console.error("Update category error:", error);
+        Sentry.captureException(error);
         
         // Handle unique index violation
         if (error.code === 11000) {
@@ -272,6 +278,7 @@ const deactivateCategory = async (req, res) => {
         });
     } catch (error) {
         console.error("Deactivate category error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error deactivating category",
@@ -325,6 +332,7 @@ const getCategoryStats = async (req, res) => {
         });
     } catch (error) {
         console.error("Get category stats error:", error);
+        Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error fetching category statistics",

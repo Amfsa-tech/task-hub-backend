@@ -19,7 +19,11 @@ export const getTaskStats = async (req, res) => {
             status: 'success',
             data: { total: totalTasks, open: openTasks, inProgress: inProgressTasks, completed: completedTasks, cancelled: cancelledTasks }
         });
-    } catch (error) { res.status(500).json({ status: 'error', message: 'Failed to fetch task stats' }); }
+    } catch (error) {
+        Sentry.captureException(error);
+        console.error('Task stats error:', error);
+        res.status(500).json({ status: 'error', message: 'Failed to fetch task stats' });
+    }
 };
 
 export const getAllTasks = async (req, res) => {
@@ -58,7 +62,14 @@ export const getAllTasks = async (req, res) => {
             status: 'success', results: tasks.length, totalRecords: total,
             totalPages: Math.ceil(total / limit), currentPage: Number(page), tasks
         });
-    } catch (error) { res.status(500).json({ status: 'error', message: 'Failed to fetch tasks' }); }
+    } catch (error) {
+        Sentry.captureException(error);
+        console.error('Admin get tasks error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to fetch tasks'
+        });
+    }
 };
 
 export const getTaskById = async (req, res) => {
@@ -93,7 +104,12 @@ export const getTaskById = async (req, res) => {
                 }))
             }
         });
-    } catch (error) { res.status(500).json({ status: 'error', message: 'Failed to fetch task details' }); }
+
+    } catch (error) {
+        Sentry.captureException(error);
+        console.error('Get task details error:', error);
+        res.status(500).json({ status: 'error', message: 'Failed to fetch task details' });
+    }
 };
 
 export const forceCancelTask = async (req, res) => {

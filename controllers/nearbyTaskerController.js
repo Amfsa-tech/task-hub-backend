@@ -1,4 +1,5 @@
 import { findNearbyTaskers } from '../services/nearbyTaskerService.js';
+import * as Sentry from '@sentry/node';
 
 export const getNearbyTaskers = async (req, res) => {
     try {
@@ -24,6 +25,7 @@ export const getNearbyTaskers = async (req, res) => {
             data: taskers
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Error fetching nearby taskers:', error);
         return res.status(500).json({
             success: false,

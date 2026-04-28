@@ -40,6 +40,8 @@ export const getTaskerStats = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
+        console.error('Tasker stats error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch tasker stats' });
     }
 };
@@ -110,6 +112,8 @@ export const getAllTaskers = async (req, res) => {
             taskers: formattedTaskers 
         });
     } catch (error) {
+        Sentry.captureException(error);
+        console.error(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch taskers' });
     }
 };
@@ -168,6 +172,8 @@ export const getTaskerById = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
+        console.error('Get tasker details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch tasker details' });
     }
 };

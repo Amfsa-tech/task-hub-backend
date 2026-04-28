@@ -3,7 +3,8 @@ import User from '../models/user.js';
 import Tasker from '../models/tasker.js';   
 import { logAdminAction } from '../utils/auditLogger.js';
 import Notification from '../models/notification.js'; // <-- ADD THIS IMPORT AT THE TOP
-import { sendEmail, customAdminEmailHtml } from '../services/emailService.js'; // Adjust the path as needed
+import { sendEmail } from '../services/emailService.js'; // Adjust the path as needed
+import * as Sentry from '@sentry/node';
 // Make sure this is at the top of adminNotificationController.js
 
 
@@ -41,6 +42,7 @@ export const getNotificationStats = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Notification stats error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch notification stats' });
     }
@@ -59,6 +61,7 @@ export const getAllNotifications = async (req, res) => {
             data: notifications
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch notifications' });
     }
 };
@@ -176,6 +179,7 @@ export const sendNotification = async (req, res) => {
         });
 
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Send notification error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to send notification' });
     }
@@ -342,6 +346,7 @@ export const getAllUserAndTaskerNotifications = async (req, res) => {
         });
 
     } catch (error) {
+        Sentry.captureException(error);
         console.error('Fetch all individual notifications error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch user/tasker notifications' });
     }

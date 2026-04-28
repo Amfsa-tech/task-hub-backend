@@ -1,4 +1,5 @@
 import * as StellarSdk from 'stellar-sdk';
+import * as Sentry from '@sentry/node';
 import User from '../models/user.js'; 
 
 // Load credentials from your .env
@@ -79,6 +80,7 @@ export const startDepositListener = () => {
 
                 } catch (error) {
                     console.error('🚨 Error processing Stellar deposit:', error);
+                    Sentry.captureException(error);
                 }
             },
             onerror: (error) => {

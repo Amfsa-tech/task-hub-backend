@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/node';
 import AdminSettings from '../models/adminSettings.js';
 
 export const checkMaintenanceMode = async (req, res, next) => {
@@ -22,6 +23,8 @@ export const checkMaintenanceMode = async (req, res, next) => {
 
         next();
     } catch (error) {
+        console.error('Maintenance mode check error:', error);
+        Sentry.captureException(error);
         next();
     }
 };

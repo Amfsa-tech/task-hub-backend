@@ -1,5 +1,6 @@
 import Waitlist from '../models/waitlist.js';
 import { sendEmail } from '../utils/authUtils.js';
+import * as Sentry from '@sentry/node';
 
 // POST /api/waitlist — public
 export const joinWaitlist = async (req, res) => {
@@ -49,6 +50,7 @@ export const joinWaitlist = async (req, res) => {
                 `
             });
         } catch (mailErr) {
+            Sentry.captureException(mailErr);
             console.error('Waitlist confirmation email failed:', mailErr.message);
         }
 
@@ -58,6 +60,7 @@ export const joinWaitlist = async (req, res) => {
             data: { email: entry.email, createdAt: entry.createdAt }
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('joinWaitlist error:', error);
         return res.status(500).json({ status: 'error', message: 'Server error', error: error.message });
     }
@@ -73,6 +76,7 @@ export const getWaitlistEmails = async (req, res) => {
             data: entries
         });
     } catch (error) {
+        Sentry.captureException(error);
         console.error('getWaitlistEmails error:', error);
         return res.status(500).json({ status: 'error', message: 'Server error', error: error.message });
     }

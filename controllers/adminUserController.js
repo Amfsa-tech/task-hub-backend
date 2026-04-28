@@ -36,6 +36,7 @@ export const getUserStats = async (req, res) => {
             }
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch user stats' });
     }
 };
@@ -85,6 +86,7 @@ export const getAllUsers = async (req, res) => {
             users
         });
     } catch (error) {
+        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch users' });
     }
 };
@@ -126,7 +128,12 @@ export const getUserById = async (req, res) => {
             }
         });
     } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Failed to fetch user details' });
+        Sentry.captureException(error);
+        console.error('Get user details error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to fetch user details'
+        });
     }
 };
 
