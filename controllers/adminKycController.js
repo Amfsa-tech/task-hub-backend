@@ -1,14 +1,14 @@
 import KYCVerification from '../models/kycVerification.js';
 import User from '../models/user.js';
-import Tasker from '../models/tasker.js'; // Added Tasker import
+import Tasker from '../models/tasker.js'; 
 import { sendKycNotification } from '../services/onesignal.js';
 import { logAdminAction } from '../utils/auditLogger.js';
 import { saveNotification } from '../services/notificationService.js';
 import { escapeRegex } from '../utils/searchUtils.js';
-import { baseLayout } from '../utils/taskerEmailTemplates.js'; // <-- Change this path to wherever your baseLayout file is!
-import { sendEmail } from '../services/emailService.js'; // Added email service import
+import { baseLayout } from '../utils/taskerEmailTemplates.js'; 
+import { sendEmail } from '../services/emailService.js';
 
-// GET /api/admin/kyc/stats (Matches the 6 Top Cards)
+// GET /api/admin/kyc/stats
 export const getKycStats = async (req, res) => {
     try {
         const [
@@ -16,33 +16,23 @@ export const getKycStats = async (req, res) => {
             pending,
             approved,
             rejected,
-            verifiedUsers,   // Card 5: Verified Users
-            verifiedTaskers  // Card 6: Verified Taskers
+            verifiedUsers,
+            verifiedTaskers 
         ] = await Promise.all([
             KYCVerification.countDocuments(),
             KYCVerification.countDocuments({ status: 'pending' }),
             KYCVerification.countDocuments({ status: 'approved' }),
             KYCVerification.countDocuments({ status: 'rejected' }),
             User.countDocuments({ isKYCVerified: true }),
-            Tasker.countDocuments({ verifyIdentity: true }) // Matches your Tasker model field
+            Tasker.countDocuments({ verifyIdentity: true }) 
         ]);
 
         res.json({
             status: 'success',
-            data: {
-                total,
-                pending,
-                approved,
-                rejected,
-                verifiedUsers,
-                verifiedTaskers
-            }
+            data: { total, pending, approved, rejected, verifiedUsers, verifiedTaskers }
         });
     } catch (error) {
-        res.status(500).json({
-            status: 'error',
-            message: 'Failed to fetch KYC statistics'
-        });
+        res.status(500).json({ status: 'error', message: 'Failed to fetch KYC statistics' });
     }
 };
 
@@ -53,7 +43,6 @@ export const getAllKycRequests = async (req, res) => {
 
         const filter = {};
 
-        // Tab Filtering (Matches UI tabs: All | Pending | Approved | Rejected)
         if (status && status !== 'All') filter.status = status;
 
         if (startDate || endDate) {
@@ -64,17 +53,19 @@ export const getAllKycRequests = async (req, res) => {
 
         if (search) {
             filter.$or = [
-                { idNumber: { $regex: escapeRegex(search), $options: 'i' } } // Search by NIN
+                { idNumber: { $regex: escapeRegex(search), $options: 'i' } } 
             ];
         }
 
-        const kycRecords = await KYCVerification.find(filter)
-            .populate('user', 'fullName emailAddress firstName lastName profilePicture')
-            .sort({ createdAt: -1 })
-            .limit(limit * 1)
-            .skip((page - 1) * limit);
-
-        const total = await KYCVerification.countDocuments(filter);
+        // OPTIMIZATION: Run the find list and the total count in parallel
+        const [kycRecords, total] = await Promise.all([
+            KYCVerification.find(filter)
+                .populate('user', 'fullName emailAddress firstName lastName profilePicture')
+                .sort({ createdAt: -1 })
+                .limit(limit * 1)
+                .skip((page - 1) * limit),
+            KYCVerification.countDocuments(filter)
+        ]);
 
         res.json({
             status: 'success',
@@ -85,14 +76,10 @@ export const getAllKycRequests = async (req, res) => {
             records: kycRecords
         });
     } catch (error) {
-        res.status(500).json({
-            status: 'error',
-            message: 'Failed to fetch KYC records'
-        });
+        res.status(500).json({ status: 'error', message: 'Failed to fetch KYC records' });
     }
 };
 
-// ... (approveKyc and rejectKyc stay the same, but ensure they update Tasker model if needed)
 
 // PATCH /api/admin/kyc/:id/approve
 export const approveKyc = async (req, res) => {
@@ -133,12 +120,10 @@ export const approveKyc = async (req, res) => {
         // 3. Handle Notifications if account exists
         if (targetAccount) {
 
-            // OneSignal Push
             if (targetAccount.notificationId) {
                 await sendKycNotification(targetAccount.notificationId, 'approved');
             }
 
-            // In-app Notification
             await saveNotification({
                 userId: targetAccount._id,
                 title: 'KYC Approved',
@@ -146,13 +131,12 @@ export const approveKyc = async (req, res) => {
                 type: 'kyc'
             });
 
-            // ✉️ NEW: Send Email Notification
-            const recipientEmail = targetAccount.email || targetAccount.emailAddress; // Checks both!
+            const recipientEmail = targetAccount.email || targetAccount.emailAddress; 
 
             if (recipientEmail) {
                 const title = 'KYC Verification Approved 🎉';
                 const bodyHtml = `
-                    <p>Hello ${targetAccount.firstName || ''},</p>
+                    <p>Hello ${targetAccount.firstName || targetAccount.fullName || ''},</p>
                     <p>We are pleased to inform you that your KYC verification on Taskhub has been successfully <strong>approved</strong>. You now have full access to all features on the platform.</p>
                     <p>Thank you for completing the verification process. If you have any questions or need assistance, feel free to reach out to our support team.</p>
                     
@@ -164,12 +148,11 @@ export const approveKyc = async (req, res) => {
                 await sendEmail({
                     to: recipientEmail,
                     subject: 'Your KYC Verification is Approved! 🎉',
-                    html: baseLayout(title, bodyHtml) // This is the key fix!
+                    html: baseLayout(title, bodyHtml) 
                 });
             }
         }
 
-        // 4. Log Admin Action
         // 4. Log Admin Action
         await logAdminAction({
             adminId: req.admin._id,
@@ -225,7 +208,6 @@ export const rejectKyc = async (req, res) => {
 
         // 3. Handle Notifications
         if (targetAccount) {
-            // OneSignal Push
             if (targetAccount.notificationId) {
                 await sendKycNotification(
                     targetAccount.notificationId,
@@ -234,7 +216,6 @@ export const rejectKyc = async (req, res) => {
                 );
             }
 
-            // In-app Notification
             await saveNotification({
                 userId: targetAccount._id,
                 title: 'KYC Rejected',
@@ -242,13 +223,12 @@ export const rejectKyc = async (req, res) => {
                 type: 'kyc'
             });
 
-            // ✉️ NEW: Send Email Notification
-            const recipientEmail = targetAccount.email || targetAccount.emailAddress; // Checks both!
+            const recipientEmail = targetAccount.email || targetAccount.emailAddress; 
 
             if (recipientEmail) {
                 const title = 'Update on your KYC Verification';
                 const bodyHtml = `
-                <p>Hello ${targetAccount.firstName || ''},</p>
+                <p>Hello ${targetAccount.firstName || targetAccount.fullName || ''},</p>
                 <p>Thank you for submitting your KYC details on Taskhub. Unfortunately, your verification could not be completed at this time due to the following reason(s):</p>
                 
                 <div class="highlight-box" style="border-left-color: #ff4d4d; background-color: #fff5f5; padding: 15px; border-left: 4px solid #ff4d4d; border-radius: 4px; margin: 20px 0;">
@@ -264,16 +244,14 @@ export const rejectKyc = async (req, res) => {
                 </div>
             `;
 
-                // This is the call that actually sends the email
                 await sendEmail({
                     to: recipientEmail,
                     subject: title,
-                    html: baseLayout(title, bodyHtml) // This wraps your text in the TaskHub template
+                    html: baseLayout(title, bodyHtml) 
                 });
             }
         }
 
-        // 4. Log Admin Action
         // 4. Log Admin Action
         await logAdminAction({
             adminId: req.admin._id,
@@ -283,7 +261,6 @@ export const rejectKyc = async (req, res) => {
             req
         });
 
-        // 🔥 FIX: Return the updated kyc document here as well
         res.json({
             status: 'success',
             message: 'KYC rejected successfully',
@@ -295,27 +272,25 @@ export const rejectKyc = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Failed to reject KYC' });
     }
 };
-// GET /api/admin/kyc/:id (Matches the "KYC Verification Details" Page)
+
+// GET /api/admin/kyc/:id
 export const getKycDetails = async (req, res) => {
     try {
         const kycId = req.params.id;
 
-        // 1. Fetch the KYC record and populate based on userType
+        // Fetch the KYC record and populate based on userType
         const kyc = await KYCVerification.findById(kycId)
-            .populate('user') // Populates User or Tasker based on your refPath
-            .populate('reviewedBy', 'firstName lastName'); // Admin who reviewed it
+            .populate('user') 
+            .populate('reviewedBy', 'firstName lastName'); 
 
         if (!kyc) {
             return res.status(404).json({ status: 'error', message: 'KYC record not found' });
         }
 
-        // 2. Format response to match the Figma UI
         const responseData = {
-            // Top Section: Verification Status
-            status: kyc.status, // "pending", "approved", "rejected"
+            status: kyc.status, 
             submittedAt: kyc.createdAt,
 
-            // Middle Left: User Information
             userInformation: {
                 fullName: kyc.userType === 'Tasker'
                     ? `${kyc.user.firstName} ${kyc.user.lastName}`
@@ -323,25 +298,22 @@ export const getKycDetails = async (req, res) => {
                 email: kyc.user.emailAddress,
                 phone: kyc.user.phoneNumber || 'N/A',
                 location: kyc.user.residentState || 'N/A',
-                accountType: kyc.userType, // "User" or "Tasker"
-                bio: kyc.userType === 'Tasker' ? kyc.user.bio : 'N/A', // Only Taskers usually have bios
+                accountType: kyc.userType, 
+                bio: kyc.userType === 'Tasker' ? kyc.user.bio : 'N/A',
                 profilePicture: kyc.user.profilePicture
             },
 
-            // Middle Right: KYC Information
             kycInfo: {
-                nin: kyc.nin || null, // Full NIN for manual verification
-                maskedNin: kyc.maskedNin, // Masked National Identification Number
+                nin: kyc.nin || null, 
+                maskedNin: kyc.maskedNin, 
                 ninResubmissionRequired: kyc.ninResubmissionRequired || false,
                 userId: kyc.user._id,
                 submissionDate: kyc.createdAt,
                 lastUpdated: kyc.updatedAt,
-                // These come from your verificationSummary schema field
                 matchStatus: kyc.verificationSummary?.matchStatus || 'Pending Review',
                 mismatches: kyc.verificationSummary?.mismatches || []
             },
 
-            // Bottom: Verification Documents (Simulated if not in model yet)
             documents: {
                 idFront: kyc.idFrontUrl || null,
                 idBack: kyc.idBackUrl || null,

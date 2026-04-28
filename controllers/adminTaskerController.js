@@ -3,6 +3,7 @@ import Task from '../models/task.js';
 import Category from '../models/category.js';
 import Report from '../models/report.js';
 import KYCVerification from '../models/kycVerification.js';
+import Notification from '../models/notification.js'; // Added missing import!
 import { logAdminAction } from '../utils/auditLogger.js';
 import { escapeRegex } from '../utils/searchUtils.js';
 import { sendEmail, customAdminEmailHtml } from '../services/emailService.js';
@@ -12,7 +13,7 @@ export const getTaskerStats = async (req, res) => {
     try {
         const [
             totalTaskers, activeTaskers, verifiedTaskers, pendingKyc,
-            suspendedTaskers, completedTasks, totalCategories, disputes
+            suspendedTaskers, completedTasks, totalCategories, disputes, ratingAgg
         ] = await Promise.all([
             Tasker.countDocuments(),
             Tasker.countDocuments({ isActive: true }),
@@ -21,13 +22,13 @@ export const getTaskerStats = async (req, res) => {
             Tasker.countDocuments({ isActive: false }), 
             Task.countDocuments({ status: 'completed' }),
             Category.countDocuments(),
-            Report.countDocuments({ status: 'pending' })
+            Report.countDocuments({ status: 'pending' }),
+            Tasker.aggregate([
+                { $match: { averageRating: { $exists: true } } }, 
+                { $group: { _id: null, avg: { $avg: '$averageRating' } } }
+            ])
         ]);
 
-        const ratingAgg = await Tasker.aggregate([
-            { $match: { averageRating: { $exists: true } } }, 
-            { $group: { _id: null, avg: { $avg: '$averageRating' } } }
-        ]);
         const avgRating = ratingAgg[0]?.avg?.toFixed(1) || 0;
 
         res.json({
@@ -64,7 +65,7 @@ export const getAllTaskers = async (req, res) => {
         if (status === 'active') query.isActive = true;
         if (status === 'suspended') query.isActive = false;
         
-        // Verification Filters (NEW)
+        // Verification Filters
         if (kycVerified === 'true') query.verifyIdentity = true;
         if (kycVerified === 'false') query.verifyIdentity = false;
 
@@ -75,12 +76,16 @@ export const getAllTaskers = async (req, res) => {
         let sortOption = { createdAt: -1 }; 
         if (sort === 'rating') sortOption = { averageRating: -1 }; 
 
-        const taskers = await Tasker.find(query)
-            .select('-password') 
-            .populate('subCategories', 'name') 
-            .sort(sortOption)
-            .limit(limit * 1)
-            .skip((page - 1) * limit);
+        // OPTIMIZATION: Fire the find() and countDocuments() at the same time
+        const [taskers, total] = await Promise.all([
+            Tasker.find(query)
+                .select('-password') 
+                .populate('subCategories', 'name') 
+                .sort(sortOption)
+                .limit(limit * 1)
+                .skip((page - 1) * limit),
+            Tasker.countDocuments(query)
+        ]);
 
         const formattedTaskers = taskers.map(t => ({
             _id: t._id,
@@ -95,8 +100,6 @@ export const getAllTaskers = async (req, res) => {
             updatedAt: t.updatedAt,
             averageRating: t.averageRating || 0
         }));
-
-        const total = await Tasker.countDocuments(query);
 
         res.json({
             status: 'success',
@@ -119,22 +122,24 @@ export const getTaskerById = async (req, res) => {
 
         if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
 
-        const kycRecord = await KYCVerification.findOne({ user: taskerId }).select('idType idNumber status');
-
-        const totalAssigned = await Task.countDocuments({ assignedTasker: tasker._id });
-        const completedCount = await Task.countDocuments({ assignedTasker: tasker._id, status: 'completed' });
-        const completionRate = totalAssigned > 0 ? Math.round((completedCount / totalAssigned) * 100) : 0;
-
-        const revenueAgg = await Task.aggregate([
-            { $match: { assignedTasker: tasker._id, status: 'completed' } },
-            { $group: { _id: null, total: { $sum: '$budget' } } }
+        // OPTIMIZATION: 5 Waterfall Queries combined into 1 Parallel Query execution
+        const [kycRecord, totalAssigned, completedCount, revenueAgg, recentReviews] = await Promise.all([
+            KYCVerification.findOne({ user: taskerId }).select('idType idNumber status'),
+            Task.countDocuments({ assignedTasker: tasker._id }),
+            Task.countDocuments({ assignedTasker: tasker._id, status: 'completed' }),
+            Task.aggregate([
+                { $match: { assignedTasker: tasker._id, status: 'completed' } },
+                { $group: { _id: null, total: { $sum: '$budget' } } }
+            ]),
+            Task.find({ assignedTasker: tasker._id, status: 'completed', rating: { $exists: true } })
+                .populate('user', 'fullName profilePicture') 
+                .select('rating reviewText createdAt user') 
+                .sort({ createdAt: -1 })
+                .limit(5)
         ]);
-        const totalTransaction = revenueAgg[0]?.total || 0;
 
-        const recentReviews = await Task.find({ assignedTasker: tasker._id, status: 'completed', rating: { $exists: true } })
-            .populate('user', 'fullName profilePicture') 
-            .select('rating reviewText createdAt user') 
-            .sort({ createdAt: -1 }).limit(5);
+        const completionRate = totalAssigned > 0 ? Math.round((completedCount / totalAssigned) * 100) : 0;
+        const totalTransaction = revenueAgg[0]?.total || 0;
 
         const reviewsFormatted = recentReviews.map(r => ({
             id: r._id, reviewerName: r.user?.fullName || 'Anonymous',
