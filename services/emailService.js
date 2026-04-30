@@ -48,14 +48,23 @@ export const baseLayout = (title, bodyHtml) => `
 </html>`;
 
 // --- SEND EMAIL FUNCTION ---
-export const sendEmail = async ({ to, subject, html }) => {
+export const sendEmail = async ({ to, subject, html, dbNotificationId }) => {
     try {
-        const data = await resend.emails.send({
+        const payload = {
             from: 'TaskHub <notifications@ngtaskhub.com>', 
             to,
             subject,
             html,
-        });
+        };
+
+        // ADDED: Inject the hidden tracking tag if a database ID is provided
+        if (dbNotificationId) {
+            payload.tags = [
+                { name: 'notificationId', value: dbNotificationId.toString() }
+            ];
+        }
+
+        const data = await resend.emails.send(payload);
         return { success: true, data };
     } catch (error) {
         console.error('Email Send Error:', error);

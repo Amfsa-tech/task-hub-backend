@@ -1,6 +1,7 @@
 import Task from '../models/task.js';
 import User from '../models/user.js';
 import Transaction from '../models/transaction.js';
+import withdrawal from '../models/withdrawal.js';
 import { escapeRegex } from '../utils/searchUtils.js';
 // import * as Sentry from '@sentry/node'; // Temporarily disabled for pitch safety
 
@@ -62,119 +63,208 @@ export const getAllPayments = async (req, res) => {
     try {
         const { page = 1, limit = 10, type, search, startDate, endDate } = req.query;
 
-        // FIX: Find tasks where money is involved, regardless of if it's currently held or released
-        const query = { escrowAmount: { $gt: 0 } }; 
+        // 1. FETCH EVERYTHING IN PARALLEL (Lightning Fast)
+        // Note: Check that your Withdrawal model is actually named 'Withdrawal' and refs 'tasker'
+        const [tasks, deposits, withdrawals] = await Promise.all([
+            Task.find({ budget: { $gt: 0 }, status: { $in: ['assigned', 'in-progress', 'completed'] } })
+                .populate('user', 'fullName emailAddress profilePicture'),
+            Transaction.find({ paymentPurpose: 'wallet_funding' })
+                .populate('user', 'fullName emailAddress profilePicture'),
+            Withdrawal.find({}) 
+                .populate('tasker', 'firstName lastName emailAddress profilePicture')
+        ]);
 
-        if (type === 'credit') {
-            query.escrowStatus = 'held';
-        } else if (type === 'debit') {
-            query.escrowStatus = 'released'; 
+        let unifiedLedger = [];
+
+        // 2. STANDARDIZE TASKS (Escrow)
+        tasks.forEach(t => {
+            unifiedLedger.push({
+                _id: t._id,
+                user: t.user, // Populated payer
+                description: `Task Escrow: ${t.title}`,
+                source: 'Task Payment',
+                type: t.status === 'completed' ? 'debit' : 'credit',
+                amount: t.budget,
+                status: t.status === 'completed' ? 'released' : 'held',
+                date: t.updatedAt
+            });
+        });
+
+        // 3. STANDARDIZE DEPOSITS (Wallet Funding)
+        deposits.forEach(d => {
+            unifiedLedger.push({
+                _id: d._id,
+                user: d.user, // Populated funder
+                description: 'Wallet Deposit via Gateway',
+                source: 'Deposit',
+                type: 'credit',
+                amount: d.amount,
+                status: d.status,
+                date: d.createdAt
+            });
+        });
+
+        // 4. STANDARDIZE WITHDRAWALS (Tasker Payouts)
+        withdrawals.forEach(w => {
+            // Transform tasker data to match the 'User' shape so the frontend table doesn't break
+            const taskerObj = w.tasker ? {
+                _id: w.tasker._id,
+                fullName: `${w.tasker.firstName} ${w.tasker.lastName}`,
+                emailAddress: w.tasker.emailAddress,
+                profilePicture: w.tasker.profilePicture
+            } : null;
+
+            unifiedLedger.push({
+                _id: w._id,
+                user: taskerObj, 
+                description: w.payoutMethod === 'stellar_crypto' ? 'Crypto Withdrawal (XLM)' : 'Bank Withdrawal',
+                source: 'Withdrawal',
+                type: 'debit',
+                amount: w.amount,
+                status: w.status,
+                date: w.createdAt
+            });
+        });
+
+        // 5. APPLY FILTERS TO THE UNIFIED ARRAY
+        if (type) {
+            unifiedLedger = unifiedLedger.filter(item => item.type === type);
         }
 
         if (search) {
-            query.title = { $regex: escapeRegex(search), $options: 'i' };
+            const lowerSearch = search.toLowerCase();
+            unifiedLedger = unifiedLedger.filter(item => 
+                item.description.toLowerCase().includes(lowerSearch) ||
+                (item.user && item.user.fullName && item.user.fullName.toLowerCase().includes(lowerSearch)) ||
+                (item.user && item.user.emailAddress && item.user.emailAddress.toLowerCase().includes(lowerSearch))
+            );
         }
 
         if (startDate || endDate) {
-            query.updatedAt = {};
-            if (startDate) query.updatedAt.$gte = new Date(startDate);
-            if (endDate) query.updatedAt.$lte = new Date(endDate);
+            unifiedLedger = unifiedLedger.filter(item => {
+                const itemDate = new Date(item.date);
+                const isAfterStart = startDate ? itemDate >= new Date(startDate) : true;
+                const isBeforeEnd = endDate ? itemDate <= new Date(endDate) : true;
+                return isAfterStart && isBeforeEnd;
+            });
         }
 
-        // OPTIMIZATION: Fire in parallel so it loads instantly for the judges
-        const [tasks, total] = await Promise.all([
-            Task.find(query)
-                .populate('user', 'fullName emailAddress profilePicture') 
-                .select('title escrowAmount escrowStatus createdAt updatedAt user')
-                .sort({ updatedAt: -1 })
-                .limit(Number(limit))
-                .skip((Number(page) - 1) * Number(limit)),
-            Task.countDocuments(query)
-        ]);
+        // 6. SORT BY NEWEST DATE
+        unifiedLedger.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-        const transactions = tasks.map(task => {
-            const isDebit = task.escrowStatus === 'released';
-            
-            return {
-                _id: task._id,
-                user: task.user, 
-                description: `Escrow for: ${task.title}`, 
-                type: isDebit ? 'debit' : 'credit', 
-                amount: task.escrowAmount, 
-                date: task.updatedAt, 
-                status: task.escrowStatus 
-            };
-        });
+        // 7. MATHEMATICAL PAGINATION
+        const total = unifiedLedger.length;
+        const startIndex = (Number(page) - 1) * Number(limit);
+        const endIndex = startIndex + Number(limit);
+        const paginatedLedger = unifiedLedger.slice(startIndex, endIndex);
 
         res.json({
             status: 'success',
-            results: transactions.length,
+            results: paginatedLedger.length,
             totalRecords: total,
             totalPages: Math.ceil(total / Number(limit)),
             currentPage: Number(page),
-            transactions, 
-            data: transactions // FIX: Added 'data' array fallback in case frontend expects it
+            transactions: paginatedLedger, 
+            data: paginatedLedger 
         });
 
     } catch (error) {
-        // Sentry.captureException(error);
-        console.error('Payment history error:', error);
-        res.status(500).json({ status: 'error', message: 'Failed to fetch payment history' });
+        console.error('Unified Ledger Error:', error);
+        res.status(500).json({ status: 'error', message: 'Failed to fetch global ledger' });
     }
 };
 
+// GET /api/admin/payments/:id
 export const getPaymentById = async (req, res) => {
     try {
         const transactionId = req.params.id; 
 
-        const task = await Task.findById(transactionId)
-            .populate('user', 'emailAddress wallet'); 
+        // 1. Search all three ledgers simultaneously (Lightning Fast)
+        const [task, deposit, withdrawal] = await Promise.all([
+            Task.findById(transactionId).populate('user', 'fullName emailAddress wallet'),
+            Transaction.findOne({ _id: transactionId, paymentPurpose: 'wallet_funding' }).populate('user', 'fullName emailAddress wallet'),
+            Withdrawal.findById(transactionId).populate('tasker', 'firstName lastName emailAddress wallet')
+        ]);
 
-        if (!task) {
-            return res.status(404).json({ status: 'error', message: 'Transaction not found' });
+        let record = null;
+        let source = '';
+        let isDebit = false;
+        let amount = 0;
+        let description = '';
+        let paymentStatus = '';
+        let targetUser = null;
+
+        // 2. Identify which database had the matching ID
+        if (task) {
+            record = task;
+            source = 'Task Payment';
+            isDebit = task.status === 'completed'; // Released = debit, Held = credit
+            amount = task.budget || 0;
+            description = `Task Escrow: ${task.title}`;
+            paymentStatus = task.status === 'completed' ? 'Released' : 'Held';
+            targetUser = task.user;
+        } else if (deposit) {
+            record = deposit;
+            source = 'Deposit';
+            isDebit = false; // Money came IN to the platform
+            amount = deposit.amount || 0;
+            description = 'Wallet Deposit via Gateway';
+            paymentStatus = deposit.status === 'success' ? 'Completed' : 'Pending';
+            targetUser = deposit.user;
+        } else if (withdrawal) {
+            record = withdrawal;
+            source = 'Withdrawal';
+            isDebit = true; // Money went OUT of the platform
+            amount = withdrawal.amount || 0;
+            description = withdrawal.payoutMethod === 'stellar_crypto' ? 'Crypto Withdrawal (XLM)' : 'Bank Withdrawal';
+            paymentStatus = withdrawal.status === 'completed' ? 'Completed' : 'Pending';
+            targetUser = withdrawal.tasker; // For withdrawals, the 'user' is the Tasker
         }
 
-        const isDebit = task.escrowStatus === 'released';
-        const type = isDebit ? 'debit' : 'credit';
-        const amount = task.escrowAmount || 0;
-        const currentBalance = task.user.wallet || 0;
-        
+        if (!record) {
+            return res.status(404).json({ status: 'error', message: 'Transaction not found in any ledger' });
+        }
+
+        // 3. Calculate Ledger Math
+        const currentBalance = targetUser?.wallet || 0;
         const previousBalance = isDebit 
             ? currentBalance + amount 
             : currentBalance - amount;
 
-        const recentTasks = await Task.find({
-                user: task.user._id,
-                _id: { $ne: task._id }, 
-                escrowAmount: { $gt: 0 } // FIX: match the new query logic
-            })
-            .sort({ updatedAt: -1 })
-            .limit(5);
+        // 4. Fetch the User/Tasker's 5 Most Recent Activities across ALL ledgers
+        const [recentTasks, recentDeposits, recentWithdrawals] = await Promise.all([
+            Task.find({ user: targetUser._id, _id: { $ne: transactionId }, budget: { $gt: 0 } }).sort({ updatedAt: -1 }).limit(3),
+            Transaction.find({ user: targetUser._id, _id: { $ne: transactionId }, paymentPurpose: 'wallet_funding' }).sort({ createdAt: -1 }).limit(3),
+            Withdrawal.find({ tasker: targetUser._id, _id: { $ne: transactionId } }).sort({ createdAt: -1 }).limit(3)
+        ]);
 
-        const recentHistory = recentTasks.map(t => ({
-            description: `Payment for ${t.title}`,
-            type: t.escrowStatus === 'released' ? 'debit' : 'credit',
-            amount: t.escrowAmount,
-            date: t.updatedAt
-        }));
+        let recentHistory = [];
+        recentTasks.forEach(t => recentHistory.push({ description: `Task: ${t.title}`, type: t.status === 'completed' ? 'debit' : 'credit', amount: t.budget, date: t.updatedAt }));
+        recentDeposits.forEach(d => recentHistory.push({ description: 'Wallet Deposit', type: 'credit', amount: d.amount, date: d.createdAt }));
+        recentWithdrawals.forEach(w => recentHistory.push({ description: 'Withdrawal', type: 'debit', amount: w.amount, date: w.createdAt }));
 
+        // Sort them by newest and slice the top 5 for the UI
+        recentHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+        recentHistory = recentHistory.slice(0, 5);
+
+        // 5. Return the unified receipt shape
         res.json({
             status: 'success',
             data: {
-                status: task.escrowStatus === 'released' ? 'Completed' : 'Pending',
+                status: paymentStatus,
                 amountSign: isDebit ? '-' : '+',
                 amount: amount,
                 info: {
-                    transactionId: task._id,
-                    description: `Payment for ${task.title}`,
-                    type: type,
-                    paymentMethod: 'Wallet' 
+                    transactionId: record._id,
+                    description: description,
+                    type: isDebit ? 'debit' : 'credit',
+                    paymentMethod: source 
                 },
                 user: {
-                    email: task.user.emailAddress,
+                    email: targetUser?.emailAddress || 'Unknown',
                     balanceAfter: currentBalance, 
                     previousBalance: previousBalance, 
-                    transactionDate: task.updatedAt
+                    transactionDate: record.createdAt || record.updatedAt
                 },
                 recentTransactions: recentHistory
             }
@@ -182,7 +272,7 @@ export const getPaymentById = async (req, res) => {
 
     } catch (error) {
         // Sentry.captureException(error);
-        console.error('Get transaction details error:', error);
+        console.error('Get global transaction details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch transaction details' });
     }
 };

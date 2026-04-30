@@ -1,4 +1,3 @@
-
 import fetch from 'node-fetch';
 import * as Sentry from '@sentry/node';
 import { ONESIGNAL_APP_ID, ONESIGNAL_REST_KEY } from '../config/envConfig.js';
@@ -55,9 +54,15 @@ export async function sendWelcomePush(playerId, heading, message) {
  * @param {string} message - Notification body
  * @param {object} data - Optional data payload
  */
-export async function sendPushToUser(notificationId, heading, message, data = {}) {
+export async function sendPushToUser(notificationId, heading, message, data = {}, dbNotificationId = null) {
   if (!notificationId) {
     throw new Error('Notification ID is required');
+  }
+
+  // ADDED: Merge the tracking ID into the hidden data payload
+  const mergedData = { ...data };
+  if (dbNotificationId) {
+      mergedData.notificationId = dbNotificationId.toString();
   }
 
   const payload = {
@@ -65,32 +70,26 @@ export async function sendPushToUser(notificationId, heading, message, data = {}
     include_subscription_ids: [notificationId],
     contents: { en: message },
     headings: { en: heading },
-  data: data
+    data: mergedData // Use the merged data here!
   };
 
   try {
-  const response = await fetch('https://onesignal.com/api/v1/notifications', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Basic ${ONESIGNAL_REST_KEY}`
-      },
-      body: JSON.stringify(payload)
-    });
+    const response = await fetch('https://onesignal.com/api/v1/notifications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Basic ${ONESIGNAL_REST_KEY}`
+        },
+        body: JSON.stringify(payload)
+      });
 
+    // ... rest of your error handling stays exactly the same
     if (!response.ok) {
       let bodyText = '';
-      try {
-        bodyText = await response.text();
-      } catch (textErr) {
-        console.error('Failed to read OneSignal error response body:', textErr);
-      }
+      try { bodyText = await response.text(); } catch (e) {}
       throw new Error(`OneSignal API error: ${response.status} ${response.statusText} - ${bodyText}`);
     }
-
-    const result = await response.json();
-    console.log('Push notification sent successfully:', result);
-    return result;
+    return await response.json();
   } catch (error) {
     console.error('Error sending push notification:', error);
     Sentry.captureException(error);
@@ -105,16 +104,20 @@ export async function sendPushToUser(notificationId, heading, message, data = {}
  * @param {string} message - Notification body
  * @param {object} data - Optional data payload
  */
-export async function sendPushToMultipleUsers(notificationIds, heading, message, data = {}) {
+export async function sendPushToMultipleUsers(notificationIds, heading, message, data = {}, dbNotificationId = null) {
   if (!notificationIds || notificationIds.length === 0) {
     throw new Error('At least one notification ID is required');
   }
 
-  // Filter out null/undefined notification IDs
   const validNotificationIds = notificationIds.filter(id => id && typeof id === 'string');
-  
   if (validNotificationIds.length === 0) {
     throw new Error('No valid notification IDs provided');
+  }
+
+  // ADDED: Merge the tracking ID into the hidden data payload
+  const mergedData = { ...data };
+  if (dbNotificationId) {
+      mergedData.notificationId = dbNotificationId.toString();
   }
 
   const payload = {
@@ -122,32 +125,26 @@ export async function sendPushToMultipleUsers(notificationIds, heading, message,
     include_subscription_ids: validNotificationIds,
     contents: { en: message },
     headings: { en: heading },
-  data: data
+    data: mergedData // Use the merged data here!
   };
 
   try {
-  const response = await fetch('https://onesignal.com/api/v1/notifications', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Basic ${ONESIGNAL_REST_KEY}`
-      },
-      body: JSON.stringify(payload)
-    });
+    const response = await fetch('https://onesignal.com/api/v1/notifications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Basic ${ONESIGNAL_REST_KEY}`
+        },
+        body: JSON.stringify(payload)
+      });
 
+    // ... rest of your error handling stays exactly the same
     if (!response.ok) {
       let bodyText = '';
-      try {
-        bodyText = await response.text();
-      } catch (textErr) {
-        console.error('Failed to read OneSignal error response body:', textErr);
-      }
+      try { bodyText = await response.text(); } catch (e) {}
       throw new Error(`OneSignal API error: ${response.status} ${response.statusText} - ${bodyText}`);
     }
-
-    const result = await response.json();
-    console.log(`Push notification sent to ${validNotificationIds.length} users:`, result);
-    return result;
+    return await response.json();
   } catch (error) {
     console.error('Error sending push notifications:', error);
     Sentry.captureException(error);

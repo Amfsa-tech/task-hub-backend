@@ -4,6 +4,7 @@ import Category from '../models/category.js';
 import Report from '../models/report.js';
 import KYCVerification from '../models/kycVerification.js';
 import Notification from '../models/notification.js'; // Added missing import!
+import AdminNotification from '../models/adminNotification.js'; // Added missing import!
 import { logAdminAction } from '../utils/auditLogger.js';
 import { escapeRegex } from '../utils/searchUtils.js';
 import * as Sentry from '@sentry/node';
@@ -213,32 +214,7 @@ export const activateTasker = async (req, res) => {
 };
 
 // NEW: POST /api/admin/taskers/:id/send-email
-export const sendTaskerEmail = async (req, res) => {
-    try {
-        const { subject, message } = req.body;
-        const tasker = await Tasker.findById(req.params.id);
-        
-        if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
-        
-        // 1. Send Professional Branded Email
-        const html = customAdminEmailHtml({ name: `${tasker.firstName} ${tasker.lastName}`, message });
-        await sendEmail({ to: tasker.emailAddress, subject, html });
 
-        // 2. NEW: Send In-App Notification
-        await Notification.create({
-            tasker: tasker._id,
-            title: subject,
-            message: message,
-            type: 'Direct Message'
-        });
-
-        await logAdminAction({ adminId: req.admin._id, action: 'SENT_EMAIL_TO_TASKER', resourceType: 'Tasker', resourceId: tasker._id, req });
-
-        res.json({ status: 'success', message: 'Email and In-App Notification sent successfully' });
-    } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Failed to send communication' });
-    }
-};
 
 // PATCH /api/admin/taskers/:id/lock
 export const lockTasker = async (req, res) => {
@@ -277,32 +253,70 @@ export const unlockTasker = async (req, res) => {
     }
 };
 
-// POST /api/admin/taskers/bulk-email
+// Inside your adminTaskerController.js
+
+export const sendTaskerEmail = async (req, res) => {
+    try {
+        const { subject, message } = req.body;
+        const tasker = await Tasker.findById(req.params.id);
+        
+        if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
+        
+        const html = customAdminEmailHtml({ name: `${tasker.firstName} ${tasker.lastName}`, message });
+        await sendEmail({ to: tasker.emailAddress, subject, html });
+
+        await Notification.create({
+            tasker: tasker._id,
+            title: subject,
+            message: message,
+            type: 'Direct Message'
+        });
+
+        await logAdminAction({ adminId: req.admin._id, action: 'SENT_EMAIL_TO_TASKER', resourceType: 'Tasker', resourceId: tasker._id, req });
+
+        res.json({ status: 'success', message: 'Email and In-App Notification sent successfully' });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: 'Failed to send communication' });
+    }
+};
+
 export const sendBulkTaskerEmail = async (req, res) => {
     try {
         const { subject, message, targetGroup } = req.body; 
         
-        // 1. Build the filter query based on the requested group
         let query = {};
         if (targetGroup === 'verified') query.verifyIdentity = true;
         else if (targetGroup === 'unverified') query.verifyIdentity = false;
 
-        // 2. Fetch only the necessary data to save memory
         const taskers = await Tasker.find(query).select('_id emailAddress firstName lastName');
 
         if (taskers.length === 0) {
             return res.status(404).json({ status: 'error', message: `No ${targetGroup} taskers found.` });
         }
 
-        // 3. IMMEDIATELY respond to the frontend to prevent server timeouts
+        // ADDED: Create an AdminNotification record so this bulk email shows up on the CTO's dashboard!
+        const newBroadcast = await AdminNotification.create({
+            title: subject,
+            message: message,
+            type: 'System Announcement',
+            audience: `Bulk: ${targetGroup} Taskers`,
+            recipientsCount: taskers.length,
+            sentBy: req.admin._id
+        });
+
         res.json({ status: 'success', message: `Initiated! Sending emails to ${taskers.length} taskers in the background.` });
 
-        // 4. Run the email loop in the background (Fire and Forget)
         (async () => {
             for (const tasker of taskers) {
                 try {
                     const html = customAdminEmailHtml({ name: `${tasker.firstName} ${tasker.lastName}`, message });
-                    await sendEmail({ to: tasker.emailAddress, subject, html });
+                    await sendEmail({ 
+                        to: tasker.emailAddress, 
+                        subject, 
+                        html,
+                        // ADDED: Pass the ID so Resend can track opens
+                        dbNotificationId: newBroadcast._id 
+                    });
 
                     await Notification.create({
                         tasker: tasker._id,
@@ -315,19 +329,17 @@ export const sendBulkTaskerEmail = async (req, res) => {
                 }
             }
             
-            // Log the bulk action once the loop finishes
             await logAdminAction({ 
                 adminId: req.admin._id, 
                 action: `BULK_EMAIL_${targetGroup?.toUpperCase() || 'ALL'}_TASKERS`, 
-                resourceType: 'Tasker', 
-                resourceId: null, 
+                resourceType: 'AdminNotification', 
+                resourceId: newBroadcast._id, 
                 req 
             });
         })();
 
     } catch (error) {
         console.error('Bulk Tasker email error:', error);
-        // Only send error if we haven't already sent the success response
         if (!res.headersSent) {
             res.status(500).json({ status: 'error', message: 'Failed to initiate bulk email' });
         }

@@ -1,6 +1,8 @@
 import User from '../models/user.js';
 import Task from '../models/task.js';
 import KYCVerification from '../models/kycVerification.js';
+import AdminNotification from '../models/adminNotification.js';
+import Notification from '../models/notification.js'; // Added missing import!
 import Report from '../models/report.js';
 import { logAdminAction } from '../utils/auditLogger.js';
 import { escapeRegex } from '../utils/searchUtils.js';
@@ -197,7 +199,8 @@ export const getUserProfile = async (req, res) => {
     });
 };
 
-// NEW: POST /api/admin/users/:id/send-email
+// Inside your adminUserController.js
+
 export const sendUserEmail = async (req, res) => {
     try {
         const { subject, message } = req.body;
@@ -205,7 +208,7 @@ export const sendUserEmail = async (req, res) => {
         
         if (!user) return res.status(404).json({ status: 'error', message: 'User not found' });
         
-        // 1. Send Professional Branded Email
+        // 1. Send Professional Branded Email (No tracking ID needed for single emails)
         const html = customAdminEmailHtml({ name: user.fullName, message });
         await sendEmail({ to: user.emailAddress, subject, html });
 
@@ -214,7 +217,7 @@ export const sendUserEmail = async (req, res) => {
             user: user._id,
             title: subject,
             message: message,
-            type: 'Direct Message' // Or whatever type categorizes admin messages
+            type: 'Direct Message' 
         });
 
         await logAdminAction({ adminId: req.admin._id, action: 'SENT_EMAIL_TO_USER', resourceType: 'User', resourceId: user._id, req });
@@ -225,13 +228,11 @@ export const sendUserEmail = async (req, res) => {
     }
 };
 
-// POST /api/admin/users/bulk-email
 export const sendBulkUserEmail = async (req, res) => {
     try {
         const { subject, message, targetGroup } = req.body; 
         
         let query = {};
-        // Adjust 'verifyIdentity' if your User model uses a different field name for KYC
         if (targetGroup === 'verified') query.verifyIdentity = true;
         else if (targetGroup === 'unverified') query.verifyIdentity = false;
 
@@ -241,15 +242,29 @@ export const sendBulkUserEmail = async (req, res) => {
             return res.status(404).json({ status: 'error', message: `No ${targetGroup} users found.` });
         }
 
-        // Instantly reply to the frontend
+        // ADDED: Create an AdminNotification record so this bulk email shows up on the CTO's dashboard!
+        const newBroadcast = await AdminNotification.create({
+            title: subject,
+            message: message,
+            type: 'System Announcement',
+            audience: `Bulk: ${targetGroup} Users`,
+            recipientsCount: users.length,
+            sentBy: req.admin._id
+        });
+
         res.json({ status: 'success', message: `Initiated! Sending emails to ${users.length} users in the background.` });
 
-        // Background loop
         (async () => {
             for (const user of users) {
                 try {
                     const html = customAdminEmailHtml({ name: user.fullName, message });
-                    await sendEmail({ to: user.emailAddress, subject, html });
+                    await sendEmail({ 
+                        to: user.emailAddress, 
+                        subject, 
+                        html,
+                        // ADDED: Pass the ID so Resend can track opens
+                        dbNotificationId: newBroadcast._id 
+                    });
 
                     await Notification.create({
                         user: user._id,
@@ -265,8 +280,8 @@ export const sendBulkUserEmail = async (req, res) => {
             await logAdminAction({ 
                 adminId: req.admin._id, 
                 action: `BULK_EMAIL_${targetGroup?.toUpperCase() || 'ALL'}_USERS`, 
-                resourceType: 'User', 
-                resourceId: null, 
+                resourceType: 'AdminNotification', 
+                resourceId: newBroadcast._id, 
                 req 
             });
         })();

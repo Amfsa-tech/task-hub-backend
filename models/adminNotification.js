@@ -20,6 +20,11 @@ const adminNotificationSchema = new Schema({
         enum: ['All Users', 'All Taskers', 'Selected Users', 'Everyone'], 
         required: true
     },
+    // NEW FIELD: Tracks how the message was delivered
+    sentThrough: [{
+        type: String,
+        enum: ['Email', 'In-App'] // Matches the frontend checkboxes
+    }],
     recipientsCount: {
         type: Number,
         default: 0 
