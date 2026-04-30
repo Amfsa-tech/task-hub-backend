@@ -3,7 +3,7 @@ import User from '../models/user.js';
 import Tasker from '../models/tasker.js';   
 import { logAdminAction } from '../utils/auditLogger.js';
 import Notification from '../models/notification.js'; // <-- ADD THIS IMPORT AT THE TOP
-import { sendEmail } from '../services/emailService.js'; // Adjust the path as needed
+import { sendEmail, customAdminEmailHtml } from '../services/emailService.js';
 import * as Sentry from '@sentry/node';
 // Make sure this is at the top of adminNotificationController.js
 
