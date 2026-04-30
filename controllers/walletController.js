@@ -7,6 +7,7 @@ import bcrypt from 'bcryptjs'; // NEW IMPORT
 import Tasker from '../models/tasker.js';
 import axios from 'axios'; // Make sure this is at the top of your controller file if it isn't already!
 import * as Sentry from '@sentry/node';
+import { notifyWalletFunded } from '../utils/notificationUtils.js';
 
 /**
  * POST /api/wallet/fund/initialize
@@ -289,6 +290,13 @@ export const creditWallet = async (transaction, paystackData) => {
     );
 
     console.log(`[Wallet Fund] ✓ Credited ₦${txn.amount} to user ${txn.user} (ref: ${txn.reference})`);
+
+    // Notify user about successful wallet funding
+    try {
+        await notifyWalletFunded(txn.user.toString(), txn.amount, 'paystack');
+    } catch (notifyErr) {
+        console.error('[Wallet Fund] Failed to send funding notification:', notifyErr);
+    }
 };
 
 /**

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createTask, getAllTasks, getTaskById, updateTask, deleteTask, getUserTasks, changeTaskStatus, getTaskerFeed, getCompletionCode, getTaskerTasks } from '../controllers/task-controller.js';
+import { createTask, getAllTasks, getTaskById, updateTask, deleteTask, getUserTasks, changeTaskStatus, getTaskerFeed, getCompletionCode, getTaskerTasks, submitRating } from '../controllers/task-controller.js';
 import { protectUser, protectTasker } from '../middlewares/authMiddleware.js';
 import { uploadTaskImages, handleMulterError } from '../middlewares/uploadMiddleware.js';
 
@@ -23,6 +23,9 @@ router.get('/:id', getTaskById);
 
 // Completion code route (user/task poster only)
 router.get('/:id/completion-code', protectUser, getCompletionCode);
+
+// Rating route (user/task poster only, one-time)
+router.post('/:id/rate', protectUser, submitRating);
 
 // Task status routes
 router.patch('/:id/status', protectUser, changeTaskStatus); // For user to cancel task

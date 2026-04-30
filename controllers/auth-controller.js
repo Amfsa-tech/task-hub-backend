@@ -20,6 +20,7 @@ import {
   LOCK_TIME,
 } from "../utils/authUtils.js";
 import { verifyGoogleToken } from "../services/googleAuthService.js";
+import { sendWelcomeNotificationToUser, sendWelcomeNotificationToTasker } from '../utils/notificationUtils.js';
 import * as Sentry from '@sentry/node';
 
 // Helper to calculate exact age
@@ -186,6 +187,15 @@ export const userRegister = async (req, res) => {
       await sendVerificationEmail(emailAddress, emailToken, "user");
     } catch (emailError) {
       console.log("Email sending failed:", emailError.message);
+    }
+
+    // Send welcome notification (fire-and-forget)
+    try {
+      sendWelcomeNotificationToUser(user._id).catch((e) => {
+        console.error('Welcome notification error:', e);
+      });
+    } catch (welcomeErr) {
+      console.error('Failed to trigger welcome notification:', welcomeErr);
     }
 
     res.status(201).json({
@@ -409,6 +419,15 @@ export const taskerRegister = async (req, res) => {
       await sendVerificationEmail(emailAddress, emailToken, "tasker");
     } catch (emailError) {
       console.log("Email sending failed:", emailError.message);
+    }
+
+    // Send welcome notification (fire-and-forget)
+    try {
+      sendWelcomeNotificationToTasker(tasker._id).catch((e) => {
+        console.error('Welcome notification error:', e);
+      });
+    } catch (welcomeErr) {
+      console.error('Failed to trigger welcome notification:', welcomeErr);
     }
 
     res.status(201).json({
