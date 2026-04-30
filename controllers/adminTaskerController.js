@@ -91,7 +91,6 @@ export const getAllTaskers = async (req, res) => {
             Tasker.countDocuments(query)
         ]);
 
-        // Inside getAllTaskers...
         const formattedTaskers = taskers.map(t => {
             // Check if the lock date exists and is still in the future
             const isCurrentlyLocked = !!(t.lockUntil && new Date(t.lockUntil) > new Date());
@@ -108,7 +107,6 @@ export const getAllTaskers = async (req, res) => {
                 isEmailVerified: t.isEmailVerified,
                 updatedAt: t.updatedAt,
                 averageRating: t.averageRating || 0,
-                // ADD THESE TWO LINES:
                 isLocked: isCurrentlyLocked,
                 lockUntil: t.lockUntil || null
             };
@@ -161,7 +159,9 @@ export const getTaskerById = async (req, res) => {
             reviewerImage: r.user?.profilePicture || '', rating: r.rating || 0,
             comment: r.reviewText || 'No comment provided', date: r.createdAt
         }));
+        
         const isCurrentlyLocked = !!(tasker.lockUntil && new Date(tasker.lockUntil) > new Date());
+        
         res.json({
             status: 'success',
             data: {
@@ -174,11 +174,21 @@ export const getTaskerById = async (req, res) => {
                     completedTasks: completedCount, totalTransaction, currentBalance: tasker.wallet || 0 
                 },
                 account: {
-                    userId: tasker._id, role: 'Tasker', fullName: `${tasker.firstName} ${tasker.lastName}`,
-                    emailAddress: tasker.emailAddress, profilePicture: tasker.profilePicture || '', 
+                    userId: tasker._id, 
+                    role: 'Tasker', 
+                    fullName: `${tasker.firstName} ${tasker.lastName}`,
+                    emailAddress: tasker.emailAddress, 
+                    profilePicture: tasker.profilePicture || '', 
                     lastUpdated: tasker.updatedAt,
                     isLocked: isCurrentlyLocked,
-                    lockUntil: tasker.lockUntil || null
+                    lockUntil: tasker.lockUntil || null,
+                    // ADDED FIELDS FOR FRONTEND
+                    residentState: tasker.residentState || '',
+                    phoneNumber: tasker.phoneNumber || '',
+                    country: tasker.country || '',
+                    createdAt: tasker.createdAt,
+                    verifyIdentity: tasker.verifyIdentity,
+                    isActive: tasker.isActive
                 },
                 categories: tasker.subCategories.map(c => c.name),
                 reviews: reviewsFormatted
