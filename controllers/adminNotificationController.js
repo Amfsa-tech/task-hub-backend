@@ -69,15 +69,15 @@ export const getAllNotifications = async (req, res) => {
 // POST /api/admin/notifications/send
 export const sendNotification = async (req, res) => {
     try {
-        // ADDED: 'channels' extracted from req.body
-        const { title, message, type, audience, selectedUserIds, channels } = req.body;
+        // ADDED: 'sentThrough' extracted from req.body
+        const { title, message, type, audience, selectedUserIds, sentThrough } = req.body;
 
         if (!title || !message || !audience) {
             return res.status(400).json({ status: 'error', message: 'Title, message, and audience are required' });
         }
 
         // Fallback: If frontend hasn't updated yet, default to both. Otherwise, use what they checked.
-        const activeChannels = channels && channels.length > 0 ? channels : ['Email', 'In-App'];
+        const activesentThrough = sentThrough && sentThrough.length > 0 ? sentThrough : ['Email', 'In-App'];
 
         let recipientsCount = 0;
         let notificationsToInsert = []; 
@@ -127,20 +127,20 @@ export const sendNotification = async (req, res) => {
             }
         }
 
-        // ADDED: Save the activeChannels to the database so the frontend table can read it later
+        // ADDED: Save the activesentThrough to the database so the frontend table can read it later
         const newNotification = await AdminNotification.create({
             title, 
             message, 
             type: type || 'Announcement', 
             audience, 
-            channels: activeChannels, // <--- SAVED HERE
+            sentThrough: activesentThrough, // <--- SAVED HERE
             recipientsCount, 
             selectedUserIds: audience === 'Selected Users' ? selectedUserIds : [],
             sentBy: req.admin._id
         });
 
         // ONLY fire In-App DB insertions if the Admin checked "In-App"
-        if (activeChannels.includes('In-App') && notificationsToInsert.length > 0) {
+        if (activesentThrough.includes('In-App') && notificationsToInsert.length > 0) {
             const BATCH_SIZE = 1000;
             for (let i = 0; i < notificationsToInsert.length; i += BATCH_SIZE) {
                 await Notification.insertMany(notificationsToInsert.slice(i, i + BATCH_SIZE));
@@ -148,7 +148,7 @@ export const sendNotification = async (req, res) => {
         }
 
         // ONLY fire Resend emails if the Admin checked "Email"
-        if (activeChannels.includes('Email') && emailRecipients.length > 0) {
+        if (activesentThrough.includes('Email') && emailRecipients.length > 0) {
             console.log(`Starting background email blast to ${emailRecipients.length} recipients...`);
             setTimeout(async () => {
                 const CHUNK_SIZE = 50; 
@@ -171,7 +171,7 @@ export const sendNotification = async (req, res) => {
         await logAdminAction({
             adminId: req.admin._id, action: 'SENT_NOTIFICATION',
             resourceType: 'AdminNotification', resourceId: newNotification._id,
-            details: `Sent to ${audience} via ${activeChannels.join(', ')}`, req
+            details: `Sent to ${audience} via ${activesentThrough.join(', ')}`, req
         });
 
         res.status(201).json({
@@ -196,9 +196,9 @@ export const resendNotification = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Notification record not found' });
         }
 
-        // Pull the channels it was originally sent with
-        const { title, message, type, audience, channels } = notificationRecord;
-        const activeChannels = channels && channels.length > 0 ? channels : ['Email', 'In-App'];
+        // Pull the sentThrough it was originally sent with
+        const { title, message, type, audience, sentThrough } = notificationRecord;
+        const activesentThrough = sentThrough && sentThrough.length > 0 ? sentThrough : ['Email', 'In-App'];
 
         let recipientsCount = 0;
         let notificationsToInsert = []; 
@@ -251,7 +251,7 @@ export const resendNotification = async (req, res) => {
         }
 
         // ONLY fire In-App DB insertions if the original channel included "In-App"
-        if (activeChannels.includes('In-App') && notificationsToInsert.length > 0) {
+        if (activesentThrough.includes('In-App') && notificationsToInsert.length > 0) {
             const BATCH_SIZE = 1000;
             for (let i = 0; i < notificationsToInsert.length; i += BATCH_SIZE) {
                 await Notification.insertMany(notificationsToInsert.slice(i, i + BATCH_SIZE));
@@ -259,7 +259,7 @@ export const resendNotification = async (req, res) => {
         }
 
         // ONLY fire Resend emails if the original channel included "Email"
-        if (activeChannels.includes('Email') && emailRecipients.length > 0) {
+        if (activesentThrough.includes('Email') && emailRecipients.length > 0) {
             console.log(`Starting background email blast for RESEND to ${emailRecipients.length} recipients...`);
             setTimeout(async () => {
                 const CHUNK_SIZE = 50; 
@@ -287,7 +287,7 @@ export const resendNotification = async (req, res) => {
         await logAdminAction({
             adminId: req.admin._id, action: 'RESENT_NOTIFICATION',
             resourceType: 'AdminNotification', resourceId: notificationRecord._id,
-            details: `Resent to ${audience} via ${activeChannels.join(', ')} (Count: ${notificationRecord.resentCount})`, req
+            details: `Resent to ${audience} via ${activesentThrough.join(', ')} (Count: ${notificationRecord.resentCount})`, req
         });
 
         res.status(200).json({
