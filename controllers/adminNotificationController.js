@@ -77,21 +77,9 @@ export const sendNotification = async (req, res) => {
 
         let recipientsCount = 0;
         let notificationsToInsert = []; 
-        let emailRecipients = []; // NEW: Array to hold email targets
-
-        // Helper to format basic broadcast email
-        const generateBroadcastHtml = (name, msg) => `
-            <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-                <h2>Hello ${name || 'there'},</h2>
-                <div style="background-color: #f9f2fc; border-left: 4px solid #8600AF; padding: 16px; margin: 20px 0;">
-                    <p style="white-space: pre-wrap; font-size: 16px;">${msg}</p>
-                </div>
-                <p>Best regards,<br>The TaskHub Team</p>
-            </div>
-        `;
+        let emailRecipients = [];
 
         if (audience === 'All Users') {
-            // FIX: We now select the email and name too!
             const users = await User.find().select('_id emailAddress fullName');
             recipientsCount = users.length;
             users.forEach(u => {
@@ -138,12 +126,16 @@ export const sendNotification = async (req, res) => {
             }
         }
 
-        // 1. Log the broadcast receipt for the Admin
         const newNotification = await AdminNotification.create({
-            title, message, type: type || 'Announcement', audience, recipientsCount, sentBy: req.admin._id
+            title, 
+            message, 
+            type: type || 'Announcement', 
+            audience, 
+            recipientsCount, 
+            selectedUserIds: audience === 'Selected Users' ? selectedUserIds : [],
+            sentBy: req.admin._id
         });
 
-        // 2. BATCH INSERT IN-APP NOTIFICATIONS
         if (notificationsToInsert.length > 0) {
             const BATCH_SIZE = 1000;
             for (let i = 0; i < notificationsToInsert.length; i += BATCH_SIZE) {
@@ -151,28 +143,23 @@ export const sendNotification = async (req, res) => {
             }
         }
 
-        // 3. BACKGROUND EMAIL BLAST (Fire and Forget)
-        // We do NOT use "await" on the email loop so the frontend doesn't freeze!
         if (emailRecipients.length > 0) {
             console.log(`Starting background email blast to ${emailRecipients.length} recipients...`);
             
-            // Run this asynchronously in the background
             setTimeout(async () => {
-                // Send in chunks of 50 to avoid hitting Resend rate limits
                 const CHUNK_SIZE = 50; 
                 for (let i = 0; i < emailRecipients.length; i += CHUNK_SIZE) {
                     const chunk = emailRecipients.slice(i, i + CHUNK_SIZE);
                     
-                    // Send 50 emails simultaneously
                     await Promise.all(chunk.map(recipient => 
                         sendEmail({
                             to: recipient.to,
                             subject: title,
-                            html: generateBroadcastHtml(recipient.name, message)
+                            // FIX: Now using the official company template
+                            html: customAdminEmailHtml({ name: recipient.name || 'there', message })
                         })
                     ));
                     
-                    // Wait 1 second between chunks to respect API limits
                     await new Promise(resolve => setTimeout(resolve, 1000));
                 }
                 console.log('Background email blast completed!');
@@ -185,7 +172,6 @@ export const sendNotification = async (req, res) => {
             details: `Sent to ${audience}`, req
         });
 
-        // 4. RESPOND TO FRONTEND IMMEDIATELY
         res.status(201).json({
             status: 'success',
             message: 'Notification queued and sent successfully',
@@ -196,6 +182,128 @@ export const sendNotification = async (req, res) => {
         Sentry.captureException(error);
         console.error('Send notification error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to send notification' });
+    }
+};
+
+// POST /api/admin/notifications/:id/resend
+// POST /api/admin/notifications/:id/resend
+export const resendNotification = async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const notificationRecord = await AdminNotification.findById(id);
+
+        if (!notificationRecord) {
+            return res.status(404).json({ status: 'error', message: 'Notification record not found' });
+        }
+
+        const { title, message, type, audience } = notificationRecord;
+
+        let recipientsCount = 0;
+        let notificationsToInsert = []; 
+        let emailRecipients = [];
+
+        if (audience === 'All Users') {
+            const users = await User.find().select('_id emailAddress fullName');
+            recipientsCount = users.length;
+            users.forEach(u => {
+                notificationsToInsert.push({ user: u._id, title, message, type: type || 'Announcement' });
+                if (u.emailAddress) emailRecipients.push({ to: u.emailAddress, name: u.fullName });
+            });
+
+        } else if (audience === 'All Taskers') {
+            const taskers = await Tasker.find().select('_id emailAddress firstName');
+            recipientsCount = taskers.length;
+            taskers.forEach(t => {
+                notificationsToInsert.push({ tasker: t._id, title, message, type: type || 'Announcement' });
+                if (t.emailAddress) emailRecipients.push({ to: t.emailAddress, name: t.firstName });
+            });
+
+        } else if (audience === 'Everyone') {
+            const users = await User.find().select('_id emailAddress fullName');
+            const taskers = await Tasker.find().select('_id emailAddress firstName');
+            recipientsCount = users.length + taskers.length;
+            
+            users.forEach(u => {
+                notificationsToInsert.push({ user: u._id, title, message, type: type || 'Announcement' });
+                if (u.emailAddress) emailRecipients.push({ to: u.emailAddress, name: u.fullName });
+            });
+            taskers.forEach(t => {
+                notificationsToInsert.push({ tasker: t._id, title, message, type: type || 'Announcement' });
+                if (t.emailAddress) emailRecipients.push({ to: t.emailAddress, name: t.firstName });
+            });
+
+        } else if (audience === 'Selected Users') {
+            const savedUserIds = notificationRecord.selectedUserIds || [];
+            recipientsCount = savedUserIds.length;
+            
+            if (recipientsCount > 0) {
+                const matchedUsers = await User.find({ _id: { $in: savedUserIds } }).select('_id emailAddress fullName');
+                const matchedTaskers = await Tasker.find({ _id: { $in: savedUserIds } }).select('_id emailAddress firstName');
+
+                matchedUsers.forEach(u => {
+                    notificationsToInsert.push({ user: u._id, title, message, type: type || 'Announcement' });
+                    if (u.emailAddress) emailRecipients.push({ to: u.emailAddress, name: u.fullName });
+                });
+                matchedTaskers.forEach(t => {
+                    notificationsToInsert.push({ tasker: t._id, title, message, type: type || 'Announcement' });
+                    if (t.emailAddress) emailRecipients.push({ to: t.emailAddress, name: t.firstName });
+                });
+            } else {
+                 return res.status(400).json({ status: 'error', message: 'Cannot resend: No selected users were saved in this record.' });
+            }
+        }
+
+        if (notificationsToInsert.length > 0) {
+            const BATCH_SIZE = 1000;
+            for (let i = 0; i < notificationsToInsert.length; i += BATCH_SIZE) {
+                await Notification.insertMany(notificationsToInsert.slice(i, i + BATCH_SIZE));
+            }
+        }
+
+        if (emailRecipients.length > 0) {
+            console.log(`Starting background email blast for RESEND to ${emailRecipients.length} recipients...`);
+            
+            setTimeout(async () => {
+                const CHUNK_SIZE = 50; 
+                for (let i = 0; i < emailRecipients.length; i += CHUNK_SIZE) {
+                    const chunk = emailRecipients.slice(i, i + CHUNK_SIZE);
+                    
+                    await Promise.all(chunk.map(recipient => 
+                        sendEmail({
+                            to: recipient.to,
+                            subject: `[Reminder] ${title}`,
+                            // FIX: Now using the official company template
+                            html: customAdminEmailHtml({ name: recipient.name || 'there', message })
+                        })
+                    ));
+                    
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+                console.log('Background email blast RESEND completed!');
+            }, 0);
+        }
+
+        notificationRecord.resentCount = (notificationRecord.resentCount || 0) + 1;
+        notificationRecord.lastSentAt = Date.now();
+        notificationRecord.recipientsCount = recipientsCount; 
+        await notificationRecord.save();
+
+        await logAdminAction({
+            adminId: req.admin._id, action: 'RESENT_NOTIFICATION',
+            resourceType: 'AdminNotification', resourceId: notificationRecord._id,
+            details: `Resent to ${audience} (Count: ${notificationRecord.resentCount})`, req
+        });
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Notification queued and resent successfully',
+            data: notificationRecord
+        });
+
+    } catch (error) {
+        console.error('Resend notification error:', error);
+        res.status(500).json({ status: 'error', message: 'Failed to resend notification' });
     }
 };
 

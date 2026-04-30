@@ -1,30 +1,27 @@
 import { Schema, model } from 'mongoose';
 
 const taskerSchema = new Schema({ 
-    firstName: { type: String, required: true, },
-    lastName: { type: String, required: true, },
-    emailAddress: {type: String, required: true, unique: true},
+    firstName: { type: String, required: true },
+    lastName: { type: String, required: true },
+    emailAddress: { type: String, required: true, unique: true },
     phoneNumber: { type: String, required: true },
     dateOfBirth: { type: Date, required: true },
     profilePicture: { type: String, default: '' },
     country: { type: String, required: true },
     originState: { type: String, required: true },
-    residentState: { type: String, required: true },
+    residentState: { type: String, required: true, index: true }, // ADDED: For Location Analytics
     address: { type: String, required: true },
     
-    // Current location coordinates for distance-based task matching
     location: {
         latitude: { type: Number },
         longitude: { type: Number },
         lastUpdated: { type: Date }
     },
-    // Add this line to your Schema if you want the Rating feature to work in the future:
     averageRating: { type: Number, default: 0, index: true },
     
     password: { type: String },
     wallet: { type: Number, default: 0 },
 
-    // Linked auth providers (e.g. 'local', 'google')
     authProviders: {
         type: [String],
         enum: ['local', 'google'],
@@ -32,7 +29,6 @@ const taskerSchema = new Schema({
     },
     googleId: { type: String, unique: true, sparse: true },
     
-    // Bank account for withdrawals
     bankAccount: {
         bankName: { type: String },
         bankCode: { type: String },
@@ -40,11 +36,10 @@ const taskerSchema = new Schema({
         accountName: { type: String }
     },
     
-    // Push notification configuration
     notificationId: { 
         type: String, 
         default: null,
-        index: true // Index for efficient querying when sending notifications
+        index: true 
     },
     // Web Push subscriptions (browser push notifications)
     pushSubscriptions: [{
@@ -56,9 +51,6 @@ const taskerSchema = new Schema({
         createdAt: { type: Date, default: Date.now }
     }],
     
-    // Task categories the tasker can handle
-    // REPLACED: categories: [{ type: Schema.Types.ObjectId, ref: 'Category' }]
-    // NEW STRUCTURE:
     mainCategories: [{
         type: Schema.Types.ObjectId,
         ref: 'Category'
@@ -73,28 +65,25 @@ const taskerSchema = new Schema({
         default: null
     },
 
-    // Portfolio
     previousWork: [{
         url: { type: String, required: true },
         publicId: { type: String }
     }],
     websiteLink: { type: String, default: '' },
     transactionPin: {
-        type: String // We will store this as a hashed string, just like a password
+        type: String 
     },
     
-    // New authentication fields
-    isEmailVerified: { type: Boolean, default: false },
+    isEmailVerified: { type: Boolean, default: false, index: true }, // ADDED
     emailVerificationToken: { type: String },
     emailVerificationExpires: { type: Date },
     
     passwordResetToken: { type: String },
     passwordResetExpires: { type: Date },
     
-    // Identity verification
-    verifyIdentity: { type: Boolean, default: false },
+    verifyIdentity: { type: Boolean, default: false, index: true }, // ADDED
+    isActive: { type: Boolean, default: true, index: true }, // ADDED
     
-    isActive: { type: Boolean, default: true },
     lastLogin: { type: Date },
     loginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date },
@@ -103,16 +92,17 @@ const taskerSchema = new Schema({
     updatedAt: { type: Date, default: Date.now }
 });
 
-// Virtual for checking if account is locked
 taskerSchema.virtual('isLocked').get(function() {
     return !!(this.lockUntil && this.lockUntil > Date.now());
 });
 
-// Update the updatedAt field before saving
 taskerSchema.pre('save', function(next) {
     this.updatedAt = Date.now();
     next();
 });
+
+// ADDED: Text Index so MongoDB can instantly search names and emails without scanning the whole DB
+taskerSchema.index({ firstName: 'text', lastName: 'text', emailAddress: 'text' });
 
 const Tasker = model('Tasker', taskerSchema);
 

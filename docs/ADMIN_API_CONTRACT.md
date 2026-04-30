@@ -1,7 +1,13 @@
+Here is the fully updated REST API Documentation. I have added all the new endpoints, query parameters, payloads, and automated backend behaviors we just built (including the 15/85 math, location/category analytics, KYC/Email filters, custom emails, Tasker locking, Task refund automation, and Notification resending). 
+
+You can copy and paste this directly to your frontend developer:
+
+***
+
 ```markdown
 # TaskHub Admin Dashboard: REST API Documentation
 
-This documentation provides the frontend team with the complete, fully-mapped backend endpoints for the TaskHub Admin Panel.
+This documentation provides the frontend team with the complete, fully-mapped backend endpoints for the TaskHub Admin Panel, including recent feature updates for analytics, moderation, and automated communications.
 
 ## 1. Global Specifications
 
@@ -14,6 +20,7 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 * `super_admin`: Full system access, required for exports, settings, and staff management.
 * `operations`: Task moderation, tasker approvals, category management.
 * `trust_safety`: User moderation, dispute resolution, read-only system stats.
+* `support`: Communication handling, sending emails, triggering notifications.
 
 ### Standard Error Response
 ```json
@@ -21,7 +28,6 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
   "status": "error",
   "message": "Human-readable explanation"
 }
-
 ```
 
 ---
@@ -40,7 +46,32 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 
 | Method | Endpoint | Description | Roles |
 | --- | --- | --- | --- |
-| **GET** | `/api/admin/dashboard/stats` | Fetches aggregate data for homepage cards (Users, Tasks, Escrow, KYC). | `super_admin`, `operations`, `trust_safety` |
+| **GET** | `/api/admin/dashboard/stats` | Fetches aggregate data for homepage cards, quick stats, and chart analytics. | `super_admin`, `operations`, `trust_safety` |
+
+**Dashboard Stats Response Structure (Updated):**
+```json
+{
+  "status": "success",
+  "data": {
+    "cards": {
+      "totalUsers": 150, "totalTaskers": 45, "totalTasks": 320,
+      "activeTasks": 12, "completedTasks": 280, "cancelledTasks": 28, "pendingKyc": 5,
+      "totalTransaction": 450000, 
+      "totalRevenue": 67500,     // 15% commission on completed tasks
+      "escrowHeld": 20000,       // Active tasks only
+      "outgoingFees": 382500     // 85% paid out to taskers on completed tasks
+    },
+    "quickStats": { "userToTaskerRatio": "3.33", "completionRate": "87.5", "avgTaskValue": "1500" },
+    "analytics": {
+      "locations": [ { "state": "Lagos", "taskCount": 45 } ],
+      "categories": [ { "categoryName": "Home Cleaning", "taskerCount": 22 } ]
+    },
+    "growth": 24,
+    "recentTasks": [...],
+    "recentActivity": [...]
+  }
+}
+```
 
 ---
 
@@ -49,14 +80,15 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 | Method | Endpoint | Description | Roles |
 | --- | --- | --- | --- |
 | **GET** | `/api/admin/users/stats` | Get top-level user statistics. | `super_admin`, `trust_safety` |
-| **GET** | `/api/admin/users` | List all users (supports pagination/search). | `super_admin`, `trust_safety` |
+| **GET** | `/api/admin/users` | List all users. Supports queries: `?page=X&limit=Y&search=term&status=active|suspended&kycVerified=true|false&emailVerified=true|false`. | `super_admin`, `trust_safety` |
 | **GET** | `/api/admin/users/:id` | View specific user details. | `super_admin`, `trust_safety` |
 | **PATCH** | `/api/admin/users/:id/activate` | Mark user as active. | `super_admin` |
 | **PATCH** | `/api/admin/users/:id/deactivate` | Mark user as inactive. | `super_admin` |
-| **PATCH** | `/api/admin/users/:id/lock` | Temporarily lock account. | `super_admin`, `trust_safety` |
+| **PATCH** | `/api/admin/users/:id/lock` | Temporarily lock account for 24 hours. | `super_admin`, `trust_safety` |
 | **PATCH** | `/api/admin/users/:id/unlock` | Remove account lock. | `super_admin`, `trust_safety` |
 | **DELETE** | `/api/admin/users/:id` | Soft delete user account. | `super_admin` |
 | **PATCH** | `/api/admin/users/:id/restore` | Restore soft-deleted account. | `super_admin` |
+| **POST** | `/api/admin/users/:id/send-email` | Sends branded email & in-app notification. Requires `{"subject": "...", "message": "..."}`. | `super_admin`, `operations`, `support` |
 
 ---
 
@@ -64,11 +96,14 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 
 | Method | Endpoint | Description | Roles |
 | --- | --- | --- | --- |
-| **GET** | `/api/admin/taskers` | List all taskers. | All Admins |
+| **GET** | `/api/admin/taskers` | List taskers. Queries: `?page=X&limit=Y&search=term&status=active|suspended&kycVerified=true|false&emailVerified=true|false&sort=rating`. | All Admins |
 | **GET** | `/api/admin/taskers/:id` | View specific tasker details. | All Admins |
 | **PATCH** | `/api/admin/taskers/:id/verify` | Manually verify tasker profile. | `super_admin`, `operations` |
 | **PATCH** | `/api/admin/taskers/:id/suspend` | Suspend tasker. | `super_admin`, `operations` |
 | **PATCH** | `/api/admin/taskers/:id/activate` | Activate suspended tasker. | `super_admin`, `operations` |
+| **PATCH** | `/api/admin/taskers/:id/lock` | Temporarily lock account for 24 hours. | `super_admin`, `operations` |
+| **PATCH** | `/api/admin/taskers/:id/unlock` | Remove account lock. | `super_admin`, `operations` |
+| **POST** | `/api/admin/taskers/:id/send-email` | Sends branded email & in-app notification. Requires `{"subject": "...", "message": "..."}`. | `super_admin`, `operations`, `support` |
 
 ---
 
@@ -90,7 +125,7 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 | **GET** | `/api/admin/tasks/stats` | Get task analytics. | All Admins |
 | **GET** | `/api/admin/tasks` | List all tasks. | All Admins |
 | **GET** | `/api/admin/tasks/:id` | Get specific task details. | All Admins |
-| **PATCH** | `/api/admin/tasks/:id/cancel` | Force cancel a task. | `super_admin`, `operations` |
+| **PATCH** | `/api/admin/tasks/:id/cancel` | **Automated Engine:** Cancels task, auto-refunds User's wallet, creates Transaction record, and emails User (`reason`) and all bidding Taskers. Requires `{"reason": "..."}`. | `super_admin`, `operations` |
 | **PATCH** | `/api/admin/tasks/:id/complete` | Force complete a task (escrow release). | `super_admin`, `operations` |
 
 ---
@@ -99,8 +134,8 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 
 | Method | Endpoint | Description | Roles |
 | --- | --- | --- | --- |
-| **GET** | `/api/admin/payments` | Get payment/escrow stats (Cards/Widgets). | All Admins |
-| **GET** | `/api/admin/payments/history` | List all financial transactions. | All Admins |
+| **GET** | `/api/admin/payments/stats` | Get payment/escrow stats (Calculates exactly via 15/85 revenue rule). | All Admins |
+| **GET** | `/api/admin/payments` | List all financial transactions. | All Admins |
 | **GET** | `/api/admin/payments/:id` | Get specific transaction receipt. | All Admins |
 
 ---
@@ -148,24 +183,24 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 
 | Method | Endpoint | Description | Roles |
 | :--- | :--- | :--- | :--- |
-| **GET** | `/api/admin/staff/stats` | Staff hierarchy and count (Active today, Total, Super Admins). | `super_admin` |
-| **GET** | `/api/admin/staff` | List all admin/staff accounts. Supports `?search=` and `?status=` queries. | `super_admin` |
-| **POST** | `/api/admin/staff/invite` | Sends an email invitation with a secure setup token. Payload requires `email` and `role`. | `super_admin` |
-| **POST** | `/api/admin/staff/setup` | **PUBLIC ROUTE (No Auth Required).** Finalizes account creation from the email link. Payload requires `token` (from URL), `firstName`, `lastName`, and `password`. | None (Public) |
-| **GET** | `/api/admin/staff/:id` | Get specific staff member details, including their recent activity logs and permissions. | `super_admin` |
-| **PATCH** | `/api/admin/staff/:id/status` | Change staff active/inactive status. Payload requires `{"isActive": boolean}`. | `super_admin` |
-
+| **GET** | `/api/admin/staff/stats` | Staff hierarchy and count. | `super_admin` |
+| **GET** | `/api/admin/staff` | List all admin/staff accounts. | `super_admin` |
+| **POST** | `/api/admin/staff/invite` | Sends an email invitation. Payload: `email`, `role`. | `super_admin` |
+| **POST** | `/api/admin/staff/setup` | **PUBLIC ROUTE (No Auth Required).** Finalizes account creation. Payload: `token`, `firstName`, `lastName`, `password`. | None (Public) |
+| **GET** | `/api/admin/staff/:id` | Get specific staff member details. | `super_admin` |
+| **PATCH** | `/api/admin/staff/:id/status` | Change staff active/inactive status. | `super_admin` |
 
 ---
+
 ## 13. Category Management (`/api/admin/categories`)
 
 | Method | Endpoint | Description | Roles |
 | :--- | :--- | :--- | :--- |
-| **GET** | `/api/admin/categories` | Get top-level stats (Main Categories only) and list of all main categories with `subCategoryCount` and total services. | `super_admin`, `operations`, `trust_safety` |
-| **GET** | `/api/admin/categories/:id` | Get category drill-down details (including its `subCategories` list, aggregated revenue, tasks, and taskers). | `super_admin`, `operations`, `trust_safety` |
-| **POST** | `/api/admin/categories` | Create a new category. Payload: `name`, `displayName`. Optional: `description`, `minimumPrice`, `parentCategory` (pass a Main Category ID here to create a Subcategory). | `super_admin`, `operations` |
-| **PATCH** | `/api/admin/categories/:id` | Update category details, toggle `isActive` status, or reassign `parentCategory`. | `super_admin`, `operations` |
-| **DELETE** | `/api/admin/categories/:id` | Delete a category. **Note:** Returns a `400` error if it contains subcategories or is actively assigned to any tasks/taskers. | `super_admin`, `operations` |
+| **GET** | `/api/admin/categories` | Get top-level stats and list of all main categories. | `super_admin`, `operations`, `trust_safety` |
+| **GET** | `/api/admin/categories/:id` | Get category drill-down details (subCategories, tasks, taskers). | `super_admin`, `operations`, `trust_safety` |
+| **POST** | `/api/admin/categories` | Create category/subcategory. Payload: `name`, `displayName`. | `super_admin`, `operations` |
+| **PATCH** | `/api/admin/categories/:id` | Update category details or status. | `super_admin`, `operations` |
+| **DELETE** | `/api/admin/categories/:id` | Delete category. | `super_admin`, `operations` |
 
 ---
 
@@ -173,12 +208,11 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 
 | Method | Endpoint | Description | Roles |
 | :--- | :--- | :--- | :--- |
-| **GET** | `/api/admin/notifications/stats` | Fetches aggregate analytics for the notification dashboard, including `totalSent` and global `openRate`. | `super_admin`, `operations`, `support` |
-| **GET** | `/api/admin/notifications` | Retrieves a chronological list of all broadcasted notifications (The admin receipts). | `super_admin`, `operations`, `support` |
-| **GET** | `/api/admin/notifications/all-users` | Fetches individual user and tasker notifications. Supports pagination and filtering (Queries: `?page=X&limit=Y&target=user|tasker&isRead=true|false`). | `super_admin`, `operations`, `support` |
-| **POST** | `/api/admin/notifications/send` | Broadcasts a new notification. Payload requires `title`, `message`, and `audience`. Optional: `type`, `selectedUserIds`. | `super_admin`, `operations`, `support` |
-
-
+| **GET** | `/api/admin/notifications/stats` | Fetches aggregate analytics for notifications. | `super_admin`, `operations`, `support` |
+| **GET** | `/api/admin/notifications` | Retrieves chronological list of broadcasted notifications. | `super_admin`, `operations`, `support` |
+| **GET** | `/api/admin/notifications/all-users` | Fetches individual user/tasker notifications. | `super_admin`, `operations`, `support` |
+| **POST** | `/api/admin/notifications/send` | Broadcasts new notification (In-app + Email blast). Payload: `title`, `message`, `audience`, `selectedUserIds` (optional). | `super_admin`, `operations`, `support` |
+| **POST** | `/api/admin/notifications/:id/resend` | Re-evaluates audience and triggers another email blast/in-app ping for a previously sent notification ID. | `super_admin`, `operations`, `support` |
 
 ---
 
@@ -186,11 +220,11 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 
 | Method | Endpoint | Description | Roles |
 | :--- | :--- | :--- | :--- |
-| **GET** | `/api/admin/withdrawals/stats` | Fetches aggregate withdrawal analytics (Pending, Processing, Approved, Total NGN Paid). | `super_admin`, `operations` |
-| **GET** | `/api/admin/withdrawals` | Lists all withdrawal requests. Supports filtering by `status`, `payoutMethod` (Bank/Stellar), and `search`. | `super_admin`, `operations` |
-| **PATCH** | `/api/admin/withdrawals/:id/approve` | **Automated Engine:** If payout is Stellar, it signs/broadcasts XLM to the blockchain instantly. If Bank, marks as approved for manual payment. | `super_admin` |
-| **PATCH** | `/api/admin/withdrawals/:id/reject` | Rejects request and **automatically refunds** NGN back to the Tasker's wallet. Requires `{"reason": "string"}`. | `super_admin`, `operations` |
-| **PATCH** | `/api/admin/withdrawals/:id/complete` | Manual override to mark a Bank withdrawal as finished. (Crypto withdrawals auto-complete). | `super_admin`, `operations` |
+| **GET** | `/api/admin/withdrawals/stats` | Fetches aggregate withdrawal analytics. | `super_admin`, `operations` |
+| **GET** | `/api/admin/withdrawals` | Lists all withdrawal requests. | `super_admin`, `operations` |
+| **PATCH** | `/api/admin/withdrawals/:id/approve` | **Automated Engine:** Signs/broadcasts XLM instantly or approves Bank manual payment. | `super_admin` |
+| **PATCH** | `/api/admin/withdrawals/:id/reject` | Rejects request and **automatically refunds** NGN back to Tasker's wallet. Requires `{"reason": "string"}`. | `super_admin`, `operations` |
+| **PATCH** | `/api/admin/withdrawals/:id/complete` | Manual override to mark Bank withdrawal finished. | `super_admin`, `operations` |
 
 ---
 
@@ -200,56 +234,13 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 
 | Method | Endpoint | Description | Target |
 | :--- | :--- | :--- | :--- |
-| **POST** | `/api/wallet/fund/initialize` | Initialize Paystack funding. Returns Auth URL and access code. | User |
-| **GET** | `/api/wallet/fund/verify` | Verify Paystack payment. Requires `?reference=` query parameter. | User |
-| **GET** | `/api/wallet/user/balance` | Get wallet balance and active escrow totals. | User |
+| **POST** | `/api/wallet/fund/initialize` | Initialize Paystack funding. Returns Auth URL. | User |
+| **GET** | `/api/wallet/fund/verify` | Verify Paystack payment. | User |
+| **GET** | `/api/wallet/user/balance` | Get wallet balance and escrow totals. | User |
 | **GET** | `/api/wallet/user/transactions` | List history. Queries: `?page=X&limit=Y&purpose=wallet_funding`. | User |
-| **GET** | `/api/wallet/stellar/deposit-info` | Get Master Public Key and User's unique Memo ID for crypto deposits. | User/Tasker |
-| **POST** | `/api/wallet/withdraw` | Submit withdrawal request (Stellar or Bank Transfer). Deducts balance. | Tasker |
-| **POST** | `/api/wallet/tasker/pin/setup` | Setup or reset 4-digit transaction PIN. | Tasker |
-| **GET** | `/api/wallet/tasker/balance` | Get wallet balance, pending withdrawals, and available cash. | Tasker |
-| **GET** | `/api/wallet/tasker/transactions` | List Tasker transaction history. Queries: `?page=X&limit=Y`. | Tasker |
-
-
-### Key Payloads for Frontend (Wallet Endpoints)
-
-**Initialize Funding (`POST /api/wallet/fund/initialize`)**
-```json
-{
-  "amount": 5000 
-}
-```
-*(Note: Amount is expected in Naira. Backend automatically converts to kobo for Paystack. Minimum is ₦100).*
-
-**Setup Transaction PIN (`POST /api/wallet/tasker/pin/setup`)**
-```json
-{
-  "pin": "1234",
-  "password": "current_account_password"
-}
-```
-
-**Request Withdrawal (Crypto) (`POST /api/wallet/withdraw`)**
-```json
-{
-  "amount": 10000,
-  "payoutMethod": "stellar_crypto",
-  "transactionPin": "1234",
-  "stellarAddress": "GBX..."
-}
-```
-
-**Request Withdrawal (Bank Transfer) (`POST /api/wallet/withdraw`)**
-```json
-{
-  "amount": 10000,
-  "payoutMethod": "bank_transfer",
-  "transactionPin": "1234",
-  "bankDetails": {
-    "accountNumber": "0123456789",
-    "bankName": "GTBank",
-    "accountName": "John Doe"
-  }
-}
-```
+| **GET** | `/api/wallet/stellar/deposit-info` | Get Master Public Key and User's unique Memo ID. | User/Tasker |
+| **POST** | `/api/wallet/withdraw` | Submit withdrawal request. Deducts balance. | Tasker |
+| **POST** | `/api/wallet/tasker/pin/setup` | Setup/reset 4-digit transaction PIN. | Tasker |
+| **GET** | `/api/wallet/tasker/balance` | Get wallet balance, pending withdrawals. | Tasker |
+| **GET** | `/api/wallet/tasker/transactions` | List Tasker transaction history. | Tasker |
 ```
