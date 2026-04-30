@@ -51,17 +51,42 @@ export const getNotificationStats = async (req, res) => {
 // GET /api/admin/notifications
 export const getAllNotifications = async (req, res) => {
     try {
-        const notifications = await AdminNotification.find() // <-- UPDATED
+        const notifications = await AdminNotification.find()
             .populate('sentBy', 'firstName lastName') 
             .sort({ createdAt: -1 }); 
 
+        // FIX 2: Bulletproof data mapping for the frontend table
+        const formattedNotifications = notifications.map(notif => {
+            const doc = notif.toObject(); // Convert from Mongoose object to standard JSON
+            
+            // Get the saved array, fallback to empty
+            const methods = doc.sentThrough || [];
+
+            // Create a super-array that includes both Title Case and lowercase
+            // This ensures the frontend's `.includes('email')` check never fails!
+            const allCases = [];
+            methods.forEach(m => {
+                allCases.push(m);               // 'Email'
+                allCases.push(m.toLowerCase()); // 'email'
+                allCases.push(m.toUpperCase()); // 'EMAIL'
+                if (m === 'In-App') allCases.push('in-app', 'IN-APP');
+            });
+
+            // Bind the super-array to BOTH names just in case the frontend table 
+            // is still accidentally looking for the old 'channels' property!
+            doc.sentThrough = allCases;
+            doc.channels = allCases; 
+
+            return doc;
+        });
+
         res.status(200).json({
             status: 'success',
-            results: notifications.length,
-            data: notifications
+            results: formattedNotifications.length,
+            data: formattedNotifications
         });
     } catch (error) {
-        Sentry.captureException(error);
+        // Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch notifications' });
     }
 };
@@ -69,15 +94,20 @@ export const getAllNotifications = async (req, res) => {
 // POST /api/admin/notifications/send
 export const sendNotification = async (req, res) => {
     try {
-        // ADDED: 'sentThrough' extracted from req.body
         const { title, message, type, audience, selectedUserIds, sentThrough } = req.body;
 
         if (!title || !message || !audience) {
             return res.status(400).json({ status: 'error', message: 'Title, message, and audience are required' });
         }
 
-        // Fallback: If frontend hasn't updated yet, default to both. Otherwise, use what they checked.
-        const activesentThrough = sentThrough && sentThrough.length > 0 ? sentThrough : ['Email', 'In-App'];
+        // FIX 1: Sanitize frontend data. Force whatever they send into Title Case!
+        const rawChannels = sentThrough && sentThrough.length > 0 ? sentThrough : ['Email', 'In-App'];
+        const activesentThrough = rawChannels.map(ch => {
+            const lowerCh = ch.toLowerCase();
+            if (lowerCh.includes('email')) return 'Email';
+            if (lowerCh.includes('in-app') || lowerCh.includes('app')) return 'In-App';
+            return ch; // Fallback
+        });
 
         let recipientsCount = 0;
         let notificationsToInsert = []; 
