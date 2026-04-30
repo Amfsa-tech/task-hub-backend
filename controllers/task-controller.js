@@ -8,7 +8,7 @@ import University from '../models/university.js';
 import Tasker from '../models/tasker.js';
 import Bid from '../models/bid.js';
 import Transaction from '../models/transaction.js';
-import { notifyMatchingTaskers, notifyUserAboutTaskCompletion, notifyTaskerAboutTaskCancellation } from '../utils/notificationUtils.js';
+import { notifyMatchingTaskers, notifyUserAboutTaskCompletion, notifyTaskerAboutTaskCancellation, notifyEscrowHeld, notifyEscrowRefunded, notifyUserTaskStarted, notifyTaskerPayoutReceived, notifyTaskerAboutOpenTaskCancellation, notifyTaskerAboutTaskUpdate, notifyTaskerAboutNewRating } from '../utils/notificationUtils.js';
 import User from '../models/user.js';
 import { uploadMultipleToCloudinary } from '../utils/uploadService.js';
 
@@ -489,7 +489,21 @@ const updateTask = async (req, res) => {
             updateData,
             { new: true, runValidators: true }
         );
-        
+
+        // Notify assigned tasker about the update (if task is assigned/in-progress)
+        if (task.assignedTasker && ['assigned', 'in-progress'].includes(task.status)) {
+            try {
+                const changedFields = Object.keys(updateData).filter(k => k !== 'updatedAt' && k !== 'user' && k !== 'assignedTasker');
+                if (changedFields.length > 0) {
+                    notifyTaskerAboutTaskUpdate(task.assignedTasker, updatedTask, changedFields).catch((e) => {
+                        console.error('notifyTaskerAboutTaskUpdate error:', e);
+                    });
+                }
+            } catch (notifyErr) {
+                console.error('Failed to notify tasker about task update:', notifyErr);
+            }
+        }
+
         res.status(200).json({
             status: "success",
             message: "Task updated successfully",
@@ -543,7 +557,28 @@ const deleteTask = async (req, res) => {
                 message: `Cannot delete a task that is ${task.status}`
             });
         }
-        
+
+        // Notify affected parties before deleting
+        try {
+            // Notify assigned tasker if task was assigned
+            if (task.assignedTasker && task.status === 'assigned') {
+                notifyTaskerAboutTaskCancellation(task.assignedTasker, task).catch((e) => {
+                    console.error('notifyTaskerAboutTaskCancellation (delete) error:', e);
+                });
+            }
+            // Notify all bidders on open tasks
+            if (task.status === 'open') {
+                const openBids = await Bid.find({ task: task._id, status: 'pending' }).select('tasker');
+                for (const bid of openBids) {
+                    notifyTaskerAboutOpenTaskCancellation(bid.tasker, task).catch((e) => {
+                        console.error('notifyTaskerAboutOpenTaskCancellation (delete) error:', e);
+                    });
+                }
+            }
+        } catch (notifyErr) {
+            console.error('Failed to send task deletion notifications:', notifyErr);
+        }
+
     await Task.findByIdAndDelete(id);
         
         res.status(200).json({
@@ -694,6 +729,14 @@ const changeTaskStatus = async (req, res) => {
             task.status = 'in-progress';
             task.updatedAt = new Date();
             await task.save();
+
+            // Notify the user that the tasker has started work + send completion code
+            try {
+                const tasker = await Tasker.findById(task.assignedTasker).select('firstName lastName');
+                await notifyUserTaskStarted(task.user._id || task.user, task, completionCode, tasker);
+            } catch (notifyErr) {
+                console.error('Failed to send task started notification:', notifyErr);
+            }
             return res.json({
                 status: 'success',
                 message: 'Task started. A completion code has been sent to the task poster.',
@@ -797,6 +840,13 @@ const changeTaskStatus = async (req, res) => {
                     console.error('Failed to send task completion notification:', notifyErr);
                 }
 
+                // Notify tasker about payout received
+                try {
+                    await notifyTaskerPayoutReceived(task.assignedTasker, task, taskerPayout);
+                } catch (notifyErr) {
+                    console.error('Failed to send payout notification to tasker:', notifyErr);
+                }
+
                 return res.json({
                     status: 'success',
                     message: 'Task completed and payout released',
@@ -850,6 +900,15 @@ const changeTaskStatus = async (req, res) => {
                     notifyTaskerAboutTaskCancellation(task.assignedTasker, task).catch((e) => {
                         console.error('notifyTaskerAboutTaskCancellation error:', e);
                     });
+                }
+
+                // Notify user about escrow refund
+                try {
+                    notifyEscrowRefunded(task.user._id || task.user, task, task.escrowAmount).catch((e) => {
+                        console.error('notifyEscrowRefunded error:', e);
+                    });
+                } catch (refundNotifyErr) {
+                    console.error('Escrow refund notification error:', refundNotifyErr);
                 }
 
                 return res.json({
@@ -908,6 +967,15 @@ const changeTaskStatus = async (req, res) => {
                     });
                 }
 
+                // Notify user about escrow refund (in-progress cancellation)
+                try {
+                    notifyEscrowRefunded(task.user._id || task.user, task, task.escrowAmount).catch((e) => {
+                        console.error('notifyEscrowRefunded error:', e);
+                    });
+                } catch (refundNotifyErr) {
+                    console.error('Escrow refund notification error:', refundNotifyErr);
+                }
+
                 return res.json({
                     status: 'success',
                     message: 'Task cancelled and funds refunded',
@@ -928,6 +996,19 @@ const changeTaskStatus = async (req, res) => {
             task.status = 'cancelled';
             task.updatedAt = new Date();
             await task.save();
+
+            // Notify all taskers who bid on this open task
+            try {
+                const openBids = await Bid.find({ task: task._id, status: 'pending' }).select('tasker');
+                for (const bid of openBids) {
+                    notifyTaskerAboutOpenTaskCancellation(bid.tasker, task).catch((e) => {
+                        console.error('notifyTaskerAboutOpenTaskCancellation error:', e);
+                    });
+                }
+            } catch (notifyErr) {
+                console.error('Failed to notify bidders about open task cancellation:', notifyErr);
+            }
+
             return res.json({
                 status: 'success',
                 message: 'Task cancelled',
@@ -1272,6 +1353,161 @@ const getTaskerTasks = async (req, res) => {
     }
 };
 
+// Submit a rating for a completed task (task owner only)
+const submitRating = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { rating, reviewText } = req.body;
+
+        if (!isValidObjectId(id)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid task ID format'
+            });
+        }
+
+        // Validate rating
+        if (rating === undefined || rating === null) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Rating is required'
+            });
+        }
+
+        const numericRating = Number(rating);
+        if (isNaN(numericRating) || numericRating < 1 || numericRating > 5) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Rating must be a number between 1 and 5'
+            });
+        }
+
+        // Validate reviewText length
+        if (reviewText && reviewText.length > 500) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Review text must not exceed 500 characters'
+            });
+        }
+
+        // Rating is mandatory if reviewText is provided
+        if (reviewText && (rating === undefined || rating === null)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Rating is required when providing review text'
+            });
+        }
+
+        const task = await Task.findById(id);
+        if (!task) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Task not found'
+            });
+        }
+
+        // Only task owner can rate
+        if (task.user.toString() !== req.user._id.toString()) {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Only the task owner can rate this task'
+            });
+        }
+
+        // Task must be completed
+        if (task.status !== 'completed') {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Task must be completed before rating'
+            });
+        }
+
+        // Task must have an assigned tasker
+        if (!task.assignedTasker) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Cannot rate a task with no assigned tasker'
+            });
+        }
+
+        // Task must not already be rated (no re-rating)
+        if (task.rating !== undefined && task.rating !== null) {
+            return res.status(409).json({
+                status: 'error',
+                message: 'Task has already been rated'
+            });
+        }
+
+        // Verify tasker exists and is active
+        const tasker = await Tasker.findById(task.assignedTasker);
+        if (!tasker || !tasker.isActive) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Cannot rate: assigned tasker is no longer available'
+            });
+        }
+
+        // Save rating
+        task.rating = numericRating;
+        task.reviewText = reviewText || undefined;
+        task.ratedAt = new Date();
+        task.updatedAt = new Date();
+        await task.save();
+
+        // Recalculate tasker's average rating
+        const ratingAgg = await Task.aggregate([
+            {
+                $match: {
+                    assignedTasker: task.assignedTasker,
+                    status: 'completed',
+                    rating: { $exists: true },
+                    isReviewHidden: { $ne: true }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    avg: { $avg: '$rating' },
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+
+        const newAverage = ratingAgg[0]?.avg || 0;
+        await Tasker.updateOne(
+            { _id: task.assignedTasker },
+            { averageRating: Number(newAverage.toFixed(2)) }
+        );
+
+        // Notify tasker about new rating (silent fail)
+        notifyTaskerAboutNewRating(task.assignedTasker, numericRating, reviewText).catch((e) => {
+            console.error('notifyTaskerAboutNewRating error:', e);
+        });
+
+        return res.json({
+            status: 'success',
+            message: 'Rating submitted successfully',
+            data: {
+                task: {
+                    _id: task._id,
+                    rating: task.rating,
+                    reviewText: task.reviewText,
+                    ratedAt: task.ratedAt
+                },
+                averageRating: Number(newAverage.toFixed(2))
+            }
+        });
+    } catch (error) {
+        console.error('Submit rating error:', error);
+        Sentry.captureException(error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Error submitting rating',
+            error: error.message
+        });
+    }
+};
+
 export  {
     createTask,
     getAllTasks,
@@ -1282,5 +1518,6 @@ export  {
     changeTaskStatus,
     getTaskerFeed,
     getCompletionCode,
-    getTaskerTasks
+    getTaskerTasks,
+    submitRating
 }; 

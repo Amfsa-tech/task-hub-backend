@@ -7,6 +7,7 @@ import { logAdminAction } from '../utils/auditLogger.js';
 import { escapeRegex } from '../utils/searchUtils.js';
 import { sendEmail, payoutSuccessEmailHtml } from '../services/emailService.js';
 import { baseLayout } from '../utils/taskerEmailTemplates.js';
+import { notifyWithdrawalRejected, notifyWithdrawalCompleted } from '../utils/notificationUtils.js';
 import * as Sentry from '@sentry/node';
 import * as StellarSdk from 'stellar-sdk';
 
@@ -213,7 +214,18 @@ export const approveWithdrawal = async (req, res) => {
                     }
                 });
 
-                // 2. Send Automated Email Receipt (Brand purple layout)
+                // 2. Send Web Push notification
+                try {
+                    const { sendWebPushToAccount } = await import('../services/webPushService.js');
+                    const taskerWithPush = await Tasker.findById(tasker._id).select('pushSubscriptions');
+                    if (taskerWithPush && taskerWithPush.pushSubscriptions && taskerWithPush.pushSubscriptions.length > 0) {
+                        await sendWebPushToAccount(taskerWithPush, 'Payout Successful! 🚀', `Your withdrawal of ₦${withdrawal.amount} (${xlmAmount} XLM) has been sent to your wallet.`, { type: 'payout', action: 'view_wallet' });
+                    }
+                } catch (webPushErr) {
+                    console.error('Web push notification error (crypto payout):', webPushErr.message);
+                }
+
+                // 3. Send Automated Email Receipt (Brand purple layout)
                 const receiptHtml = baseLayout('Payout Successful 💰', payoutSuccessEmailHtml({
                     taskerName: tasker.firstName,
                     amount: withdrawal.amount,
@@ -269,6 +281,17 @@ export const approveWithdrawal = async (req, res) => {
                 type: 'payout'
             });
 
+            // Send Web Push notification
+            try {
+                const { sendWebPushToAccount } = await import('../services/webPushService.js');
+                const taskerWithPush = await Tasker.findById(tasker._id).select('pushSubscriptions');
+                if (taskerWithPush && taskerWithPush.pushSubscriptions && taskerWithPush.pushSubscriptions.length > 0) {
+                    await sendWebPushToAccount(taskerWithPush, 'Withdrawal Approved 🏦', `Your bank withdrawal of ₦${withdrawal.amount} is being processed.`, { type: 'payout', action: 'view_wallet' });
+                }
+            } catch (webPushErr) {
+                console.error('Web push notification error (bank approval):', webPushErr.message);
+            }
+
             // Notify via Email
             const bankHtml = baseLayout('Withdrawal Approved', `<p>Hi ${tasker.firstName}, your bank withdrawal of <b>₦${withdrawal.amount}</b> has been approved and is being processed.</p>`);
             await sendEmail({
@@ -319,6 +342,13 @@ export const rejectWithdrawal = async (req, res) => {
         withdrawal.reviewedAt = new Date();
         await withdrawal.save();
 
+        // Notify tasker about rejection + refund
+        try {
+            await notifyWithdrawalRejected(withdrawal.tasker.toString(), withdrawal.amount, reason);
+        } catch (notifyErr) {
+            console.error('Failed to send withdrawal rejection notification:', notifyErr);
+        }
+
         await logAdminAction({
             adminId: req.admin._id,
             action: 'REJECT_WITHDRAWAL',
@@ -367,6 +397,17 @@ export const completeWithdrawal = async (req, res) => {
             currency: 'NGN',
             metadata: { withdrawalId: withdrawal._id.toString() }
         });
+
+        // Notify tasker about completed bank withdrawal
+        try {
+            await notifyWithdrawalCompleted(
+                withdrawal.tasker.toString(),
+                withdrawal.amount,
+                withdrawal.bankDetails?.bankName || 'bank'
+            );
+        } catch (notifyErr) {
+            console.error('Failed to send withdrawal completion notification:', notifyErr);
+        }
 
         await logAdminAction({
             adminId: req.admin._id,

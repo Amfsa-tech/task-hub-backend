@@ -74,6 +74,8 @@ const taskSchema = new Schema({
     // Add these to your Task Schema:
     rating: { type: Number, min: 1, max: 5 },
     reviewText: { type: String },
+    ratedAt: { type: Date },
+    isReviewHidden: { type: Boolean, default: false },
     createdAt: { 
         type: Date, 
         default: Date.now 

@@ -46,6 +46,15 @@ const taskerSchema = new Schema({
         default: null,
         index: true // Index for efficient querying when sending notifications
     },
+    // Web Push subscriptions (browser push notifications)
+    pushSubscriptions: [{
+        endpoint: { type: String, required: true },
+        keys: {
+            p256dh: { type: String, required: true },
+            auth: { type: String, required: true }
+        },
+        createdAt: { type: Date, default: Date.now }
+    }],
     
     // Task categories the tasker can handle
     // REPLACED: categories: [{ type: Schema.Types.ObjectId, ref: 'Category' }]
