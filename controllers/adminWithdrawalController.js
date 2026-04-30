@@ -205,7 +205,7 @@ export const approveWithdrawal = async (req, res) => {
                 const explorerLink = `https://stellar.expert/explorer/testnet/tx/${response.hash}`;
                 await Notification.create({
                     tasker: tasker._id,
-                    title: 'Payout Successful! 🚀',
+                    title: 'Payout Successful!',
                     message: `Your withdrawal of ₦${withdrawal.amount} (${xlmAmount} XLM) has been sent to your wallet.`,
                     type: 'payout',
                     metadata: { 
