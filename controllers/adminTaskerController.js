@@ -348,8 +348,8 @@ export const sendBulkTaskerEmail = async (req, res) => {
                 adminId: req.admin._id, 
                 action: `BULK_EMAIL_${targetGroup?.toUpperCase() || 'ALL'}_TASKERS`, 
                 resourceType: 'AdminNotification', 
-                resourceId: newBroadcast._id 
-                // Removed req here so it doesn't crash the background process
+                resourceId: newBroadcast._id, 
+                req
             });
         })();
 

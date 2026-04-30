@@ -289,7 +289,7 @@ export const sendBulkUserEmail = async (req, res) => {
                 action: `BULK_EMAIL_${targetGroup?.toUpperCase() || 'ALL'}_USERS`, 
                 resourceType: 'AdminNotification', 
                 resourceId: newBroadcast._id, 
-                // Removed req here to prevent 'headers already sent' issues in background async tasks
+                req
             });
         })();
 
