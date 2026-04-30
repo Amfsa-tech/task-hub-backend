@@ -49,21 +49,18 @@ export const getNotificationStats = async (req, res) => {
 };
 
 // GET /api/admin/notifications
+// GET /api/admin/notifications
 export const getAllNotifications = async (req, res) => {
     try {
+        // ADDED .lean() HERE: This forces Mongoose to give us raw, editable JSON
         const notifications = await AdminNotification.find()
             .populate('sentBy', 'firstName lastName') 
-            .sort({ createdAt: -1 }); 
+            .sort({ createdAt: -1 })
+            .lean(); 
 
-        // FIX 2: Bulletproof data mapping for the frontend table
         const formattedNotifications = notifications.map(notif => {
-            const doc = notif.toObject(); // Convert from Mongoose object to standard JSON
-            
-            // Get the saved array, fallback to empty
-            const methods = doc.sentThrough || [];
+            const methods = notif.sentThrough || [];
 
-            // Create a super-array that includes both Title Case and lowercase
-            // This ensures the frontend's `.includes('email')` check never fails!
             const allCases = [];
             methods.forEach(m => {
                 allCases.push(m);               // 'Email'
@@ -72,12 +69,11 @@ export const getAllNotifications = async (req, res) => {
                 if (m === 'In-App') allCases.push('in-app', 'IN-APP');
             });
 
-            // Bind the super-array to BOTH names just in case the frontend table 
-            // is still accidentally looking for the old 'channels' property!
-            doc.sentThrough = allCases;
-            doc.channels = allCases; 
-
-            return doc;
+            // Attach it to every possible key the frontend might be looking for
+            notif.sentThrough = allCases;
+            notif.channels = allCases; 
+            
+            return notif;
         });
 
         res.status(200).json({
@@ -86,7 +82,7 @@ export const getAllNotifications = async (req, res) => {
             data: formattedNotifications
         });
     } catch (error) {
-        // Sentry.captureException(error);
+        console.error('Failed to fetch notifications:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch notifications' });
     }
 };
