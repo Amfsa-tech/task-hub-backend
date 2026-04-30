@@ -25,6 +25,7 @@ const adminNotificationSchema = new Schema({
         type: String,
         enum: ['Email', 'In-App'] // Matches the frontend checkboxes
     }],
+    
     recipientsCount: {
         type: Number,
         default: 0 
