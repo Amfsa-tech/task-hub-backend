@@ -279,13 +279,14 @@ export const sendTaskerEmail = async (req, res) => {
             tasker: tasker._id,
             title: subject,
             message: message,
-            type: 'Direct Message'
+            type: 'Announcement' // <-- Fixed to match schema enums
         });
 
         await logAdminAction({ adminId: req.admin._id, action: 'SENT_EMAIL_TO_TASKER', resourceType: 'Tasker', resourceId: tasker._id, req });
 
         res.json({ status: 'success', message: 'Email and In-App Notification sent successfully' });
     } catch (error) {
+        console.error('Send Tasker Email Error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to send communication' });
     }
 };
@@ -301,15 +302,20 @@ export const sendBulkTaskerEmail = async (req, res) => {
         const taskers = await Tasker.find(query).select('_id emailAddress firstName lastName');
 
         if (taskers.length === 0) {
-            return res.status(404).json({ status: 'error', message: `No ${targetGroup} taskers found.` });
+            return res.status(404).json({ status: 'error', message: `No ${targetGroup || 'matching'} taskers found.` });
         }
+
+        // FIX: Strict Mongoose Enum Matching
+        let mappedAudience = 'Selected Users'; 
+        if (!targetGroup || targetGroup === 'all') mappedAudience = 'All Taskers';
 
         // ADDED: Create an AdminNotification record so this bulk email shows up on the CTO's dashboard!
         const newBroadcast = await AdminNotification.create({
             title: subject,
             message: message,
-            type: 'System Announcement',
-            audience: `Bulk: ${targetGroup} Taskers`,
+            type: 'Announcement', // <-- Fixed Enum
+            audience: mappedAudience, // <-- Fixed Enum
+            sentThrough: ['Email', 'In-App'], // <-- ADDED for the frontend table pills
             recipientsCount: taskers.length,
             sentBy: req.admin._id
         });
@@ -324,7 +330,6 @@ export const sendBulkTaskerEmail = async (req, res) => {
                         to: tasker.emailAddress, 
                         subject, 
                         html,
-                        // ADDED: Pass the ID so Resend can track opens
                         dbNotificationId: newBroadcast._id 
                     });
 
@@ -332,7 +337,7 @@ export const sendBulkTaskerEmail = async (req, res) => {
                         tasker: tasker._id,
                         title: subject,
                         message: message,
-                        type: 'System Announcement'
+                        type: 'Announcement' // <-- Fixed Enum
                     });
                 } catch (err) {
                     console.error(`Failed to send email to Tasker ${tasker.emailAddress}`, err);
@@ -343,8 +348,8 @@ export const sendBulkTaskerEmail = async (req, res) => {
                 adminId: req.admin._id, 
                 action: `BULK_EMAIL_${targetGroup?.toUpperCase() || 'ALL'}_TASKERS`, 
                 resourceType: 'AdminNotification', 
-                resourceId: newBroadcast._id, 
-                req 
+                resourceId: newBroadcast._id 
+                // Removed req here so it doesn't crash the background process
             });
         })();
 
