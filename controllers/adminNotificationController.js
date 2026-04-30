@@ -49,29 +49,46 @@ export const getNotificationStats = async (req, res) => {
 };
 
 // GET /api/admin/notifications
-// GET /api/admin/notifications
 export const getAllNotifications = async (req, res) => {
     try {
-        // ADDED .lean() HERE: This forces Mongoose to give us raw, editable JSON
         const notifications = await AdminNotification.find()
             .populate('sentBy', 'firstName lastName') 
             .sort({ createdAt: -1 })
-            .lean(); 
+            .lean(); // Crucial: Gives us raw, easily editable JSON
 
         const formattedNotifications = notifications.map(notif => {
+            // Get the saved array from the database
             const methods = notif.sentThrough || [];
 
+            // 1. Create a super-array that matches EVERY possible string case
             const allCases = [];
             methods.forEach(m => {
-                allCases.push(m);               // 'Email'
-                allCases.push(m.toLowerCase()); // 'email'
-                allCases.push(m.toUpperCase()); // 'EMAIL'
-                if (m === 'In-App') allCases.push('in-app', 'IN-APP');
+                if(!m) return;
+                const str = String(m);
+                allCases.push(str, str.toLowerCase(), str.toUpperCase());
+                if (str.toLowerCase().includes('app')) {
+                    allCases.push('in-app', 'IN-APP', 'inApp', 'InApp');
+                }
             });
 
-            // Attach it to every possible key the frontend might be looking for
+            // 2. Check for Booleans (Extremely common for frontend UI pills)
+            const hasEmail = methods.some(m => m.toLowerCase().includes('email'));
+            const hasInApp = methods.some(m => m.toLowerCase().includes('app'));
+
+            // 3. THE KITCHEN SINK: Attach the data to EVERY possible key the frontend might be reading
+            
+            // Array formats
             notif.sentThrough = allCases;
-            notif.channels = allCases; 
+            notif.channels = allCases;
+            notif.deliveryChannels = allCases;
+
+            // Boolean formats
+            notif.isEmail = hasEmail;
+            notif.isInApp = hasInApp;
+            notif.sendEmail = hasEmail;
+            notif.sendInApp = hasInApp;
+            notif.email = hasEmail;
+            notif.inApp = hasInApp;
             
             return notif;
         });
