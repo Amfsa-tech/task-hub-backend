@@ -1,13 +1,13 @@
-Here is the fully updated REST API Documentation. I have added all the new endpoints, query parameters, payloads, and automated backend behaviors we just built (including the 15/85 math, location/category analytics, KYC/Email filters, custom emails, Tasker locking, Task refund automation, and Notification resending). 
+Here is the fully updated REST API Documentation. I have surgically inserted the new **Bulk Email** endpoints, the **Wallet Deposit** endpoints, the fixed **Payment/Escrow** logic, and explicitly noted the new `isLocked` state for the frontend developer. 
 
-You can copy and paste this directly to your frontend developer:
+You can copy and paste this directly to your frontend developer right now:
 
 ***
 
 ```markdown
 # TaskHub Admin Dashboard: REST API Documentation
 
-This documentation provides the frontend team with the complete, fully-mapped backend endpoints for the TaskHub Admin Panel, including recent feature updates for analytics, moderation, and automated communications.
+This documentation provides the frontend team with the complete, fully-mapped backend endpoints for the TaskHub Admin Panel, including recent feature updates for bulk communications, deposit tracking, escrow analytics, and locking mechanisms.
 
 ## 1. Global Specifications
 
@@ -48,7 +48,7 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 | --- | --- | --- | --- |
 | **GET** | `/api/admin/dashboard/stats` | Fetches aggregate data for homepage cards, quick stats, and chart analytics. | `super_admin`, `operations`, `trust_safety` |
 
-**Dashboard Stats Response Structure (Updated):**
+**Dashboard Stats Response Structure:**
 ```json
 {
   "status": "success",
@@ -80,15 +80,14 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 | Method | Endpoint | Description | Roles |
 | --- | --- | --- | --- |
 | **GET** | `/api/admin/users/stats` | Get top-level user statistics. | `super_admin`, `trust_safety` |
-| **GET** | `/api/admin/users` | List all users. Supports queries: `?page=X&limit=Y&search=term&status=active|suspended&kycVerified=true|false&emailVerified=true|false`. | `super_admin`, `trust_safety` |
+| **GET** | `/api/admin/users` | List all users. Supports queries: `?page=X&limit=Y&search=term&status=active|suspended&kycVerified=true|false`. | `super_admin`, `trust_safety` |
 | **GET** | `/api/admin/users/:id` | View specific user details. | `super_admin`, `trust_safety` |
 | **PATCH** | `/api/admin/users/:id/activate` | Mark user as active. | `super_admin` |
 | **PATCH** | `/api/admin/users/:id/deactivate` | Mark user as inactive. | `super_admin` |
 | **PATCH** | `/api/admin/users/:id/lock` | Temporarily lock account for 24 hours. | `super_admin`, `trust_safety` |
 | **PATCH** | `/api/admin/users/:id/unlock` | Remove account lock. | `super_admin`, `trust_safety` |
-| **DELETE** | `/api/admin/users/:id` | Soft delete user account. | `super_admin` |
-| **PATCH** | `/api/admin/users/:id/restore` | Restore soft-deleted account. | `super_admin` |
 | **POST** | `/api/admin/users/:id/send-email` | Sends branded email & in-app notification. Requires `{"subject": "...", "message": "..."}`. | `super_admin`, `operations`, `support` |
+| **POST** | `/api/admin/users/bulk-email` | **[NEW]** Sends email to group in background. Payload: `{"targetGroup": "verified" | "unverified" | "all", "subject": "...", "message": "..."}` | `super_admin`, `operations`, `support` |
 
 ---
 
@@ -96,14 +95,15 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 
 | Method | Endpoint | Description | Roles |
 | --- | --- | --- | --- |
-| **GET** | `/api/admin/taskers` | List taskers. Queries: `?page=X&limit=Y&search=term&status=active|suspended&kycVerified=true|false&emailVerified=true|false&sort=rating`. | All Admins |
-| **GET** | `/api/admin/taskers/:id` | View specific tasker details. | All Admins |
+| **GET** | `/api/admin/taskers` | List taskers. *Note: Now returns `isLocked` (boolean) and `lockUntil` (date).* | All Admins |
+| **GET** | `/api/admin/taskers/:id` | View specific tasker details. *Note: Account object includes `isLocked` state.* | All Admins |
 | **PATCH** | `/api/admin/taskers/:id/verify` | Manually verify tasker profile. | `super_admin`, `operations` |
 | **PATCH** | `/api/admin/taskers/:id/suspend` | Suspend tasker. | `super_admin`, `operations` |
 | **PATCH** | `/api/admin/taskers/:id/activate` | Activate suspended tasker. | `super_admin`, `operations` |
 | **PATCH** | `/api/admin/taskers/:id/lock` | Temporarily lock account for 24 hours. | `super_admin`, `operations` |
 | **PATCH** | `/api/admin/taskers/:id/unlock` | Remove account lock. | `super_admin`, `operations` |
 | **POST** | `/api/admin/taskers/:id/send-email` | Sends branded email & in-app notification. Requires `{"subject": "...", "message": "..."}`. | `super_admin`, `operations`, `support` |
+| **POST** | `/api/admin/taskers/bulk-email` | **[NEW]** Sends email to group in background. Payload: `{"targetGroup": "verified" | "unverified" | "all", "subject": "...", "message": "..."}` | `super_admin`, `operations`, `support` |
 
 ---
 
@@ -125,7 +125,7 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 | **GET** | `/api/admin/tasks/stats` | Get task analytics. | All Admins |
 | **GET** | `/api/admin/tasks` | List all tasks. | All Admins |
 | **GET** | `/api/admin/tasks/:id` | Get specific task details. | All Admins |
-| **PATCH** | `/api/admin/tasks/:id/cancel` | **Automated Engine:** Cancels task, auto-refunds User's wallet, creates Transaction record, and emails User (`reason`) and all bidding Taskers. Requires `{"reason": "..."}`. | `super_admin`, `operations` |
+| **PATCH** | `/api/admin/tasks/:id/cancel` | **Automated Engine:** Cancels task, auto-refunds User, creates Transaction, emails parties. Requires `{"reason": "..."}`. | `super_admin`, `operations` |
 | **PATCH** | `/api/admin/tasks/:id/complete` | Force complete a task (escrow release). | `super_admin`, `operations` |
 
 ---
@@ -134,9 +134,12 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 
 | Method | Endpoint | Description | Roles |
 | --- | --- | --- | --- |
-| **GET** | `/api/admin/payments/stats` | Get payment/escrow stats (Calculates exactly via 15/85 revenue rule). | All Admins |
-| **GET** | `/api/admin/payments` | List all financial transactions. | All Admins |
+| **GET** | `/api/admin/payments/stats` | Get payment/escrow stats. *Note: `totalTransactions` now reflects actual monetary sum, not count.* | All Admins |
+| **GET** | `/api/admin/payments` | List all tasks involving money (`escrowAmount > 0`). Queries: `?type=credit|debit`. | All Admins |
 | **GET** | `/api/admin/payments/:id` | Get specific transaction receipt. | All Admins |
+| **GET** | `/api/admin/payments/deposits/stats` | **[NEW]** Summary stats for user wallet deposits. | All Admins |
+| **GET** | `/api/admin/payments/deposits` | **[NEW]** List all user deposit transactions. Queries: `?status=success|pending|failed`. | All Admins |
+| **GET** | `/api/admin/payments/deposits/:id` | **[NEW]** Get a single deposit transaction detail. | All Admins |
 
 ---
 
@@ -150,7 +153,6 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 | **PATCH** | `/api/admin/reports/:id/resolve` | Mark report as resolved. | `super_admin`, `trust_safety` |
 
 ### System Data Exports
-
 * `GET /api/admin/reports/export/dashboard` (`super_admin`)
 * `GET /api/admin/reports/export/tasks` (`super_admin`)
 * `GET /api/admin/reports/export/payments` (`super_admin`)
@@ -186,7 +188,7 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 | **GET** | `/api/admin/staff/stats` | Staff hierarchy and count. | `super_admin` |
 | **GET** | `/api/admin/staff` | List all admin/staff accounts. | `super_admin` |
 | **POST** | `/api/admin/staff/invite` | Sends an email invitation. Payload: `email`, `role`. | `super_admin` |
-| **POST** | `/api/admin/staff/setup` | **PUBLIC ROUTE (No Auth Required).** Finalizes account creation. Payload: `token`, `firstName`, `lastName`, `password`. | None (Public) |
+| **POST** | `/api/admin/staff/setup` | **PUBLIC ROUTE (No Auth Required).** Finalizes account creation. | None (Public) |
 | **GET** | `/api/admin/staff/:id` | Get specific staff member details. | `super_admin` |
 | **PATCH** | `/api/admin/staff/:id/status` | Change staff active/inactive status. | `super_admin` |
 
@@ -212,7 +214,7 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 | **GET** | `/api/admin/notifications` | Retrieves chronological list of broadcasted notifications. | `super_admin`, `operations`, `support` |
 | **GET** | `/api/admin/notifications/all-users` | Fetches individual user/tasker notifications. | `super_admin`, `operations`, `support` |
 | **POST** | `/api/admin/notifications/send` | Broadcasts new notification (In-app + Email blast). Payload: `title`, `message`, `audience`, `selectedUserIds` (optional). | `super_admin`, `operations`, `support` |
-| **POST** | `/api/admin/notifications/:id/resend` | Re-evaluates audience and triggers another email blast/in-app ping for a previously sent notification ID. | `super_admin`, `operations`, `support` |
+| **POST** | `/api/admin/notifications/:id/resend` | Re-evaluates audience and triggers another email blast/in-app ping. | `super_admin`, `operations`, `support` |
 
 ---
 

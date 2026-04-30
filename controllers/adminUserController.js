@@ -224,3 +224,57 @@ export const sendUserEmail = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Failed to send communication' });
     }
 };
+
+// POST /api/admin/users/bulk-email
+export const sendBulkUserEmail = async (req, res) => {
+    try {
+        const { subject, message, targetGroup } = req.body; 
+        
+        let query = {};
+        // Adjust 'verifyIdentity' if your User model uses a different field name for KYC
+        if (targetGroup === 'verified') query.verifyIdentity = true;
+        else if (targetGroup === 'unverified') query.verifyIdentity = false;
+
+        const users = await User.find(query).select('_id emailAddress fullName');
+
+        if (users.length === 0) {
+            return res.status(404).json({ status: 'error', message: `No ${targetGroup} users found.` });
+        }
+
+        // Instantly reply to the frontend
+        res.json({ status: 'success', message: `Initiated! Sending emails to ${users.length} users in the background.` });
+
+        // Background loop
+        (async () => {
+            for (const user of users) {
+                try {
+                    const html = customAdminEmailHtml({ name: user.fullName, message });
+                    await sendEmail({ to: user.emailAddress, subject, html });
+
+                    await Notification.create({
+                        user: user._id,
+                        title: subject,
+                        message: message,
+                        type: 'System Announcement'
+                    });
+                } catch (err) {
+                    console.error(`Failed to send email to User ${user.emailAddress}`, err);
+                }
+            }
+            
+            await logAdminAction({ 
+                adminId: req.admin._id, 
+                action: `BULK_EMAIL_${targetGroup?.toUpperCase() || 'ALL'}_USERS`, 
+                resourceType: 'User', 
+                resourceId: null, 
+                req 
+            });
+        })();
+
+    } catch (error) {
+        console.error('Bulk User email error:', error);
+        if (!res.headersSent) {
+            res.status(500).json({ status: 'error', message: 'Failed to initiate bulk email' });
+        }
+    }
+};

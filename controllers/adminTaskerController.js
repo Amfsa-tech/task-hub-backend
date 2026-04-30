@@ -6,6 +6,7 @@ import KYCVerification from '../models/kycVerification.js';
 import Notification from '../models/notification.js'; // Added missing import!
 import { logAdminAction } from '../utils/auditLogger.js';
 import { escapeRegex } from '../utils/searchUtils.js';
+import * as Sentry from '@sentry/node';
 import { sendEmail, customAdminEmailHtml } from '../services/emailService.js';
 
 // GET /api/admin/taskers/stats
@@ -89,19 +90,28 @@ export const getAllTaskers = async (req, res) => {
             Tasker.countDocuments(query)
         ]);
 
-        const formattedTaskers = taskers.map(t => ({
-            _id: t._id,
-            firstName: t.firstName,
-            lastName: t.lastName,
-            emailAddress: t.emailAddress,
-            profilePicture: t.profilePicture || '', 
-            categories: t.subCategories,
-            isActive: t.isActive,
-            verifyIdentity: t.verifyIdentity,
-            isEmailVerified: t.isEmailVerified,
-            updatedAt: t.updatedAt,
-            averageRating: t.averageRating || 0
-        }));
+        // Inside getAllTaskers...
+        const formattedTaskers = taskers.map(t => {
+            // Check if the lock date exists and is still in the future
+            const isCurrentlyLocked = !!(t.lockUntil && new Date(t.lockUntil) > new Date());
+
+            return {
+                _id: t._id,
+                firstName: t.firstName,
+                lastName: t.lastName,
+                emailAddress: t.emailAddress,
+                profilePicture: t.profilePicture || '', 
+                categories: t.subCategories,
+                isActive: t.isActive,
+                verifyIdentity: t.verifyIdentity,
+                isEmailVerified: t.isEmailVerified,
+                updatedAt: t.updatedAt,
+                averageRating: t.averageRating || 0,
+                // ADD THESE TWO LINES:
+                isLocked: isCurrentlyLocked,
+                lockUntil: t.lockUntil || null
+            };
+        });
 
         res.json({
             status: 'success',
@@ -150,7 +160,7 @@ export const getTaskerById = async (req, res) => {
             reviewerImage: r.user?.profilePicture || '', rating: r.rating || 0,
             comment: r.reviewText || 'No comment provided', date: r.createdAt
         }));
-
+        const isCurrentlyLocked = !!(tasker.lockUntil && new Date(tasker.lockUntil) > new Date());
         res.json({
             status: 'success',
             data: {
@@ -165,7 +175,9 @@ export const getTaskerById = async (req, res) => {
                 account: {
                     userId: tasker._id, role: 'Tasker', fullName: `${tasker.firstName} ${tasker.lastName}`,
                     emailAddress: tasker.emailAddress, profilePicture: tasker.profilePicture || '', 
-                    lastUpdated: tasker.updatedAt
+                    lastUpdated: tasker.updatedAt,
+                    isLocked: isCurrentlyLocked,
+                    lockUntil: tasker.lockUntil || null
                 },
                 categories: tasker.subCategories.map(c => c.name),
                 reviews: reviewsFormatted
@@ -262,5 +274,62 @@ export const unlockTasker = async (req, res) => {
         res.json({ status: 'success', message: 'Tasker account unlocked' });
     } catch (error) {
         res.status(500).json({ status: 'error', message: 'Failed to unlock tasker' });
+    }
+};
+
+// POST /api/admin/taskers/bulk-email
+export const sendBulkTaskerEmail = async (req, res) => {
+    try {
+        const { subject, message, targetGroup } = req.body; 
+        
+        // 1. Build the filter query based on the requested group
+        let query = {};
+        if (targetGroup === 'verified') query.verifyIdentity = true;
+        else if (targetGroup === 'unverified') query.verifyIdentity = false;
+
+        // 2. Fetch only the necessary data to save memory
+        const taskers = await Tasker.find(query).select('_id emailAddress firstName lastName');
+
+        if (taskers.length === 0) {
+            return res.status(404).json({ status: 'error', message: `No ${targetGroup} taskers found.` });
+        }
+
+        // 3. IMMEDIATELY respond to the frontend to prevent server timeouts
+        res.json({ status: 'success', message: `Initiated! Sending emails to ${taskers.length} taskers in the background.` });
+
+        // 4. Run the email loop in the background (Fire and Forget)
+        (async () => {
+            for (const tasker of taskers) {
+                try {
+                    const html = customAdminEmailHtml({ name: `${tasker.firstName} ${tasker.lastName}`, message });
+                    await sendEmail({ to: tasker.emailAddress, subject, html });
+
+                    await Notification.create({
+                        tasker: tasker._id,
+                        title: subject,
+                        message: message,
+                        type: 'System Announcement'
+                    });
+                } catch (err) {
+                    console.error(`Failed to send email to Tasker ${tasker.emailAddress}`, err);
+                }
+            }
+            
+            // Log the bulk action once the loop finishes
+            await logAdminAction({ 
+                adminId: req.admin._id, 
+                action: `BULK_EMAIL_${targetGroup?.toUpperCase() || 'ALL'}_TASKERS`, 
+                resourceType: 'Tasker', 
+                resourceId: null, 
+                req 
+            });
+        })();
+
+    } catch (error) {
+        console.error('Bulk Tasker email error:', error);
+        // Only send error if we haven't already sent the success response
+        if (!res.headersSent) {
+            res.status(500).json({ status: 'error', message: 'Failed to initiate bulk email' });
+        }
     }
 };
