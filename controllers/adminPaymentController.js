@@ -1,7 +1,7 @@
 import Task from '../models/task.js';
 import User from '../models/user.js';
 import Transaction from '../models/transaction.js';
-import withdrawal from '../models/withdrawal.js';
+import Withdrawal from '../models/withdrawal.js';
 import { escapeRegex } from '../utils/searchUtils.js';
 // import * as Sentry from '@sentry/node'; // Temporarily disabled for pitch safety
 
