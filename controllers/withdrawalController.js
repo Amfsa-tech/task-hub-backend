@@ -4,6 +4,7 @@ import Tasker from '../models/tasker.js';
 import Task from '../models/task.js';
 import paystackService from '../services/paystack_service.js';
 import * as Sentry from '@sentry/node';
+import { notifyWithdrawalRequested } from '../utils/notificationUtils.js';
 
 const MINIMUM_WITHDRAWAL = 5000;
 const WITHDRAWAL_COOLDOWN_HOURS = 24;
@@ -278,6 +279,13 @@ export const requestWithdrawal = async (req, res) => {
                 accountName: tasker.bankAccount.accountName
             }
         });
+
+        // Notify tasker that their withdrawal request was submitted
+        try {
+            await notifyWithdrawalRequested(req.tasker._id, withdrawAmount, 'bank_transfer');
+        } catch (notifyErr) {
+            console.error('Failed to send withdrawal request notification:', notifyErr);
+        }
 
         return res.status(201).json({
             status: 'success',

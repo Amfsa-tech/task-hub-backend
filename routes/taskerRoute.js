@@ -1,13 +1,13 @@
 import { Router } from 'express';
-import { getNearbyTaskers } from '../controllers/nearbyTaskerController.js';
 import { getTaskerReviews } from '../controllers/tasker-controller.js';
 
 const router = Router();
 
-// Public route — get nearby taskers
-router.get('/nearby', getNearbyTaskers);
-
-// Public route — get reviews for a tasker
+/**
+ * Public endpoint to get reviews/ratings for a specific tasker
+ * GET /api/taskers/:id/reviews
+ * Query params: page, limit
+ */
 router.get('/:id/reviews', getTaskerReviews);
 
 export default router;

@@ -3,7 +3,7 @@ import Task from '../models/task.js';
 import User from '../models/user.js';
 import Transaction from '../models/transaction.js';
 import crypto from 'crypto';
-import { notifyUserAboutNewBid, notifyTaskerAboutBidAcceptance, notifyTaskerAboutBidRejection } from '../utils/notificationUtils.js';
+import { notifyUserAboutNewBid, notifyTaskerAboutBidAcceptance, notifyTaskerAboutBidRejection, notifyEscrowHeld, notifyUserAboutTaskAssignment, notifyUserAboutBidWithdrawal } from '../utils/notificationUtils.js';
 import Conversation from '../models/conversation.js';
 import Message from '../models/message.js';
 import { Types } from 'mongoose';
@@ -295,7 +295,20 @@ const deleteBid = async (req, res) => {
                 details: `Current bid status is '${bid.status}'`
             });
         }
-        
+
+        // Notify the task owner about the bid withdrawal before deleting
+        try {
+            const task = await Task.findById(bid.task).select('title user');
+            const tasker = await Tasker.findById(bid.tasker).select('firstName lastName');
+            if (task && tasker) {
+                notifyUserAboutBidWithdrawal(task.user, task, tasker).catch((e) => {
+                    console.error('notifyUserAboutBidWithdrawal error:', e);
+                });
+            }
+        } catch (notifyErr) {
+            console.error('Failed to notify user about bid withdrawal:', notifyErr);
+        }
+
     await Bid.findByIdAndDelete(id);
         
         res.status(200).json({
@@ -542,6 +555,27 @@ const acceptBid = async (req, res) => {
             }
         } catch (nErr) {
             console.error('Post-commit bid notifications error:', nErr);
+        }
+
+        // Notify user about escrow held and task assignment
+        try {
+            notifyEscrowHeld(bid.task.user, bid.task, amountToHold).catch((e) => {
+                console.error('notifyEscrowHeld error:', e);
+            });
+        } catch (escrowNotifyErr) {
+            console.error('Escrow notification error:', escrowNotifyErr);
+        }
+
+        // Notify user about task assignment
+        try {
+            const assignedTasker = await Tasker.findById(bid.tasker).select('firstName lastName');
+            if (assignedTasker) {
+                notifyUserAboutTaskAssignment(bid.task.user, bid.task, assignedTasker).catch((e) => {
+                    console.error('notifyUserAboutTaskAssignment error:', e);
+                });
+            }
+        } catch (assignNotifyErr) {
+            console.error('Task assignment notification error:', assignNotifyErr);
         }
 
         res.status(200).json({

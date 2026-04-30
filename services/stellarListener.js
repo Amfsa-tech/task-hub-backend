@@ -1,6 +1,8 @@
 import * as StellarSdk from 'stellar-sdk';
 import * as Sentry from '@sentry/node';
-import User from '../models/user.js'; 
+import User from '../models/user.js';
+import Tasker from '../models/tasker.js';
+import { notifyWalletFunded, notifyTaskerWalletFunded } from '../utils/notificationUtils.js'; 
 
 // Load credentials from your .env
 const MASTER_PUBLIC_KEY = process.env.STELLAR_MASTER_PUBLIC_KEY;
@@ -77,6 +79,20 @@ export const startDepositListener = () => {
                     await targetAccount.save();
 
                     console.log(`✅ Success! Credited ₦${nairaValue} to account ID: ${targetAccount._id}`);
+
+                    // 10. Notify the account holder about the deposit
+                    try {
+                        const isUser = targetAccount.__t === 'User' || targetAccount.emailAddress === targetAccount.emailAddress;
+                        // Check if it's a User or Tasker by looking at which collection found the memo
+                        const isTaskerAccount = await Tasker.findOne({ stellarMemoId: cleanMemo });
+                        if (isTaskerAccount) {
+                            await notifyTaskerWalletFunded(targetAccount._id.toString(), nairaValue);
+                        } else {
+                            await notifyWalletFunded(targetAccount._id.toString(), nairaValue, 'stellar');
+                        }
+                    } catch (notifyErr) {
+                        console.error('Failed to send deposit notification:', notifyErr);
+                    }
 
                 } catch (error) {
                     console.error('🚨 Error processing Stellar deposit:', error);

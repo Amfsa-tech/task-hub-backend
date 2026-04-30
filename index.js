@@ -27,6 +27,7 @@ import adminWithdrawalRoutes from './routes/adminWithdrawalRoutes.js';
 import adminMainCategoryRoutes from './routes/adminMainCategoryRoutes.js';
 import adminUniversityRoutes from './routes/adminUniversityRoutes.js';
 import adminNotificationRoutes from './routes/adminNotificationRoutes.js';
+import adminRatingRoutes from './routes/adminRatingRoutes.js';
 import waitlistRoutes from './routes/waitlistRoute.js';
 import walletRoutes from './routes/walletRoute.js';
 import nearbyTaskerRoutes from './routes/nearbyTaskerRoute.js';
@@ -34,6 +35,7 @@ import mainCategoryRoutes from './routes/mainCategoryRoute.js';
 import universityRoutes from './routes/universityRoute.js';
 import ninSubmissionRoutes from './routes/taskerNinRoute.js';
 import userNotificationRoutes from './routes/notificationRoutes.js';
+import pushSubscriptionRoutes from './routes/pushSubscriptionRoute.js';
 import { checkMaintenanceMode } from './middlewares/maintenanceMiddleware.js';
 import { startDepositListener } from './services/stellarListener.js';
 
@@ -132,6 +134,7 @@ app.use('/api/admin/withdrawals', adminWithdrawalRoutes);
 app.use('/api/admin/main-categories', adminMainCategoryRoutes);
 app.use('/api/admin/universities', adminUniversityRoutes);
 app.use('/api/admin/notifications', adminNotificationRoutes); // Admin Notifications
+app.use('/api/admin/ratings', adminRatingRoutes);              // Admin Rating Moderation
 
 
 app.use(checkMaintenanceMode);
@@ -151,7 +154,8 @@ app.use('/api/waitlist', waitlistRoutes);
 app.use('/api/nin', ninSubmissionRoutes);
 // User/Tasker side notifications
 app.use('/api/notifications', userNotificationRoutes);
-
+// Web Push subscription management
+app.use('/api/push', pushSubscriptionRoutes);
 
 
 // Base route

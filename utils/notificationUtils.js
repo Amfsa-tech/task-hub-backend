@@ -1,8 +1,10 @@
 import * as Sentry from '@sentry/node';
 import Tasker from '../models/tasker.js';
 import User from '../models/user.js';
+import Notification from '../models/notification.js';
 import { calculateDistance, milesToMeters } from './locationUtils.js';
 import { sendPushToUser, sendPushToMultipleUsers, sendTaskNotification, sendBidNotification } from '../services/onesignal.js';
+import { sendWebPushToAccount, sendWebPushToAccounts } from '../services/webPushService.js';
 import { sendEmail } from './authUtils.js';
 import { newTaskEmailHtml, bidAcceptedEmailHtml, bidRejectedEmailHtml, taskCancelledEmailHtml } from './taskerEmailTemplates.js';
 
@@ -138,6 +140,22 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
             }
             console.log(`✅ Emails sent to ${emailSuccess}/${emailRecipients.length} taskers`);
         }
+
+        // Send web push notifications to matching taskers
+        try {
+            const taskersWithPush = matchingTaskers.filter(t => t.pushSubscriptions && t.pushSubscriptions.length > 0);
+            if (taskersWithPush.length > 0) {
+                await sendWebPushToAccounts(
+                    taskersWithPush,
+                    `New ${categoryNames} Task Available`,
+                    `"${task.title}" - ₦${task.budget}`,
+                    { type: 'new_task', taskId: task._id.toString(), categories: categoryNames, action: 'view_task' }
+                );
+                console.log(`✅ Web push sent to ${taskersWithPush.length} taskers`);
+            }
+        } catch (webPushErr) {
+            console.error('Web push notification error (new task):', webPushErr.message);
+        }
         
     } catch (error) {
         console.error('Error notifying matching taskers:', error);
@@ -148,23 +166,41 @@ export const notifyMatchingTaskers = async (task, options = {}) => {
 // Notify user about new bid on their task
 export const notifyUserAboutNewBid = async (userId, task, bid, tasker) => {
     try {
-        const user = await User.findById(userId).select('fullName notificationId');
-        if (!user || !user.notificationId) {
-            console.log('User not found or has no notification ID');
+        const user = await User.findById(userId).select('fullName notificationId pushSubscriptions');
+        if (!user) {
+            console.log('User not found');
             return;
         }
 
         const message = `${tasker.firstName} ${tasker.lastName} placed a bid of ₦${bid.amount} on your task`;
-        
-        await sendBidNotification(
-            user.notificationId,
-            'New Bid Received',
+
+        // OneSignal push
+        if (user.notificationId) {
+            await sendBidNotification(
+                user.notificationId,
+                'New Bid Received',
+                message,
+                bid._id.toString(),
+                task._id.toString()
+            );
+            console.log(`✅ Bid notification sent to user ${user.fullName}`);
+        }
+
+        // Web push
+        if (user.pushSubscriptions && user.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(user, 'New Bid Received', message, {
+                type: 'bid', bidId: bid._id.toString(), taskId: task._id.toString(), action: 'view_bid'
+            });
+        }
+
+        // In-app notification
+        await Notification.create({
+            user: userId,
+            title: 'New Bid Received',
             message,
-            bid._id.toString(),
-            task._id.toString()
-        );
-        
-        console.log(`✅ Bid notification sent to user ${user.fullName}`);
+            type: 'bid',
+            metadata: { bidId: bid._id.toString(), taskId: task._id.toString() }
+        }).catch(e => console.error('In-app notification error:', e.message));
     } catch (error) {
         console.error('Error notifying user about new bid:', error);
         Sentry.captureException(error);
@@ -174,7 +210,7 @@ export const notifyUserAboutNewBid = async (userId, task, bid, tasker) => {
 // Notify tasker about bid acceptance
 export const notifyTaskerAboutBidAcceptance = async (taskerId, task, bid) => {
     try {
-        const tasker = await Tasker.findById(taskerId).select('firstName lastName emailAddress notificationId');
+        const tasker = await Tasker.findById(taskerId).select('firstName lastName emailAddress notificationId pushSubscriptions');
         if (!tasker) {
             console.log('Tasker not found');
             return;
@@ -182,7 +218,7 @@ export const notifyTaskerAboutBidAcceptance = async (taskerId, task, bid) => {
 
         const message = `Congratulations! Your bid of ₦${bid.amount} has been accepted for "${task.title}"`;
 
-        // Push notification
+        // OneSignal push
         if (tasker.notificationId) {
             await sendTaskNotification(
                 tasker.notificationId,
@@ -192,6 +228,22 @@ export const notifyTaskerAboutBidAcceptance = async (taskerId, task, bid) => {
             );
             console.log(`✅ Bid acceptance push sent to tasker ${tasker.firstName} ${tasker.lastName}`);
         }
+
+        // Web push
+        if (tasker.pushSubscriptions && tasker.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(tasker, 'Bid Accepted!', message, {
+                type: 'bid_accepted', taskId: task._id.toString(), action: 'view_task'
+            });
+        }
+
+        // In-app notification
+        await Notification.create({
+            tasker: taskerId,
+            title: 'Bid Accepted!',
+            message,
+            type: 'bid',
+            metadata: { bidId: bid._id.toString(), taskId: task._id.toString() }
+        }).catch(e => console.error('In-app notification error:', e.message));
 
         // Email
         if (tasker.emailAddress) {
@@ -216,7 +268,7 @@ export const notifyTaskerAboutBidAcceptance = async (taskerId, task, bid) => {
 // Notify tasker about bid rejection
 export const notifyTaskerAboutBidRejection = async (taskerId, task, bid) => {
     try {
-        const tasker = await Tasker.findById(taskerId).select('firstName lastName emailAddress notificationId');
+        const tasker = await Tasker.findById(taskerId).select('firstName lastName emailAddress notificationId pushSubscriptions');
         if (!tasker) {
             console.log('Tasker not found');
             return;
@@ -224,7 +276,7 @@ export const notifyTaskerAboutBidRejection = async (taskerId, task, bid) => {
 
         const message = `Your bid of ₦${bid.amount} for "${task.title}" was not selected this time`;
 
-        // Push notification
+        // OneSignal push
         if (tasker.notificationId) {
             await sendTaskNotification(
                 tasker.notificationId,
@@ -234,6 +286,22 @@ export const notifyTaskerAboutBidRejection = async (taskerId, task, bid) => {
             );
             console.log(`✅ Bid rejection push sent to tasker ${tasker.firstName} ${tasker.lastName}`);
         }
+
+        // Web push
+        if (tasker.pushSubscriptions && tasker.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(tasker, 'Bid Update', message, {
+                type: 'bid_rejected', taskId: task._id.toString(), action: 'view_task'
+            });
+        }
+
+        // In-app notification
+        await Notification.create({
+            tasker: taskerId,
+            title: 'Bid Update',
+            message,
+            type: 'bid',
+            metadata: { bidId: bid._id.toString(), taskId: task._id.toString() }
+        }).catch(e => console.error('In-app notification error:', e.message));
 
         // Email
         if (tasker.emailAddress) {
@@ -258,22 +326,40 @@ export const notifyTaskerAboutBidRejection = async (taskerId, task, bid) => {
 // Notify user about task completion
 export const notifyUserAboutTaskCompletion = async (userId, task, tasker) => {
     try {
-        const user = await User.findById(userId).select('fullName notificationId');
-        if (!user || !user.notificationId) {
-            console.log('User not found or has no notification ID');
+        const user = await User.findById(userId).select('fullName notificationId pushSubscriptions');
+        if (!user) {
+            console.log('User not found');
             return;
         }
 
         const message = `${tasker.firstName} ${tasker.lastName} has completed your task "${task.title}"`;
-        
-        await sendTaskNotification(
-            user.notificationId,
-            'Task Completed',
+
+        // OneSignal push
+        if (user.notificationId) {
+            await sendTaskNotification(
+                user.notificationId,
+                'Task Completed',
+                message,
+                task._id.toString()
+            );
+            console.log(`✅ Task completion notification sent to user ${user.fullName}`);
+        }
+
+        // Web push
+        if (user.pushSubscriptions && user.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(user, 'Task Completed', message, {
+                type: 'task_completed', taskId: task._id.toString(), action: 'view_task'
+            });
+        }
+
+        // In-app notification
+        await Notification.create({
+            user: userId,
+            title: 'Task Completed',
             message,
-            task._id.toString()
-        );
-        
-        console.log(`✅ Task completion notification sent to user ${user.fullName}`);
+            type: 'task',
+            metadata: { taskId: task._id.toString(), taskerId: tasker._id?.toString() }
+        }).catch(e => console.error('In-app notification error:', e.message));
     } catch (error) {
         console.error('Error notifying user about task completion:', error);
         Sentry.captureException(error);
@@ -283,7 +369,7 @@ export const notifyUserAboutTaskCompletion = async (userId, task, tasker) => {
 // Notify tasker about task cancellation
 export const notifyTaskerAboutTaskCancellation = async (taskerId, task) => {
     try {
-        const tasker = await Tasker.findById(taskerId).select('firstName lastName emailAddress notificationId');
+        const tasker = await Tasker.findById(taskerId).select('firstName lastName emailAddress notificationId pushSubscriptions');
         if (!tasker) {
             console.log('Tasker not found');
             return;
@@ -291,7 +377,7 @@ export const notifyTaskerAboutTaskCancellation = async (taskerId, task) => {
 
         const message = `The task "${task.title}" has been cancelled by the user`;
 
-        // Push notification
+        // OneSignal push
         if (tasker.notificationId) {
             await sendTaskNotification(
                 tasker.notificationId,
@@ -301,6 +387,22 @@ export const notifyTaskerAboutTaskCancellation = async (taskerId, task) => {
             );
             console.log(`✅ Task cancellation push sent to tasker ${tasker.firstName} ${tasker.lastName}`);
         }
+
+        // Web push
+        if (tasker.pushSubscriptions && tasker.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(tasker, 'Task Cancelled', message, {
+                type: 'task_cancelled', taskId: task._id.toString(), action: 'view_task'
+            });
+        }
+
+        // In-app notification
+        await Notification.create({
+            tasker: taskerId,
+            title: 'Task Cancelled',
+            message,
+            type: 'task',
+            metadata: { taskId: task._id.toString() }
+        }).catch(e => console.error('In-app notification error:', e.message));
 
         // Email
         if (tasker.emailAddress) {
@@ -324,22 +426,38 @@ export const notifyTaskerAboutTaskCancellation = async (taskerId, task) => {
 // Send welcome notification to new user
 export const sendWelcomeNotificationToUser = async (userId) => {
     try {
-        const user = await User.findById(userId).select('fullName notificationId');
-        if (!user || !user.notificationId) {
-            console.log('User not found or has no notification ID');
+        const user = await User.findById(userId).select('fullName notificationId pushSubscriptions');
+        if (!user) {
+            console.log('User not found');
             return;
         }
 
-        await sendPushToUser(
-            user.notificationId,
-            `Welcome to TaskHub, ${user.fullName}!`,
-            'Start posting tasks and get things done quickly and efficiently.',
-            {
-                type: 'welcome',
-                action: 'open_app'
-            }
-        );
-        
+        const title = `Welcome to TaskHub, ${user.fullName}!`;
+        const body = 'Start posting tasks and get things done quickly and efficiently.';
+
+        // OneSignal push
+        if (user.notificationId) {
+            await sendPushToUser(
+                user.notificationId,
+                title,
+                body,
+                { type: 'welcome', action: 'open_app' }
+            );
+        }
+
+        // Web push
+        if (user.pushSubscriptions && user.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(user, title, body, { type: 'welcome', action: 'open_app' });
+        }
+
+        // In-app notification
+        await Notification.create({
+            user: userId,
+            title,
+            message: body,
+            type: 'welcome'
+        }).catch(e => console.error('In-app notification error:', e.message));
+
         console.log(`✅ Welcome notification sent to user ${user.fullName}`);
     } catch (error) {
         console.error('Error sending welcome notification to user:', error);
@@ -350,22 +468,38 @@ export const sendWelcomeNotificationToUser = async (userId) => {
 // Send welcome notification to new tasker
 export const sendWelcomeNotificationToTasker = async (taskerId) => {
     try {
-        const tasker = await Tasker.findById(taskerId).select('firstName lastName notificationId');
-        if (!tasker || !tasker.notificationId) {
-            console.log('Tasker not found or has no notification ID');
+        const tasker = await Tasker.findById(taskerId).select('firstName lastName notificationId pushSubscriptions');
+        if (!tasker) {
+            console.log('Tasker not found');
             return;
         }
 
-        await sendPushToUser(
-            tasker.notificationId,
-            `Welcome to TaskHub, ${tasker.firstName}!`,
-            'Start browsing available tasks and earn money by helping others.',
-            {
-                type: 'welcome',
-                action: 'browse_tasks'
-            }
-        );
-        
+        const title = `Welcome to TaskHub, ${tasker.firstName}!`;
+        const body = 'Start browsing available tasks and earn money by helping others.';
+
+        // OneSignal push
+        if (tasker.notificationId) {
+            await sendPushToUser(
+                tasker.notificationId,
+                title,
+                body,
+                { type: 'welcome', action: 'browse_tasks' }
+            );
+        }
+
+        // Web push
+        if (tasker.pushSubscriptions && tasker.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(tasker, title, body, { type: 'welcome', action: 'browse_tasks' });
+        }
+
+        // In-app notification
+        await Notification.create({
+            tasker: taskerId,
+            title,
+            message: body,
+            type: 'welcome'
+        }).catch(e => console.error('In-app notification error:', e.message));
+
         console.log(`✅ Welcome notification sent to tasker ${tasker.firstName} ${tasker.lastName}`);
     } catch (error) {
         console.error('Error sending welcome notification to tasker:', error);
@@ -419,28 +553,647 @@ export const getCategoryMatchStats = async (categoryId) => {
 export const notifyOnNewChatMessage = async (recipientType, recipientId, conversationId, preview) => {
     try {
         let notificationId = null;
+        let account = null;
         if (recipientType === 'user') {
-            const user = await User.findById(recipientId).select('notificationId fullName');
-            if (!user || !user.notificationId) return;
+            const user = await User.findById(recipientId).select('notificationId pushSubscriptions fullName');
+            if (!user) return;
+            account = user;
             notificationId = user.notificationId;
         } else {
-            const tasker = await Tasker.findById(recipientId).select('notificationId firstName');
-            if (!tasker || !tasker.notificationId) return;
+            const tasker = await Tasker.findById(recipientId).select('notificationId pushSubscriptions firstName');
+            if (!tasker) return;
+            account = tasker;
             notificationId = tasker.notificationId;
         }
 
-        await sendPushToUser(
-            notificationId,
-            'New message',
-            preview || 'You have a new chat message',
-            {
-                type: 'chat',
-                conversationId: conversationId?.toString(),
-                action: 'open_conversation'
-            }
-        );
+        const title = 'New message';
+        const body = preview || 'You have a new chat message';
+        const data = { type: 'chat', conversationId: conversationId?.toString(), action: 'open_conversation' };
+
+        // OneSignal push
+        if (notificationId) {
+            await sendPushToUser(notificationId, title, body, data);
+        }
+
+        // Web push
+        if (account && account.pushSubscriptions && account.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(account, title, body, data);
+        }
+
+        // In-app notification
+        const notifDoc = {
+            title,
+            message: body,
+            type: 'chat',
+            metadata: { conversationId: conversationId?.toString() }
+        };
+        if (recipientType === 'user') {
+            notifDoc.user = recipientId;
+        } else {
+            notifDoc.tasker = recipientId;
+        }
+        await Notification.create(notifDoc).catch(e => console.error('In-app notification error:', e.message));
     } catch (error) {
         console.error('Error sending chat message notification:', error);
+        Sentry.captureException(error);
+    }
+};
+
+// ============================================================
+// NEW NOTIFICATION FUNCTIONS — FILLING IDENTIFIED GAPS
+// ============================================================
+
+/**
+ * Notify user that their wallet has been funded (Paystack or Stellar).
+ * @param {string} userId - User ID
+ * @param {number} amount - Amount credited in Naira
+ * @param {string} method - 'paystack' or 'stellar'
+ */
+export const notifyWalletFunded = async (userId, amount, method = 'paystack') => {
+    try {
+        const user = await User.findById(userId).select('fullName notificationId pushSubscriptions emailAddress');
+        if (!user) { console.log('User not found for wallet funding notification'); return; }
+
+        const title = 'Wallet Funded 💰';
+        const message = `₦${amount.toLocaleString()} has been added to your wallet via ${method === 'stellar' ? 'crypto deposit' : 'card payment'}.`;
+
+        // OneSignal push
+        if (user.notificationId) {
+            await sendPushToUser(user.notificationId, title, message, { type: 'wallet', action: 'view_wallet' }).catch(e => console.error('OneSignal error:', e.message));
+        }
+
+        // Web push
+        if (user.pushSubscriptions && user.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(user, title, message, { type: 'wallet', action: 'view_wallet' });
+        }
+
+        // In-app notification
+        await Notification.create({
+            user: userId,
+            title,
+            message,
+            type: 'wallet',
+            metadata: { amount, method }
+        }).catch(e => console.error('In-app notification error:', e.message));
+
+        console.log(`✅ Wallet funded notification sent to user ${user.fullName}`);
+    } catch (error) {
+        console.error('Error notifying user about wallet funding:', error);
+        Sentry.captureException(error);
+    }
+};
+
+/**
+ * Notify tasker that their wallet has been funded (Stellar deposit).
+ * @param {string} taskerId - Tasker ID
+ * @param {number} amount - Amount credited in Naira
+ */
+export const notifyTaskerWalletFunded = async (taskerId, amount) => {
+    try {
+        const tasker = await Tasker.findById(taskerId).select('firstName lastName notificationId pushSubscriptions emailAddress');
+        if (!tasker) { console.log('Tasker not found for wallet funding notification'); return; }
+
+        const title = 'Wallet Funded 💰';
+        const message = `₦${amount.toLocaleString()} has been added to your wallet via crypto deposit.`;
+
+        // OneSignal push
+        if (tasker.notificationId) {
+            await sendPushToUser(tasker.notificationId, title, message, { type: 'wallet', action: 'view_wallet' }).catch(e => console.error('OneSignal error:', e.message));
+        }
+
+        // Web push
+        if (tasker.pushSubscriptions && tasker.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(tasker, title, message, { type: 'wallet', action: 'view_wallet' });
+        }
+
+        // In-app notification
+        await Notification.create({
+            tasker: taskerId,
+            title,
+            message,
+            type: 'wallet',
+            metadata: { amount, method: 'stellar' }
+        }).catch(e => console.error('In-app notification error:', e.message));
+
+        console.log(`✅ Wallet funded notification sent to tasker ${tasker.firstName}`);
+    } catch (error) {
+        console.error('Error notifying tasker about wallet funding:', error);
+        Sentry.captureException(error);
+    }
+};
+
+/**
+ * Notify user that escrow has been held from their wallet.
+ * @param {string} userId - User ID
+ * @param {object} task - Task document
+ * @param {number} amount - Escrow amount
+ */
+export const notifyEscrowHeld = async (userId, task, amount) => {
+    try {
+        const user = await User.findById(userId).select('fullName notificationId pushSubscriptions');
+        if (!user) { console.log('User not found for escrow notification'); return; }
+
+        const title = 'Payment Held in Escrow 🔒';
+        const message = `₦${amount.toLocaleString()} has been held in escrow for task "${task.title}". It will be released when the task is completed.`;
+
+        // OneSignal push
+        if (user.notificationId) {
+            await sendPushToUser(user.notificationId, title, message, { type: 'escrow', taskId: task._id.toString(), action: 'view_task' }).catch(e => console.error('OneSignal error:', e.message));
+        }
+
+        // Web push
+        if (user.pushSubscriptions && user.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(user, title, message, { type: 'escrow', taskId: task._id.toString(), action: 'view_task' });
+        }
+
+        // In-app notification
+        await Notification.create({
+            user: userId,
+            title,
+            message,
+            type: 'escrow',
+            metadata: { taskId: task._id.toString(), amount }
+        }).catch(e => console.error('In-app notification error:', e.message));
+
+        console.log(`✅ Escrow held notification sent to user ${user.fullName}`);
+    } catch (error) {
+        console.error('Error notifying user about escrow hold:', error);
+        Sentry.captureException(error);
+    }
+};
+
+/**
+ * Notify user that escrow has been refunded (task cancelled).
+ * @param {string} userId - User ID
+ * @param {object} task - Task document
+ * @param {number} amount - Refund amount
+ */
+export const notifyEscrowRefunded = async (userId, task, amount) => {
+    try {
+        const user = await User.findById(userId).select('fullName notificationId pushSubscriptions');
+        if (!user) { console.log('User not found for escrow refund notification'); return; }
+
+        const title = 'Escrow Refunded 💸';
+        const message = `₦${amount.toLocaleString()} has been refunded to your wallet for the cancelled task "${task.title}".`;
+
+        // OneSignal push
+        if (user.notificationId) {
+            await sendPushToUser(user.notificationId, title, message, { type: 'escrow_refund', taskId: task._id.toString(), action: 'view_wallet' }).catch(e => console.error('OneSignal error:', e.message));
+        }
+
+        // Web push
+        if (user.pushSubscriptions && user.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(user, title, message, { type: 'escrow_refund', taskId: task._id.toString(), action: 'view_wallet' });
+        }
+
+        // In-app notification
+        await Notification.create({
+            user: userId,
+            title,
+            message,
+            type: 'escrow',
+            metadata: { taskId: task._id.toString(), amount }
+        }).catch(e => console.error('In-app notification error:', e.message));
+
+        console.log(`✅ Escrow refund notification sent to user ${user.fullName}`);
+    } catch (error) {
+        console.error('Error notifying user about escrow refund:', error);
+        Sentry.captureException(error);
+    }
+};
+
+/**
+ * Notify user that a tasker has started their task (assigned → in-progress).
+ * Includes the completion code.
+ * @param {string} userId - User ID
+ * @param {object} task - Task document
+ * @param {string} completionCode - The 6-digit code
+ * @param {object} tasker - Tasker document (firstName, lastName)
+ */
+export const notifyUserTaskStarted = async (userId, task, completionCode, tasker) => {
+    try {
+        const user = await User.findById(userId).select('fullName notificationId pushSubscriptions');
+        if (!user) { console.log('User not found for task started notification'); return; }
+
+        const title = 'Task Started 🚀';
+        const message = `${tasker.firstName} ${tasker.lastName} has started working on "${task.title}". Your completion code is: ${completionCode}`;
+
+        // OneSignal push
+        if (user.notificationId) {
+            await sendPushToUser(user.notificationId, title, message, { type: 'task_started', taskId: task._id.toString(), completionCode, action: 'view_task' }).catch(e => console.error('OneSignal error:', e.message));
+        }
+
+        // Web push
+        if (user.pushSubscriptions && user.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(user, title, message, { type: 'task_started', taskId: task._id.toString(), completionCode, action: 'view_task' });
+        }
+
+        // In-app notification
+        await Notification.create({
+            user: userId,
+            title,
+            message,
+            type: 'task',
+            metadata: { taskId: task._id.toString(), completionCode }
+        }).catch(e => console.error('In-app notification error:', e.message));
+
+        console.log(`✅ Task started notification sent to user ${user.fullName} with completion code`);
+    } catch (error) {
+        console.error('Error notifying user about task start:', error);
+        Sentry.captureException(error);
+    }
+};
+
+/**
+ * Notify tasker that escrow has been released (they earned money).
+ * @param {string} taskerId - Tasker ID
+ * @param {object} task - Task document
+ * @param {number} payoutAmount - Amount credited to tasker wallet
+ */
+export const notifyTaskerPayoutReceived = async (taskerId, task, payoutAmount) => {
+    try {
+        const tasker = await Tasker.findById(taskerId).select('firstName lastName notificationId pushSubscriptions emailAddress');
+        if (!tasker) { console.log('Tasker not found for payout notification'); return; }
+
+        const title = 'Payout Received! 💰';
+        const message = `₦${payoutAmount.toLocaleString()} has been credited to your wallet for completing "${task.title}".`;
+
+        // OneSignal push
+        if (tasker.notificationId) {
+            await sendPushToUser(tasker.notificationId, title, message, { type: 'payout', taskId: task._id.toString(), action: 'view_wallet' }).catch(e => console.error('OneSignal error:', e.message));
+        }
+
+        // Web push
+        if (tasker.pushSubscriptions && tasker.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(tasker, title, message, { type: 'payout', taskId: task._id.toString(), action: 'view_wallet' });
+        }
+
+        // In-app notification
+        await Notification.create({
+            tasker: taskerId,
+            title,
+            message,
+            type: 'payout',
+            metadata: { taskId: task._id.toString(), amount: payoutAmount }
+        }).catch(e => console.error('In-app notification error:', e.message));
+
+        console.log(`✅ Payout notification sent to tasker ${tasker.firstName}`);
+    } catch (error) {
+        console.error('Error notifying tasker about payout:', error);
+        Sentry.captureException(error);
+    }
+};
+
+/**
+ * Notify tasker that their withdrawal request has been submitted.
+ * @param {string} taskerId - Tasker ID
+ * @param {number} amount - Withdrawal amount
+ * @param {string} payoutMethod - 'bank_transfer' or 'stellar_crypto'
+ */
+export const notifyWithdrawalRequested = async (taskerId, amount, payoutMethod) => {
+    try {
+        const tasker = await Tasker.findById(taskerId).select('firstName lastName notificationId pushSubscriptions');
+        if (!tasker) { console.log('Tasker not found for withdrawal request notification'); return; }
+
+        const title = 'Withdrawal Request Submitted 📋';
+        const methodLabel = payoutMethod === 'stellar_crypto' ? 'crypto wallet' : 'bank account';
+        const message = `Your withdrawal request of ₦${amount.toLocaleString()} to your ${methodLabel} has been submitted and is awaiting approval.`;
+
+        // OneSignal push
+        if (tasker.notificationId) {
+            await sendPushToUser(tasker.notificationId, title, message, { type: 'withdrawal', action: 'view_wallet' }).catch(e => console.error('OneSignal error:', e.message));
+        }
+
+        // Web push
+        if (tasker.pushSubscriptions && tasker.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(tasker, title, message, { type: 'withdrawal', action: 'view_wallet' });
+        }
+
+        // In-app notification
+        await Notification.create({
+            tasker: taskerId,
+            title,
+            message,
+            type: 'withdrawal',
+            metadata: { amount, payoutMethod }
+        }).catch(e => console.error('In-app notification error:', e.message));
+
+        console.log(`✅ Withdrawal request notification sent to tasker ${tasker.firstName}`);
+    } catch (error) {
+        console.error('Error notifying tasker about withdrawal request:', error);
+        Sentry.captureException(error);
+    }
+};
+
+/**
+ * Notify tasker that their withdrawal was rejected and funds returned.
+ * @param {string} taskerId - Tasker ID
+ * @param {number} amount - Withdrawal amount
+ * @param {string} reason - Rejection reason
+ */
+export const notifyWithdrawalRejected = async (taskerId, amount, reason) => {
+    try {
+        const tasker = await Tasker.findById(taskerId).select('firstName lastName notificationId pushSubscriptions emailAddress');
+        if (!tasker) { console.log('Tasker not found for withdrawal rejection notification'); return; }
+
+        const title = 'Withdrawal Update ⚠️';
+        const message = `Your withdrawal of ₦${amount.toLocaleString()} was not approved. Reason: ${reason}. The funds have been returned to your wallet.`;
+
+        // OneSignal push
+        if (tasker.notificationId) {
+            await sendPushToUser(tasker.notificationId, title, message, { type: 'withdrawal', action: 'view_wallet' }).catch(e => console.error('OneSignal error:', e.message));
+        }
+
+        // Web push
+        if (tasker.pushSubscriptions && tasker.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(tasker, title, message, { type: 'withdrawal', action: 'view_wallet' });
+        }
+
+        // In-app notification
+        await Notification.create({
+            tasker: taskerId,
+            title,
+            message,
+            type: 'withdrawal',
+            metadata: { amount, reason }
+        }).catch(e => console.error('In-app notification error:', e.message));
+
+        // Email
+        if (tasker.emailAddress) {
+            try {
+                const html = `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;border:1px solid #e0e0e0;border-radius:8px;">
+                    <h2 style="color:#e53e3e;">Withdrawal Update</h2>
+                    <p>Hi ${tasker.firstName},</p>
+                    <p>Your withdrawal request of <b>₦${amount.toLocaleString()}</b> was not approved.</p>
+                    <p><b>Reason:</b> ${reason}</p>
+                    <p>The funds have been returned to your TaskHub wallet.</p>
+                </div>`;
+                await sendEmail({ to: tasker.emailAddress, subject: 'Withdrawal Update - TaskHub', html });
+            } catch (emailErr) {
+                console.error(`Withdrawal rejection email failed for ${tasker.emailAddress}:`, emailErr.message);
+            }
+        }
+
+        console.log(`✅ Withdrawal rejection notification sent to tasker ${tasker.firstName}`);
+    } catch (error) {
+        console.error('Error notifying tasker about withdrawal rejection:', error);
+        Sentry.captureException(error);
+    }
+};
+
+/**
+ * Notify tasker that their bank withdrawal has been completed (money sent).
+ * @param {string} taskerId - Tasker ID
+ * @param {number} amount - Withdrawal amount
+ * @param {string} bankName - Bank name
+ */
+export const notifyWithdrawalCompleted = async (taskerId, amount, bankName) => {
+    try {
+        const tasker = await Tasker.findById(taskerId).select('firstName lastName notificationId pushSubscriptions emailAddress');
+        if (!tasker) { console.log('Tasker not found for withdrawal completion notification'); return; }
+
+        const title = 'Withdrawal Completed ✅';
+        const message = `₦${amount.toLocaleString()} has been sent to your ${bankName || 'bank'} account. You should receive it within 24 hours.`;
+
+        // OneSignal push
+        if (tasker.notificationId) {
+            await sendPushToUser(tasker.notificationId, title, message, { type: 'withdrawal', action: 'view_wallet' }).catch(e => console.error('OneSignal error:', e.message));
+        }
+
+        // Web push
+        if (tasker.pushSubscriptions && tasker.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(tasker, title, message, { type: 'withdrawal', action: 'view_wallet' });
+        }
+
+        // In-app notification (already exists for crypto, adding for bank)
+        await Notification.create({
+            tasker: taskerId,
+            title,
+            message,
+            type: 'payout',
+            metadata: { amount, bankName }
+        }).catch(e => console.error('In-app notification error:', e.message));
+
+        // Email
+        if (tasker.emailAddress) {
+            try {
+                const html = `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;border:1px solid #e0e0e0;border-radius:8px;">
+                    <h2 style="color:#38a169;">Withdrawal Completed! 🎉</h2>
+                    <p>Hi ${tasker.firstName},</p>
+                    <p>Your withdrawal of <b>₦${amount.toLocaleString()}</b> has been sent to your <b>${bankName || 'bank'}</b> account.</p>
+                    <p>You should receive the funds within 24 hours.</p>
+                </div>`;
+                await sendEmail({ to: tasker.emailAddress, subject: 'Withdrawal Completed - TaskHub', html });
+            } catch (emailErr) {
+                console.error(`Withdrawal completion email failed for ${tasker.emailAddress}:`, emailErr.message);
+            }
+        }
+
+        console.log(`✅ Withdrawal completion notification sent to tasker ${tasker.firstName}`);
+    } catch (error) {
+        console.error('Error notifying tasker about withdrawal completion:', error);
+        Sentry.captureException(error);
+    }
+};
+
+/**
+ * Notify tasker that a task they bid on was cancelled (open task with bids).
+ * @param {string} taskerId - Tasker ID
+ * @param {object} task - Task document
+ */
+export const notifyTaskerAboutOpenTaskCancellation = async (taskerId, task) => {
+    try {
+        const tasker = await Tasker.findById(taskerId).select('firstName lastName notificationId pushSubscriptions');
+        if (!tasker) { console.log('Tasker not found for open task cancellation notification'); return; }
+
+        const title = 'Task Cancelled';
+        const message = `The task "${task.title}" that you applied for has been cancelled by the user.`;
+
+        // OneSignal push
+        if (tasker.notificationId) {
+            await sendTaskNotification(tasker.notificationId, title, message, task._id.toString()).catch(e => console.error('OneSignal error:', e.message));
+        }
+
+        // Web push
+        if (tasker.pushSubscriptions && tasker.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(tasker, title, message, { type: 'task_cancelled', taskId: task._id.toString(), action: 'view_task' });
+        }
+
+        // In-app notification
+        await Notification.create({
+            tasker: taskerId,
+            title,
+            message,
+            type: 'task',
+            metadata: { taskId: task._id.toString() }
+        }).catch(e => console.error('In-app notification error:', e.message));
+
+        console.log(`✅ Open task cancellation notification sent to tasker ${tasker.firstName}`);
+    } catch (error) {
+        console.error('Error notifying tasker about open task cancellation:', error);
+        Sentry.captureException(error);
+    }
+};
+
+/**
+ * Notify tasker that a task they bid on was updated.
+ * @param {string} taskerId - Tasker ID
+ * @param {object} task - Updated task document
+ * @param {string[]} updatedFields - List of changed field names
+ */
+export const notifyTaskerAboutTaskUpdate = async (taskerId, task, updatedFields) => {
+    try {
+        const tasker = await Tasker.findById(taskerId).select('firstName lastName notificationId pushSubscriptions');
+        if (!tasker) { console.log('Tasker not found for task update notification'); return; }
+
+        const title = 'Task Updated';
+        const fieldsStr = updatedFields.join(', ');
+        const message = `The task "${task.title}" has been updated. Changes: ${fieldsStr}.`;
+
+        // OneSignal push
+        if (tasker.notificationId) {
+            await sendTaskNotification(tasker.notificationId, title, message, task._id.toString()).catch(e => console.error('OneSignal error:', e.message));
+        }
+
+        // Web push
+        if (tasker.pushSubscriptions && tasker.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(tasker, title, message, { type: 'task_updated', taskId: task._id.toString(), action: 'view_task' });
+        }
+
+        // In-app notification
+        await Notification.create({
+            tasker: taskerId,
+            title,
+            message,
+            type: 'task',
+            metadata: { taskId: task._id.toString(), updatedFields }
+        }).catch(e => console.error('In-app notification error:', e.message));
+
+        console.log(`✅ Task update notification sent to tasker ${tasker.firstName}`);
+    } catch (error) {
+        console.error('Error notifying tasker about task update:', error);
+        Sentry.captureException(error);
+    }
+};
+
+/**
+ * Notify user that a tasker withdrew their bid.
+ * @param {string} userId - User ID
+ * @param {object} task - Task document
+ * @param {object} tasker - Tasker who withdrew
+ */
+export const notifyUserAboutBidWithdrawal = async (userId, task, tasker) => {
+    try {
+        const user = await User.findById(userId).select('fullName notificationId pushSubscriptions');
+        if (!user) { console.log('User not found for bid withdrawal notification'); return; }
+
+        const title = 'Bid Withdrawn';
+        const message = `${tasker.firstName} ${tasker.lastName} withdrew their bid on your task "${task.title}".`;
+
+        // OneSignal push
+        if (user.notificationId) {
+            await sendPushToUser(user.notificationId, title, message, { type: 'bid', taskId: task._id.toString(), action: 'view_task' }).catch(e => console.error('OneSignal error:', e.message));
+        }
+
+        // Web push
+        if (user.pushSubscriptions && user.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(user, title, message, { type: 'bid', taskId: task._id.toString(), action: 'view_task' });
+        }
+
+        // In-app notification
+        await Notification.create({
+            user: userId,
+            title,
+            message,
+            type: 'bid',
+            metadata: { taskId: task._id.toString(), taskerId: tasker._id?.toString() }
+        }).catch(e => console.error('In-app notification error:', e.message));
+
+        console.log(`✅ Bid withdrawal notification sent to user ${user.fullName}`);
+    } catch (error) {
+        console.error('Error notifying user about bid withdrawal:', error);
+        Sentry.captureException(error);
+    }
+};
+
+/**
+ * Notify user that a tasker has been assigned to their task.
+ * @param {string} userId - User ID
+ * @param {object} task - Task document
+ * @param {object} tasker - Assigned tasker
+ */
+export const notifyUserAboutTaskAssignment = async (userId, task, tasker) => {
+    try {
+        const user = await User.findById(userId).select('fullName notificationId pushSubscriptions');
+        if (!user) { console.log('User not found for task assignment notification'); return; }
+
+        const title = 'Tasker Assigned ✅';
+        const message = `${tasker.firstName} ${tasker.lastName} has been assigned to your task "${task.title}". You can now chat with them.`;
+
+        // OneSignal push
+        if (user.notificationId) {
+            await sendPushToUser(user.notificationId, title, message, { type: 'task_assigned', taskId: task._id.toString(), action: 'view_task' }).catch(e => console.error('OneSignal error:', e.message));
+        }
+
+        // Web push
+        if (user.pushSubscriptions && user.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(user, title, message, { type: 'task_assigned', taskId: task._id.toString(), action: 'view_task' });
+        }
+
+        // In-app notification
+        await Notification.create({
+            user: userId,
+            title,
+            message,
+            type: 'task',
+            metadata: { taskId: task._id.toString(), taskerId: tasker._id?.toString() }
+        }).catch(e => console.error('In-app notification error:', e.message));
+
+        console.log(`✅ Task assignment notification sent to user ${user.fullName}`);
+    } catch (error) {
+        console.error('Error notifying user about task assignment:', error);
+        Sentry.captureException(error);
+    }
+};
+
+/**
+ * Notify tasker that they received a new rating/review.
+ * @param {string} taskerId - Tasker ID
+ * @param {number} rating - Rating value (1-5)
+ * @param {string} reviewText - Optional review text
+ */
+export const notifyTaskerAboutNewRating = async (taskerId, rating, reviewText) => {
+    try {
+        const tasker = await Tasker.findById(taskerId).select('firstName lastName notificationId pushSubscriptions');
+        if (!tasker) { console.log('Tasker not found for new rating notification'); return; }
+
+        const stars = '⭐'.repeat(rating);
+        const title = 'New Rating Received!';
+        const preview = reviewText ? reviewText.substring(0, 100) + (reviewText.length > 100 ? '...' : '') : 'No comment provided';
+        const message = `You received a ${rating}-star rating! ${preview}`;
+
+        // OneSignal push
+        if (tasker.notificationId) {
+            await sendPushToUser(tasker.notificationId, title, message, { type: 'rating', rating, action: 'view_reviews' }).catch(e => console.error('OneSignal error:', e.message));
+        }
+
+        // Web push
+        if (tasker.pushSubscriptions && tasker.pushSubscriptions.length > 0) {
+            await sendWebPushToAccount(tasker, title, message, { type: 'rating', rating, action: 'view_reviews' });
+        }
+
+        // In-app notification
+        await Notification.create({
+            tasker: taskerId,
+            title,
+            message,
+            type: 'rating',
+            metadata: { rating, preview }
+        }).catch(e => console.error('In-app notification error:', e.message));
+
+        console.log(`✅ New rating notification sent to tasker ${tasker.firstName}`);
+    } catch (error) {
+        console.error('Error notifying tasker about new rating:', error);
         Sentry.captureException(error);
     }
 };
