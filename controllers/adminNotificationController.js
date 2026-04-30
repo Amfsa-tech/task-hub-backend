@@ -51,17 +51,55 @@ export const getNotificationStats = async (req, res) => {
 // GET /api/admin/notifications
 export const getAllNotifications = async (req, res) => {
     try {
-        const notifications = await AdminNotification.find() // <-- UPDATED
+        const notifications = await AdminNotification.find()
             .populate('sentBy', 'firstName lastName') 
-            .sort({ createdAt: -1 }); 
+            .sort({ createdAt: -1 })
+            .lean(); // Crucial: Gives us raw, easily editable JSON
+
+        const formattedNotifications = notifications.map(notif => {
+            // Get the saved array from the database
+            const methods = notif.sentThrough || [];
+
+            // 1. Create a super-array that matches EVERY possible string case
+            const allCases = [];
+            methods.forEach(m => {
+                if(!m) return;
+                const str = String(m);
+                allCases.push(str, str.toLowerCase(), str.toUpperCase());
+                if (str.toLowerCase().includes('app')) {
+                    allCases.push('in-app', 'IN-APP', 'inApp', 'InApp');
+                }
+            });
+
+            // 2. Check for Booleans (Extremely common for frontend UI pills)
+            const hasEmail = methods.some(m => m.toLowerCase().includes('email'));
+            const hasInApp = methods.some(m => m.toLowerCase().includes('app'));
+
+            // 3. THE KITCHEN SINK: Attach the data to EVERY possible key the frontend might be reading
+            
+            // Array formats
+            notif.sentThrough = allCases;
+            notif.channels = allCases;
+            notif.deliveryChannels = allCases;
+
+            // Boolean formats
+            notif.isEmail = hasEmail;
+            notif.isInApp = hasInApp;
+            notif.sendEmail = hasEmail;
+            notif.sendInApp = hasInApp;
+            notif.email = hasEmail;
+            notif.inApp = hasInApp;
+            
+            return notif;
+        });
 
         res.status(200).json({
             status: 'success',
-            results: notifications.length,
-            data: notifications
+            results: formattedNotifications.length,
+            data: formattedNotifications
         });
     } catch (error) {
-        Sentry.captureException(error);
+        console.error('Failed to fetch notifications:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch notifications' });
     }
 };
@@ -69,15 +107,20 @@ export const getAllNotifications = async (req, res) => {
 // POST /api/admin/notifications/send
 export const sendNotification = async (req, res) => {
     try {
-        // ADDED: 'sentThrough' extracted from req.body
         const { title, message, type, audience, selectedUserIds, sentThrough } = req.body;
 
         if (!title || !message || !audience) {
             return res.status(400).json({ status: 'error', message: 'Title, message, and audience are required' });
         }
 
-        // Fallback: If frontend hasn't updated yet, default to both. Otherwise, use what they checked.
-        const activesentThrough = sentThrough && sentThrough.length > 0 ? sentThrough : ['Email', 'In-App'];
+        // FIX 1: Sanitize frontend data. Force whatever they send into Title Case!
+        const rawChannels = sentThrough && sentThrough.length > 0 ? sentThrough : ['Email', 'In-App'];
+        const activesentThrough = rawChannels.map(ch => {
+            const lowerCh = ch.toLowerCase();
+            if (lowerCh.includes('email')) return 'Email';
+            if (lowerCh.includes('in-app') || lowerCh.includes('app')) return 'In-App';
+            return ch; // Fallback
+        });
 
         let recipientsCount = 0;
         let notificationsToInsert = []; 
