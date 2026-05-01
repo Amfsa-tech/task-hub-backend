@@ -93,7 +93,7 @@ export const createOrGetConversation = async (req, res) => {
 
     const populated = await Conversation.findById(conversation._id)
       .populate('task', 'title budget status')
-      .populate('user', 'fullName profilePicture country residentState tasksPostedCount totalSpent')
+      .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
       .populate('tasker', 'firstName lastName profilePicture');
 
     const convObj = populated.toObject();
@@ -121,7 +121,7 @@ export const listConversations = async (req, res) => {
       .skip(skip)
       .limit(limit)
       .populate('task', 'title budget status')
-      .populate('user', 'fullName profilePicture country residentState tasksPostedCount totalSpent')
+      .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
       .populate('tasker', 'firstName lastName profilePicture');
 
     const transformed = conversations.map(c => {
@@ -150,7 +150,7 @@ export const getConversation = async (req, res) => {
 
     const conversation = await Conversation.findById(id)
       .populate('task', 'title budget status')
-      .populate('user', 'fullName profilePicture country residentState tasksPostedCount totalSpent')
+      .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
       .populate('tasker', 'firstName lastName profilePicture');
     if (!conversation) return res.status(404).json({ status: 'error', message: 'Conversation not found' });
     if (!ensureParticipant(conversation, req)) return res.status(403).json({ status: 'error', message: 'Forbidden' });

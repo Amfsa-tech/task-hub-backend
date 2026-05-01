@@ -299,7 +299,7 @@ const getAllTasks = async (req, res) => {
         
         // Get tasks with pagination
     const tasks = await Task.find(filterOptions)
-            .populate('user', 'fullName profilePicture country residentState')
+            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
             .populate('assignedTasker', 'firstName lastName profilePicture')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description')
@@ -307,10 +307,10 @@ const getAllTasks = async (req, res) => {
             .skip(skip)
             .limit(limit);
 
-        // Transform user data to public shape (limited scope)
+        // Transform user data to public shape (full scope — enriched user details)
         const transformedTasks = tasks.map(task => {
             const taskObj = task.toObject();
-            taskObj.user = formatPublicUser(taskObj.user, 'limited');
+            taskObj.user = formatPublicUser(taskObj.user, 'full');
             return taskObj;
         });
             
@@ -346,7 +346,7 @@ const getTaskById = async (req, res) => {
         }
         
     const task = await Task.findById(id)
-            .populate('user', 'fullName profilePicture country residentState')
+            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
             .populate('assignedTasker', 'firstName lastName profilePicture')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description');
@@ -359,7 +359,7 @@ const getTaskById = async (req, res) => {
         }
 
         const taskObj = task.toObject();
-        taskObj.user = formatPublicUser(taskObj.user, 'limited');
+        taskObj.user = formatPublicUser(taskObj.user, 'full');
         
         res.status(200).json({
             status: "success",
@@ -847,13 +847,14 @@ const changeTaskStatus = async (req, res) => {
                 await task.save();
 
                 // Increment user's totalSpent for spending range calculation
+                // and completedTasksCount for trust score calculation
                 try {
                     await User.updateOne(
                         { _id: task.user._id },
-                        { $inc: { totalSpent: task.escrowAmount } }
+                        { $inc: { totalSpent: task.escrowAmount, completedTasksCount: 1 } }
                     );
                 } catch (spentErr) {
-                    console.error('Failed to increment totalSpent:', spentErr);
+                    console.error('Failed to increment totalSpent/completedTasksCount:', spentErr);
                 }
 
                 // Notify user about task completion
@@ -1160,7 +1161,7 @@ const getTaskerFeed = async (req, res) => {
         const fetchLimit = hasLocation ? limit * 5 : (cursor ? limit : 0);
         
         let taskQuery = Task.find(filterOptions)
-            .populate('user', 'fullName profilePicture country residentState tasksPostedCount totalSpent')
+            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description')
             .select('-__v')
@@ -1359,7 +1360,7 @@ const getTaskerTasks = async (req, res) => {
         const totalTasks = await Task.countDocuments(filterOptions);
 
         const tasks = await Task.find(filterOptions)
-            .populate('user', 'fullName profilePicture country residentState tasksPostedCount totalSpent')
+            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description')
             .sort({ createdAt: -1 })

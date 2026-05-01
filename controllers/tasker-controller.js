@@ -70,7 +70,7 @@ const getTaskerReviews = async (req, res) => {
             rating: task.rating,
             reviewText: task.reviewText || null,
             ratedAt: task.ratedAt,
-            reviewer: formatPublicUser(task.user, 'limited')
+            reviewer: formatPublicUser(task.user, 'full')
         }));
 
         const totalPages = Math.ceil(total / limit);

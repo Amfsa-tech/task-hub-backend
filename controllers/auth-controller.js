@@ -307,6 +307,10 @@ export const getUser = async (req, res) => {
       verifyIdentity: req.user.verifyIdentity,
       lastLogin: req.user.lastLogin,
       createdAt: req.user.createdAt,
+      // Public profile stats
+      tasksPostedCount: req.user.tasksPostedCount ?? 0,
+      completedTasksCount: req.user.completedTasksCount ?? 0,
+      totalSpent: req.user.totalSpent ?? 0,
     };
 
     return res.status(200).json({
