@@ -208,22 +208,23 @@ export const sendUserEmail = async (req, res) => {
         
         if (!user) return res.status(404).json({ status: 'error', message: 'User not found' });
         
-        // 1. Send Professional Branded Email (No tracking ID needed for single emails)
+        // 1. Send Professional Branded Email 
         const html = customAdminEmailHtml({ name: user.fullName, message });
         await sendEmail({ to: user.emailAddress, subject, html });
 
-        // 2. NEW: Send In-App Notification
+        // 2. NEW: Send In-App Notification (Fixed Enum)
         await Notification.create({
             user: user._id,
             title: subject,
             message: message,
-            type: 'Direct Message' 
+            type: 'Announcement' // <-- Fixed to match schema enums
         });
 
         await logAdminAction({ adminId: req.admin._id, action: 'SENT_EMAIL_TO_USER', resourceType: 'User', resourceId: user._id, req });
 
         res.json({ status: 'success', message: 'Email and In-App Notification sent successfully' });
     } catch (error) {
+        console.error('Send User Email Error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to send communication' });
     }
 };
@@ -239,15 +240,21 @@ export const sendBulkUserEmail = async (req, res) => {
         const users = await User.find(query).select('_id emailAddress fullName');
 
         if (users.length === 0) {
-            return res.status(404).json({ status: 'error', message: `No ${targetGroup} users found.` });
+            return res.status(404).json({ status: 'error', message: `No ${targetGroup || 'matching'} users found.` });
         }
+
+        // FIX 1: Strict Mongoose Enum Matching
+        // Map the targetGroup to a valid 'audience' enum string from your schema
+        let mappedAudience = 'Selected Users'; 
+        if (!targetGroup || targetGroup === 'all') mappedAudience = 'All Users';
 
         // ADDED: Create an AdminNotification record so this bulk email shows up on the CTO's dashboard!
         const newBroadcast = await AdminNotification.create({
             title: subject,
             message: message,
-            type: 'System Announcement',
-            audience: `Bulk: ${targetGroup} Users`,
+            type: 'Announcement', // FIX 2: Mapped to the correct schema enum (removed 'System ')
+            audience: mappedAudience, // FIX 3: Mapped to the correct schema enum
+            sentThrough: ['Email', 'In-App'], // FIX 4: Added so the UI pills light up on the dashboard!
             recipientsCount: users.length,
             sentBy: req.admin._id
         });
@@ -257,12 +264,12 @@ export const sendBulkUserEmail = async (req, res) => {
         (async () => {
             for (const user of users) {
                 try {
-                    const html = customAdminEmailHtml({ name: user.fullName, message });
+                    const html = customAdminEmailHtml({ name: user.fullName || 'User', message });
                     await sendEmail({ 
                         to: user.emailAddress, 
                         subject, 
                         html,
-                        // ADDED: Pass the ID so Resend can track opens
+                        // Pass the ID so Resend can track opens
                         dbNotificationId: newBroadcast._id 
                     });
 
@@ -270,7 +277,7 @@ export const sendBulkUserEmail = async (req, res) => {
                         user: user._id,
                         title: subject,
                         message: message,
-                        type: 'System Announcement'
+                        type: 'Announcement' // Fixed here as well to match enums
                     });
                 } catch (err) {
                     console.error(`Failed to send email to User ${user.emailAddress}`, err);
@@ -282,7 +289,7 @@ export const sendBulkUserEmail = async (req, res) => {
                 action: `BULK_EMAIL_${targetGroup?.toUpperCase() || 'ALL'}_USERS`, 
                 resourceType: 'AdminNotification', 
                 resourceId: newBroadcast._id, 
-                req 
+                req
             });
         })();
 

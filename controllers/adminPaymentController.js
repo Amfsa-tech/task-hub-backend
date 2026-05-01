@@ -209,7 +209,7 @@ export const getPaymentById = async (req, res) => {
             isDebit = false; // Money came IN to the platform
             amount = deposit.amount || 0;
             description = 'Wallet Deposit via Gateway';
-            paymentStatus = deposit.status === 'success' ? 'Completed' : 'Pending';
+            paymentStatus = (deposit.status === 'success' || deposit.status === 'completed') ? 'Completed' : 'Pending';
             targetUser = deposit.user;
         } else if (withdrawal) {
             record = withdrawal;

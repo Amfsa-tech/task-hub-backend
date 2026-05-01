@@ -76,9 +76,11 @@ router.post(
   sendTaskerEmail
 );
 
-router.post('/bulk-email',  
-   allowAdminRoles('super_admin', 'operations', 'support'),
-   sendBulkTaskerEmail);
+router.post('/bulk-email', 
+  protectAdmin,
+  allowAdminRoles('super_admin', 'operations', 'support'),
+  sendBulkTaskerEmail
+);
 
 
 export default router;

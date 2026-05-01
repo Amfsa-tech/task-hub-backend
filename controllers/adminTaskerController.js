@@ -91,7 +91,6 @@ export const getAllTaskers = async (req, res) => {
             Tasker.countDocuments(query)
         ]);
 
-        // Inside getAllTaskers...
         const formattedTaskers = taskers.map(t => {
             // Check if the lock date exists and is still in the future
             const isCurrentlyLocked = !!(t.lockUntil && new Date(t.lockUntil) > new Date());
@@ -108,7 +107,6 @@ export const getAllTaskers = async (req, res) => {
                 isEmailVerified: t.isEmailVerified,
                 updatedAt: t.updatedAt,
                 averageRating: t.averageRating || 0,
-                // ADD THESE TWO LINES:
                 isLocked: isCurrentlyLocked,
                 lockUntil: t.lockUntil || null
             };
@@ -161,7 +159,9 @@ export const getTaskerById = async (req, res) => {
             reviewerImage: r.user?.profilePicture || '', rating: r.rating || 0,
             comment: r.reviewText || 'No comment provided', date: r.createdAt
         }));
+        
         const isCurrentlyLocked = !!(tasker.lockUntil && new Date(tasker.lockUntil) > new Date());
+        
         res.json({
             status: 'success',
             data: {
@@ -174,11 +174,21 @@ export const getTaskerById = async (req, res) => {
                     completedTasks: completedCount, totalTransaction, currentBalance: tasker.wallet || 0 
                 },
                 account: {
-                    userId: tasker._id, role: 'Tasker', fullName: `${tasker.firstName} ${tasker.lastName}`,
-                    emailAddress: tasker.emailAddress, profilePicture: tasker.profilePicture || '', 
+                    userId: tasker._id, 
+                    role: 'Tasker', 
+                    fullName: `${tasker.firstName} ${tasker.lastName}`,
+                    emailAddress: tasker.emailAddress, 
+                    profilePicture: tasker.profilePicture || '', 
                     lastUpdated: tasker.updatedAt,
                     isLocked: isCurrentlyLocked,
-                    lockUntil: tasker.lockUntil || null
+                    lockUntil: tasker.lockUntil || null,
+                    // ADDED FIELDS FOR FRONTEND
+                    residentState: tasker.residentState || '',
+                    phoneNumber: tasker.phoneNumber || '',
+                    country: tasker.country || '',
+                    createdAt: tasker.createdAt,
+                    verifyIdentity: tasker.verifyIdentity,
+                    isActive: tasker.isActive
                 },
                 categories: tasker.subCategories.map(c => c.name),
                 reviews: reviewsFormatted
@@ -269,13 +279,14 @@ export const sendTaskerEmail = async (req, res) => {
             tasker: tasker._id,
             title: subject,
             message: message,
-            type: 'Direct Message'
+            type: 'Announcement' // <-- Fixed to match schema enums
         });
 
         await logAdminAction({ adminId: req.admin._id, action: 'SENT_EMAIL_TO_TASKER', resourceType: 'Tasker', resourceId: tasker._id, req });
 
         res.json({ status: 'success', message: 'Email and In-App Notification sent successfully' });
     } catch (error) {
+        console.error('Send Tasker Email Error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to send communication' });
     }
 };
@@ -291,15 +302,20 @@ export const sendBulkTaskerEmail = async (req, res) => {
         const taskers = await Tasker.find(query).select('_id emailAddress firstName lastName');
 
         if (taskers.length === 0) {
-            return res.status(404).json({ status: 'error', message: `No ${targetGroup} taskers found.` });
+            return res.status(404).json({ status: 'error', message: `No ${targetGroup || 'matching'} taskers found.` });
         }
+
+        // FIX: Strict Mongoose Enum Matching
+        let mappedAudience = 'Selected Users'; 
+        if (!targetGroup || targetGroup === 'all') mappedAudience = 'All Taskers';
 
         // ADDED: Create an AdminNotification record so this bulk email shows up on the CTO's dashboard!
         const newBroadcast = await AdminNotification.create({
             title: subject,
             message: message,
-            type: 'System Announcement',
-            audience: `Bulk: ${targetGroup} Taskers`,
+            type: 'Announcement', // <-- Fixed Enum
+            audience: mappedAudience, // <-- Fixed Enum
+            sentThrough: ['Email', 'In-App'], // <-- ADDED for the frontend table pills
             recipientsCount: taskers.length,
             sentBy: req.admin._id
         });
@@ -314,7 +330,6 @@ export const sendBulkTaskerEmail = async (req, res) => {
                         to: tasker.emailAddress, 
                         subject, 
                         html,
-                        // ADDED: Pass the ID so Resend can track opens
                         dbNotificationId: newBroadcast._id 
                     });
 
@@ -322,7 +337,7 @@ export const sendBulkTaskerEmail = async (req, res) => {
                         tasker: tasker._id,
                         title: subject,
                         message: message,
-                        type: 'System Announcement'
+                        type: 'Announcement' // <-- Fixed Enum
                     });
                 } catch (err) {
                     console.error(`Failed to send email to Tasker ${tasker.emailAddress}`, err);
@@ -334,7 +349,7 @@ export const sendBulkTaskerEmail = async (req, res) => {
                 action: `BULK_EMAIL_${targetGroup?.toUpperCase() || 'ALL'}_TASKERS`, 
                 resourceType: 'AdminNotification', 
                 resourceId: newBroadcast._id, 
-                req 
+                req
             });
         })();
 

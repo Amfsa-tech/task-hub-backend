@@ -80,9 +80,47 @@ export const startDepositListener = () => {
 
                     console.log(`✅ Success! Credited ₦${nairaValue} to account ID: ${targetAccount._id}`);
 
+                    // 11. UPDATE THE TRANSACTION RECORD FOR THE ADMIN DASHBOARD
+                    try {
+                        // Find the pending transaction record for this amount/user
+                        const transactionRecord = await Transaction.findOneAndUpdate(
+                            { 
+                                user: targetAccount._id, 
+                                amount: nairaValue, 
+                                status: 'pending',
+                                paymentPurpose: 'wallet_funding' 
+                            },
+                            { 
+                                status: 'success', // This lights up the green badge in Admin
+                                verifiedAt: new Date(),
+                                provider: 'stellar',
+                                gatewayResponse: JSON.stringify(payment) // Save Stellar proof
+                            },
+                            { sort: { createdAt: -1 }, new: true } // Get the most recent one
+                        );
+
+                        if (transactionRecord) {
+                            console.log(`📝 Transaction record ${transactionRecord._id} marked as SUCCESS.`);
+                        } else {
+                            // FALLBACK: If no pending record exists, create a successful one
+                            await Transaction.create({
+                                user: targetAccount._id,
+                                amount: nairaValue,
+                                type: 'credit',
+                                status: 'success',
+                                paymentPurpose: 'wallet_funding',
+                                description: 'Stellar Deposit (Auto-detected)',
+                                reference: payment.id,
+                                provider: 'stellar'
+                            });
+                            console.log(`🆕 No pending record found. Created new SUCCESS transaction record.`);
+                        }
+                    } catch (dbErr) {
+                        console.error('Failed to update transaction status in DB:', dbErr);
+                    }
+
                     // 10. Notify the account holder about the deposit
                     try {
-                        const isUser = targetAccount.__t === 'User' || targetAccount.emailAddress === targetAccount.emailAddress;
                         // Check if it's a User or Tasker by looking at which collection found the memo
                         const isTaskerAccount = await Tasker.findOne({ stellarMemoId: cleanMemo });
                         if (isTaskerAccount) {
@@ -96,7 +134,7 @@ export const startDepositListener = () => {
 
                 } catch (error) {
                     console.error('🚨 Error processing Stellar deposit:', error);
-                    Sentry.captureException(error);
+                    if (typeof Sentry !== 'undefined') Sentry.captureException(error);
                 }
             },
             onerror: (error) => {
