@@ -17,6 +17,10 @@ const notificationSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  sentThrough: [{
+        type: String,
+        enum: ['Email', 'In-App'] // Matches the frontend checkboxes
+    }],
   metadata: {
     blockchainTxId: String,
     externalLink: String

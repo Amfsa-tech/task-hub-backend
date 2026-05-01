@@ -3,6 +3,7 @@ import Task from '../models/task.js';
 import User from '../models/user.js';
 import { Types } from 'mongoose';
 import * as Sentry from '@sentry/node';
+import { formatPublicUser } from '../utils/publicUserUtils.js';
 
 // Helper function to check if ID is valid
 const isValidObjectId = (id) => {
@@ -47,7 +48,7 @@ const getTaskerReviews = async (req, res) => {
             rating: { $exists: true },
             isReviewHidden: { $ne: true }
         })
-            .populate('user', 'fullName profilePicture')
+            .populate('user', 'fullName profilePicture country residentState')
             .select('rating reviewText ratedAt mainCategory _id title user')
             .sort({ ratedAt: -1 })
             .limit(limit)
@@ -69,10 +70,7 @@ const getTaskerReviews = async (req, res) => {
             rating: task.rating,
             reviewText: task.reviewText || null,
             ratedAt: task.ratedAt,
-            reviewer: {
-                name: task.user?.fullName || 'Anonymous',
-                profilePicture: task.user?.profilePicture || null
-            }
+            reviewer: formatPublicUser(task.user, 'limited')
         }));
 
         const totalPages = Math.ceil(total / limit);

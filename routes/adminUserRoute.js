@@ -11,7 +11,8 @@ import {
     unlockUser,
     softDeleteUser,
     restoreUser,
-    sendUserEmail
+    sendUserEmail,
+    sendBulkUserEmail
 } from '../controllers/adminUserController.js';
 
 const router = express.Router();
@@ -79,5 +80,6 @@ router.patch(
     restoreUser
 );
 router.post('/:id/send-email', allowAdminRoles('super_admin'), sendUserEmail);
+router.post('/bulk-email', allowAdminRoles('super_admin'), sendBulkUserEmail);
 
 export default router;

@@ -92,15 +92,34 @@ export const getTaskById = async (req, res) => {
             status: 'success',
             data: {
                 task: {
-                    _id: task._id, title: task.title, description: task.description, budget: task.budget,
-                    status: task.status, negotiable: task.budgetType === 'negotiable' ? 'YES' : 'NO',
-                    category: task.mainCategory?.name || 'General', createdAt: task.createdAt,
-                    deadline: task.date, lastUpdated: task.updatedAt, postedBy: task.user, assignedTo: task.assignedTasker || null
+                    _id: task._id, 
+                    title: task.title, 
+                    description: task.description, 
+                    budget: task.budget,
+                    status: task.status, 
+                    negotiable: task.budgetType === 'negotiable' ? 'YES' : 'NO',
+                    category: task.mainCategory?.name || 'General', 
+                    createdAt: task.createdAt,
+                    deadline: task.date, 
+                    lastUpdated: task.updatedAt, 
+                    postedBy: task.user, 
+                    assignedTo: task.assignedTasker || null
                 },
                 bids: bids.map(bid => ({
-                    id: bid._id, amount: bid.amount, message: bid.message || '', status: bid.status, bidType: bid.bidType,
-                    date: bid.createdAt, taskerName: bid.tasker ? `${bid.tasker.firstName} ${bid.tasker.lastName}` : 'Unknown',
-                    taskerImage: bid.tasker?.profilePicture, taskerEmail: bid.tasker?.emailAddress
+                    // FIX: 'id' now points to the Tasker's ID for the frontend
+                    id: bid.tasker?._id || null, 
+                    
+                    // Added bidId as a safe fallback just in case they ever need the application ID
+                    bidId: bid._id, 
+                    
+                    amount: bid.amount, 
+                    message: bid.message || '', 
+                    status: bid.status, 
+                    bidType: bid.bidType,
+                    date: bid.createdAt, 
+                    taskerName: bid.tasker ? `${bid.tasker.firstName} ${bid.tasker.lastName}` : 'Unknown',
+                    taskerImage: bid.tasker?.profilePicture || '', 
+                    taskerEmail: bid.tasker?.emailAddress || ''
                 }))
             }
         });

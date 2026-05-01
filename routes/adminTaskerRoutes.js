@@ -10,7 +10,8 @@ import {
   activateTasker,
   sendTaskerEmail,
   lockTasker,
-  unlockTasker
+  unlockTasker,
+  sendBulkTaskerEmail
 } from '../controllers/adminTaskerController.js';
 
 const router = express.Router();
@@ -74,5 +75,12 @@ router.post(
   allowAdminRoles('super_admin', 'operations', 'support'), // Added support role for emails
   sendTaskerEmail
 );
+
+router.post('/bulk-email', 
+  protectAdmin,
+  allowAdminRoles('super_admin', 'operations', 'support'),
+  sendBulkTaskerEmail
+);
+
 
 export default router;

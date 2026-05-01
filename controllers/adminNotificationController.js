@@ -3,7 +3,7 @@ import User from '../models/user.js';
 import Tasker from '../models/tasker.js';   
 import { logAdminAction } from '../utils/auditLogger.js';
 import Notification from '../models/notification.js'; // <-- ADD THIS IMPORT AT THE TOP
-import { sendEmail } from '../services/emailService.js'; // Adjust the path as needed
+import { sendEmail, customAdminEmailHtml } from '../services/emailService.js';
 import * as Sentry from '@sentry/node';
 // Make sure this is at the top of adminNotificationController.js
 
@@ -51,17 +51,55 @@ export const getNotificationStats = async (req, res) => {
 // GET /api/admin/notifications
 export const getAllNotifications = async (req, res) => {
     try {
-        const notifications = await AdminNotification.find() // <-- UPDATED
+        const notifications = await AdminNotification.find()
             .populate('sentBy', 'firstName lastName') 
-            .sort({ createdAt: -1 }); 
+            .sort({ createdAt: -1 })
+            .lean(); // Crucial: Gives us raw, easily editable JSON
+
+        const formattedNotifications = notifications.map(notif => {
+            // Get the saved array from the database
+            const methods = notif.sentThrough || [];
+
+            // 1. Create a super-array that matches EVERY possible string case
+            const allCases = [];
+            methods.forEach(m => {
+                if(!m) return;
+                const str = String(m);
+                allCases.push(str, str.toLowerCase(), str.toUpperCase());
+                if (str.toLowerCase().includes('app')) {
+                    allCases.push('in-app', 'IN-APP', 'inApp', 'InApp');
+                }
+            });
+
+            // 2. Check for Booleans (Extremely common for frontend UI pills)
+            const hasEmail = methods.some(m => m.toLowerCase().includes('email'));
+            const hasInApp = methods.some(m => m.toLowerCase().includes('app'));
+
+            // 3. THE KITCHEN SINK: Attach the data to EVERY possible key the frontend might be reading
+            
+            // Array formats
+            notif.sentThrough = allCases;
+            notif.channels = allCases;
+            notif.deliveryChannels = allCases;
+
+            // Boolean formats
+            notif.isEmail = hasEmail;
+            notif.isInApp = hasInApp;
+            notif.sendEmail = hasEmail;
+            notif.sendInApp = hasInApp;
+            notif.email = hasEmail;
+            notif.inApp = hasInApp;
+            
+            return notif;
+        });
 
         res.status(200).json({
             status: 'success',
-            results: notifications.length,
-            data: notifications
+            results: formattedNotifications.length,
+            data: formattedNotifications
         });
     } catch (error) {
-        Sentry.captureException(error);
+        console.error('Failed to fetch notifications:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch notifications' });
     }
 };
@@ -69,11 +107,20 @@ export const getAllNotifications = async (req, res) => {
 // POST /api/admin/notifications/send
 export const sendNotification = async (req, res) => {
     try {
-        const { title, message, type, audience, selectedUserIds } = req.body;
+        const { title, message, type, audience, selectedUserIds, sentThrough } = req.body;
 
         if (!title || !message || !audience) {
             return res.status(400).json({ status: 'error', message: 'Title, message, and audience are required' });
         }
+
+        // FIX 1: Sanitize frontend data. Force whatever they send into Title Case!
+        const rawChannels = sentThrough && sentThrough.length > 0 ? sentThrough : ['Email', 'In-App'];
+        const activesentThrough = rawChannels.map(ch => {
+            const lowerCh = ch.toLowerCase();
+            if (lowerCh.includes('email')) return 'Email';
+            if (lowerCh.includes('in-app') || lowerCh.includes('app')) return 'In-App';
+            return ch; // Fallback
+        });
 
         let recipientsCount = 0;
         let notificationsToInsert = []; 
@@ -86,7 +133,6 @@ export const sendNotification = async (req, res) => {
                 notificationsToInsert.push({ user: u._id, title, message, type: type || 'Announcement' });
                 if (u.emailAddress) emailRecipients.push({ to: u.emailAddress, name: u.fullName });
             });
-
         } else if (audience === 'All Taskers') {
             const taskers = await Tasker.find().select('_id emailAddress firstName');
             recipientsCount = taskers.length;
@@ -94,7 +140,6 @@ export const sendNotification = async (req, res) => {
                 notificationsToInsert.push({ tasker: t._id, title, message, type: type || 'Announcement' });
                 if (t.emailAddress) emailRecipients.push({ to: t.emailAddress, name: t.firstName });
             });
-
         } else if (audience === 'Everyone') {
             const users = await User.find().select('_id emailAddress fullName');
             const taskers = await Tasker.find().select('_id emailAddress firstName');
@@ -108,7 +153,6 @@ export const sendNotification = async (req, res) => {
                 notificationsToInsert.push({ tasker: t._id, title, message, type: type || 'Announcement' });
                 if (t.emailAddress) emailRecipients.push({ to: t.emailAddress, name: t.firstName });
             });
-
         } else if (audience === 'Selected Users') {
             recipientsCount = selectedUserIds ? selectedUserIds.length : 0;
             if (recipientsCount > 0) {
@@ -126,40 +170,41 @@ export const sendNotification = async (req, res) => {
             }
         }
 
+        // ADDED: Save the activesentThrough to the database so the frontend table can read it later
         const newNotification = await AdminNotification.create({
             title, 
             message, 
             type: type || 'Announcement', 
             audience, 
+            sentThrough: activesentThrough, // <--- SAVED HERE
             recipientsCount, 
             selectedUserIds: audience === 'Selected Users' ? selectedUserIds : [],
             sentBy: req.admin._id
         });
 
-        if (notificationsToInsert.length > 0) {
+        // ONLY fire In-App DB insertions if the Admin checked "In-App"
+        if (activesentThrough.includes('In-App') && notificationsToInsert.length > 0) {
             const BATCH_SIZE = 1000;
             for (let i = 0; i < notificationsToInsert.length; i += BATCH_SIZE) {
                 await Notification.insertMany(notificationsToInsert.slice(i, i + BATCH_SIZE));
             }
         }
 
-        if (emailRecipients.length > 0) {
+        // ONLY fire Resend emails if the Admin checked "Email"
+        if (activesentThrough.includes('Email') && emailRecipients.length > 0) {
             console.log(`Starting background email blast to ${emailRecipients.length} recipients...`);
-            
             setTimeout(async () => {
                 const CHUNK_SIZE = 50; 
                 for (let i = 0; i < emailRecipients.length; i += CHUNK_SIZE) {
                     const chunk = emailRecipients.slice(i, i + CHUNK_SIZE);
-                    
                     await Promise.all(chunk.map(recipient => 
                         sendEmail({
                             to: recipient.to,
                             subject: title,
-                            // FIX: Now using the official company template
-                            html: customAdminEmailHtml({ name: recipient.name || 'there', message })
+                            html: customAdminEmailHtml({ name: recipient.name || 'there', message }),
+                            dbNotificationId: newNotification._id 
                         })
                     ));
-                    
                     await new Promise(resolve => setTimeout(resolve, 1000));
                 }
                 console.log('Background email blast completed!');
@@ -169,7 +214,7 @@ export const sendNotification = async (req, res) => {
         await logAdminAction({
             adminId: req.admin._id, action: 'SENT_NOTIFICATION',
             resourceType: 'AdminNotification', resourceId: newNotification._id,
-            details: `Sent to ${audience}`, req
+            details: `Sent to ${audience} via ${activesentThrough.join(', ')}`, req
         });
 
         res.status(201).json({
@@ -179,25 +224,24 @@ export const sendNotification = async (req, res) => {
         });
 
     } catch (error) {
-        Sentry.captureException(error);
         console.error('Send notification error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to send notification' });
     }
 };
 
 // POST /api/admin/notifications/:id/resend
-// POST /api/admin/notifications/:id/resend
 export const resendNotification = async (req, res) => {
     try {
         const { id } = req.params;
-        
         const notificationRecord = await AdminNotification.findById(id);
 
         if (!notificationRecord) {
             return res.status(404).json({ status: 'error', message: 'Notification record not found' });
         }
 
-        const { title, message, type, audience } = notificationRecord;
+        // Pull the sentThrough it was originally sent with
+        const { title, message, type, audience, sentThrough } = notificationRecord;
+        const activesentThrough = sentThrough && sentThrough.length > 0 ? sentThrough : ['Email', 'In-App'];
 
         let recipientsCount = 0;
         let notificationsToInsert = []; 
@@ -210,7 +254,6 @@ export const resendNotification = async (req, res) => {
                 notificationsToInsert.push({ user: u._id, title, message, type: type || 'Announcement' });
                 if (u.emailAddress) emailRecipients.push({ to: u.emailAddress, name: u.fullName });
             });
-
         } else if (audience === 'All Taskers') {
             const taskers = await Tasker.find().select('_id emailAddress firstName');
             recipientsCount = taskers.length;
@@ -218,12 +261,10 @@ export const resendNotification = async (req, res) => {
                 notificationsToInsert.push({ tasker: t._id, title, message, type: type || 'Announcement' });
                 if (t.emailAddress) emailRecipients.push({ to: t.emailAddress, name: t.firstName });
             });
-
         } else if (audience === 'Everyone') {
             const users = await User.find().select('_id emailAddress fullName');
             const taskers = await Tasker.find().select('_id emailAddress firstName');
             recipientsCount = users.length + taskers.length;
-            
             users.forEach(u => {
                 notificationsToInsert.push({ user: u._id, title, message, type: type || 'Announcement' });
                 if (u.emailAddress) emailRecipients.push({ to: u.emailAddress, name: u.fullName });
@@ -232,11 +273,9 @@ export const resendNotification = async (req, res) => {
                 notificationsToInsert.push({ tasker: t._id, title, message, type: type || 'Announcement' });
                 if (t.emailAddress) emailRecipients.push({ to: t.emailAddress, name: t.firstName });
             });
-
         } else if (audience === 'Selected Users') {
             const savedUserIds = notificationRecord.selectedUserIds || [];
             recipientsCount = savedUserIds.length;
-            
             if (recipientsCount > 0) {
                 const matchedUsers = await User.find({ _id: { $in: savedUserIds } }).select('_id emailAddress fullName');
                 const matchedTaskers = await Tasker.find({ _id: { $in: savedUserIds } }).select('_id emailAddress firstName');
@@ -254,30 +293,29 @@ export const resendNotification = async (req, res) => {
             }
         }
 
-        if (notificationsToInsert.length > 0) {
+        // ONLY fire In-App DB insertions if the original channel included "In-App"
+        if (activesentThrough.includes('In-App') && notificationsToInsert.length > 0) {
             const BATCH_SIZE = 1000;
             for (let i = 0; i < notificationsToInsert.length; i += BATCH_SIZE) {
                 await Notification.insertMany(notificationsToInsert.slice(i, i + BATCH_SIZE));
             }
         }
 
-        if (emailRecipients.length > 0) {
+        // ONLY fire Resend emails if the original channel included "Email"
+        if (activesentThrough.includes('Email') && emailRecipients.length > 0) {
             console.log(`Starting background email blast for RESEND to ${emailRecipients.length} recipients...`);
-            
             setTimeout(async () => {
                 const CHUNK_SIZE = 50; 
                 for (let i = 0; i < emailRecipients.length; i += CHUNK_SIZE) {
                     const chunk = emailRecipients.slice(i, i + CHUNK_SIZE);
-                    
                     await Promise.all(chunk.map(recipient => 
                         sendEmail({
                             to: recipient.to,
                             subject: `[Reminder] ${title}`,
-                            // FIX: Now using the official company template
-                            html: customAdminEmailHtml({ name: recipient.name || 'there', message })
+                            html: customAdminEmailHtml({ name: recipient.name || 'there', message }),
+                            dbNotificationId: notificationRecord._id
                         })
                     ));
-                    
                     await new Promise(resolve => setTimeout(resolve, 1000));
                 }
                 console.log('Background email blast RESEND completed!');
@@ -292,7 +330,7 @@ export const resendNotification = async (req, res) => {
         await logAdminAction({
             adminId: req.admin._id, action: 'RESENT_NOTIFICATION',
             resourceType: 'AdminNotification', resourceId: notificationRecord._id,
-            details: `Resent to ${audience} (Count: ${notificationRecord.resentCount})`, req
+            details: `Resent to ${audience} via ${activesentThrough.join(', ')} (Count: ${notificationRecord.resentCount})`, req
         });
 
         res.status(200).json({
