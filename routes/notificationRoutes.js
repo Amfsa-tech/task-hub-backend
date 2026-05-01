@@ -1,7 +1,8 @@
 import express from 'express';
 import { 
     getMyNotifications, 
-    markNotificationRead 
+    markNotificationRead,
+    markAllNotificationsRead
 } from '../controllers/notificationController.js';
 
 // Assuming your middleware is named protectUser
@@ -18,6 +19,10 @@ router.use(protectAny);
 // GET /api/notifications
 // Frontend pulls this to show the bell icon badge and the dropdown list
 router.get('/', getMyNotifications);
+
+// PATCH /api/notifications/read-all
+// Frontend calls this to mark all notifications as read at once
+router.patch('/read-all', markAllNotificationsRead);
 
 // PATCH /api/notifications/:id/read
 // Frontend calls this when a user clicks a specific notification

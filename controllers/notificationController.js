@@ -63,3 +63,31 @@ export const markNotificationRead = async (req, res) => {
         return res.status(500).json({ status: 'error', message: 'Failed to update notification' });
     }
 };
+
+/**
+ * PATCH /api/notifications/read-all
+ * Marks ALL notifications as read for the logged-in user/tasker
+ */
+export const markAllNotificationsRead = async (req, res) => {
+    try {
+        const userId = req.user._id;
+
+        const result = await Notification.updateMany(
+            {
+                $or: [{ user: userId }, { tasker: userId }],
+                read: false
+            },
+            { $set: { read: true } }
+        );
+
+        return res.json({
+            status: 'success',
+            message: 'All notifications marked as read',
+            data: { modifiedCount: result.modifiedCount }
+        });
+    } catch (error) {
+        Sentry.captureException(error);
+        console.error('Mark all read error:', error);
+        return res.status(500).json({ status: 'error', message: 'Failed to update notifications' });
+    }
+};

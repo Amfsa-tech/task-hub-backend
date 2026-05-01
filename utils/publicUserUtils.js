@@ -56,6 +56,7 @@ export const formatPublicUser = (user, scope = 'limited') => {
         },
         totalTasks,
         trustScore,
+        joinedAt: user.createdAt || null,
     };
 
     if (scope === 'full') {

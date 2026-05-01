@@ -346,7 +346,7 @@ const getTaskById = async (req, res) => {
         }
         
     const task = await Task.findById(id)
-            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
+            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent createdAt')
             .populate('assignedTasker', 'firstName lastName profilePicture')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description');
