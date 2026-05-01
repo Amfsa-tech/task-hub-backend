@@ -1,5 +1,6 @@
 import User from "../models/user.js";
 import Tasker from "../models/tasker.js";
+import Task from "../models/task.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
@@ -547,6 +548,13 @@ export const getTasker = async (req, res) => {
       });
     }
 
+    // Compute task stats for the tasker
+    const [tasksCompleted, totalAssigned] = await Promise.all([
+      Task.countDocuments({ assignedTasker: tasker._id, status: 'completed' }),
+      Task.countDocuments({ assignedTasker: tasker._id }),
+    ]);
+    const successRate = totalAssigned > 0 ? Math.round((tasksCompleted / totalAssigned) * 100) : 0;
+
     const taskerInfo = {
       _id: tasker._id,
       firstName: tasker.firstName,
@@ -571,6 +579,10 @@ export const getTasker = async (req, res) => {
       isKYCVerified: tasker?.isKYCVerified,
       lastLogin: tasker.lastLogin,
       createdAt: tasker.createdAt,
+      averageRating: tasker.averageRating || 0,
+      tasksCompleted,
+      totalAssigned,
+      successRate,
     };
 
     return res.status(200).json({
