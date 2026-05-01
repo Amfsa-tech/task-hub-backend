@@ -6,6 +6,7 @@ import { Types } from 'mongoose';
 import * as Sentry from '@sentry/node';
 import { notifyOnNewChatMessage } from '../utils/notificationUtils.js';
 import { uploadMultipleToCloudinary } from '../utils/uploadService.js';
+import { formatPublicUser } from '../utils/publicUserUtils.js';
 
 const isValidId = (id) => Types.ObjectId.isValid(id);
 
@@ -92,10 +93,13 @@ export const createOrGetConversation = async (req, res) => {
 
     const populated = await Conversation.findById(conversation._id)
       .populate('task', 'title budget status')
-      .populate('user', 'fullName profilePicture')
+      .populate('user', 'fullName profilePicture country residentState tasksPostedCount totalSpent')
       .populate('tasker', 'firstName lastName profilePicture');
 
-    return res.status(200).json({ status: 'success', conversation: populated });
+    const convObj = populated.toObject();
+    convObj.user = formatPublicUser(convObj.user, 'full');
+
+    return res.status(200).json({ status: 'success', conversation: convObj });
   } catch (error) {
     Sentry.captureException(error);
     console.error('createOrGetConversation error:', error);
@@ -117,12 +121,18 @@ export const listConversations = async (req, res) => {
       .skip(skip)
       .limit(limit)
       .populate('task', 'title budget status')
-      .populate('user', 'fullName profilePicture')
+      .populate('user', 'fullName profilePicture country residentState tasksPostedCount totalSpent')
       .populate('tasker', 'firstName lastName profilePicture');
+
+    const transformed = conversations.map(c => {
+      const obj = c.toObject();
+      obj.user = formatPublicUser(obj.user, 'full');
+      return obj;
+    });
 
     return res.status(200).json({
       status: 'success',
-      conversations,
+      conversations: transformed,
       totalPages: Math.ceil(total / limit),
       currentPage: page,
     });
@@ -140,12 +150,15 @@ export const getConversation = async (req, res) => {
 
     const conversation = await Conversation.findById(id)
       .populate('task', 'title budget status')
-      .populate('user', 'fullName profilePicture')
+      .populate('user', 'fullName profilePicture country residentState tasksPostedCount totalSpent')
       .populate('tasker', 'firstName lastName profilePicture');
     if (!conversation) return res.status(404).json({ status: 'error', message: 'Conversation not found' });
     if (!ensureParticipant(conversation, req)) return res.status(403).json({ status: 'error', message: 'Forbidden' });
 
-    return res.status(200).json({ status: 'success', conversation });
+    const convObj = conversation.toObject();
+    convObj.user = formatPublicUser(convObj.user, 'full');
+
+    return res.status(200).json({ status: 'success', conversation: convObj });
   } catch (error) {
     Sentry.captureException(error);
     console.error('getConversation error:', error);
