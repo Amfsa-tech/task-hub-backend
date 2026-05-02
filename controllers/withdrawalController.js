@@ -193,15 +193,14 @@ export const getBankAccount = async (req, res) => {
  */
 export const requestWithdrawal = async (req, res) => {
     try {
-        // Fresh read to get current wallet balance
         const tasker = await Tasker.findById(req.tasker._id).select('wallet bankAccount');
         if (!tasker) {
             return res.status(404).json({ status: 'error', message: 'Tasker not found' });
         }
 
         const { amount } = req.body;
-
         const withdrawAmount = Number(amount);
+        
         if (!withdrawAmount || withdrawAmount < MINIMUM_WITHDRAWAL) {
             return res.status(400).json({
                 status: 'error',
@@ -216,7 +215,6 @@ export const requestWithdrawal = async (req, res) => {
             });
         }
 
-        // Check bank account
         if (!tasker.bankAccount || !tasker.bankAccount.accountNumber) {
             return res.status(400).json({
                 status: 'error',
@@ -224,7 +222,6 @@ export const requestWithdrawal = async (req, res) => {
             });
         }
 
-        // Check 24hr cooldown since last completed task
         const lastCompletedTask = await Task.findOne({
             assignedTasker: req.tasker._id,
             status: 'completed'
@@ -241,7 +238,6 @@ export const requestWithdrawal = async (req, res) => {
             }
         }
 
-        // Check for existing pending withdrawal
         const existingWithdrawal = await Withdrawal.findOne({
             tasker: req.tasker._id,
             status: { $in: ['pending', 'approved'] }
@@ -254,24 +250,18 @@ export const requestWithdrawal = async (req, res) => {
             });
         }
 
-        // Atomically deduct from wallet 
-        const walletUpdate = await Tasker.updateOne(
-            { _id: req.tasker._id, wallet: { $gte: withdrawAmount } },
-            { $inc: { wallet: -withdrawAmount } }
-        );
+        // 🔐 SNAPSHOT: Deducting wallet safely
+        const prevBal = tasker.wallet || 0;
+        const newBal = prevBal - withdrawAmount;
+        tasker.wallet = newBal;
+        await tasker.save();
 
-        if (!walletUpdate.modifiedCount) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Insufficient wallet balance'
-            });
-        }
-
-        // Create withdrawal request
         const withdrawal = await Withdrawal.create({
             tasker: req.tasker._id,
             amount: withdrawAmount,
             status: 'pending',
+            balanceBefore: prevBal, // 🔐
+            balanceAfter: newBal,   // 🔐
             bankDetails: {
                 bankName: tasker.bankAccount.bankName,
                 bankCode: tasker.bankAccount.bankCode,
@@ -280,7 +270,6 @@ export const requestWithdrawal = async (req, res) => {
             }
         });
 
-        // Notify tasker that their withdrawal request was submitted
         try {
             await notifyWithdrawalRequested(req.tasker._id, withdrawAmount, 'bank_transfer');
         } catch (notifyErr) {

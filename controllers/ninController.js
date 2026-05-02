@@ -114,6 +114,7 @@ export const submitNIN = async (req, res) => {
         const kyc = await KYCVerification.create({
             user: req.user._id,
             userType: 'User',
+            nin,
             maskedNin: nin.slice(0, 3) + '****' + nin.slice(-4),
             status: result.isVerified ? 'Approved' : 'Pending',
             verificationData: {

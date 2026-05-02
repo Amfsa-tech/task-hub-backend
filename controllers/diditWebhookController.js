@@ -141,12 +141,13 @@ export const handleDiditWebhook = async (req, res) => {
     const idVerification = decision.id_verifications?.[0];
     const warnings = idVerification?.warnings || [];
 
-    // --- Upsert KYC record (only masked NIN is stored) ---
+    // --- Upsert KYC record (raw NIN + masked NIN stored) ---
     await KYCVerification.findOneAndUpdate(
       { user: userId, provider: 'didit' },
       {
         user: userId,
         userType,
+        nin: rawNin,
         maskedNin,
         provider: 'didit',
         status: normalizedStatus,

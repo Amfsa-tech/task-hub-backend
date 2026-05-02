@@ -62,6 +62,7 @@ const userSchema = new Schema({
 
     // Public profile stats (exposed to taskers)
     tasksPostedCount: { type: Number, default: 0 },
+    completedTasksCount: { type: Number, default: 0 },
     totalSpent: { type: Number, default: 0 },
 
     lastLoginAt: { type: Date },

@@ -234,8 +234,8 @@ export const sendBulkUserEmail = async (req, res) => {
         const { subject, message, targetGroup } = req.body; 
         
         let query = {};
-        if (targetGroup === 'verified') query.verifyIdentity = true;
-        else if (targetGroup === 'unverified') query.verifyIdentity = false;
+        if (targetGroup === 'verified') query.isKYCVerified = true;
+        else if (targetGroup === 'unverified') query.isKYCVerified = false;
 
         const users = await User.find(query).select('_id emailAddress fullName');
 

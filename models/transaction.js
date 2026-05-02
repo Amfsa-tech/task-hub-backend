@@ -58,6 +58,15 @@ const transactionSchema = new mongoose.Schema({
     },
     creditedAt: {
         type: Date
+    },
+    // Add these to your schemas (Transaction, Withdrawal, Task)
+    balanceBefore: { 
+        type: Number, 
+        default: null // Null allows us to know which ones are old transactions
+    },
+    balanceAfter: { 
+        type: Number, 
+        default: null 
     }
 }, { timestamps: true });
 

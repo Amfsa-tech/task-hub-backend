@@ -179,7 +179,6 @@ export const approveWithdrawal = async (req, res) => {
                 transaction.sign(masterKeypair);
                 const response = await stellarServer.submitTransaction(transaction);
 
-                // Update withdrawal status
                 withdrawal.status = 'completed';
                 withdrawal.blockchainTxId = response.hash;
                 withdrawal.reviewedBy = req.admin._id;
@@ -187,7 +186,10 @@ export const approveWithdrawal = async (req, res) => {
                 withdrawal.completedAt = new Date();
                 await withdrawal.save();
 
-                // Create Transaction record
+                // 🔐 SNAPSHOT: Fetch tasker to record accurate snapshot at this exact moment
+                const taskerModel = await Tasker.findById(tasker._id);
+                const currentTaskerBal = taskerModel.wallet || 0;
+
                 await Transaction.create({
                     tasker: tasker._id,
                     amount: withdrawal.amount,
@@ -198,10 +200,11 @@ export const approveWithdrawal = async (req, res) => {
                     provider: 'stellar',
                     paymentPurpose: 'withdrawal',
                     currency: 'NGN',
+                    balanceBefore: currentTaskerBal, // 🔐
+                    balanceAfter: currentTaskerBal,  // 🔐
                     metadata: { txHash: response.hash }
                 });
 
-                // 1. Send In-App Notification (Grant Transparency)
                 const explorerLink = `https://stellar.expert/explorer/testnet/tx/${response.hash}`;
                 await Notification.create({
                     tasker: tasker._id,
@@ -214,7 +217,6 @@ export const approveWithdrawal = async (req, res) => {
                     }
                 });
 
-                // 2. Send Web Push notification
                 try {
                     const { sendWebPushToAccount } = await import('../services/webPushService.js');
                     const taskerWithPush = await Tasker.findById(tasker._id).select('pushSubscriptions');
@@ -225,7 +227,6 @@ export const approveWithdrawal = async (req, res) => {
                     console.error('Web push notification error (crypto payout):', webPushErr.message);
                 }
 
-                // 3. Send Automated Email Receipt (Brand purple layout)
                 const receiptHtml = baseLayout('Payout Successful 💰', payoutSuccessEmailHtml({
                     taskerName: tasker.firstName,
                     amount: withdrawal.amount,
@@ -238,7 +239,6 @@ export const approveWithdrawal = async (req, res) => {
                     html: receiptHtml
                 });
 
-                // 3. Log User Activity (Auditing)
                 await ActivityLog.create({
                     userId: tasker._id,
                     userModel: 'Tasker',
@@ -273,7 +273,6 @@ export const approveWithdrawal = async (req, res) => {
             withdrawal.reviewedAt = new Date();
             await withdrawal.save();
 
-            // Notify In-App
             await Notification.create({
                 tasker: tasker._id,
                 title: 'Withdrawal Approved 🏦',
@@ -281,7 +280,6 @@ export const approveWithdrawal = async (req, res) => {
                 type: 'payout'
             });
 
-            // Send Web Push notification
             try {
                 const { sendWebPushToAccount } = await import('../services/webPushService.js');
                 const taskerWithPush = await Tasker.findById(tasker._id).select('pushSubscriptions');
@@ -292,7 +290,6 @@ export const approveWithdrawal = async (req, res) => {
                 console.error('Web push notification error (bank approval):', webPushErr.message);
             }
 
-            // Notify via Email
             const bankHtml = baseLayout('Withdrawal Approved', `<p>Hi ${tasker.firstName}, your bank withdrawal of <b>₦${withdrawal.amount}</b> has been approved and is being processed.</p>`);
             await sendEmail({
                 to: tasker.emailAddress,
@@ -309,16 +306,13 @@ export const approveWithdrawal = async (req, res) => {
             });
 
             return res.json({ status: 'success', message: 'Bank withdrawal approved.' });
-        Sentry.captureException(error);
         }
     } catch (error) {
+        Sentry.captureException(error);
         return res.status(500).json({ status: 'error', message: 'Failed to approve withdrawal' });
     }
 };
 
-/**
- * PATCH /api/admin/withdrawals/:id/reject
- */
 export const rejectWithdrawal = async (req, res) => {
     try {
         const { reason } = req.body;
@@ -331,18 +325,22 @@ export const rejectWithdrawal = async (req, res) => {
             return res.status(400).json({ status: 'error', message: `Cannot reject with status '${withdrawal.status}'` });
         }
 
-        await Tasker.updateOne(
-            { _id: withdrawal.tasker },
-            { $inc: { wallet: Math.abs(withdrawal.amount) } }
-        );
+        // 🔐 SNAPSHOT: Refund Wallet safely
+        const taskerToRefund = await Tasker.findById(withdrawal.tasker);
+        const prevBal = taskerToRefund.wallet || 0;
+        const newBal = prevBal + Math.abs(withdrawal.amount);
+        taskerToRefund.wallet = newBal;
+        await taskerToRefund.save();
 
         withdrawal.status = 'rejected';
         withdrawal.rejectionReason = reason;
         withdrawal.reviewedBy = req.admin._id;
         withdrawal.reviewedAt = new Date();
+        // Option to record snapshot info on the rejected withdrawal as well
+        withdrawal.balanceBefore = prevBal;
+        withdrawal.balanceAfter = newBal;
         await withdrawal.save();
 
-        // Notify tasker about rejection + refund
         try {
             await notifyWithdrawalRejected(withdrawal.tasker.toString(), withdrawal.amount, reason);
         } catch (notifyErr) {
@@ -358,16 +356,13 @@ export const rejectWithdrawal = async (req, res) => {
             details: { reason }
         });
 
-        Sentry.captureException(error);
         return res.json({ status: 'success', message: 'Withdrawal rejected and funds returned' });
     } catch (error) {
+        Sentry.captureException(error);
         return res.status(500).json({ status: 'error', message: 'Failed to reject withdrawal' });
     }
 };
 
-/**
- * PATCH /api/admin/withdrawals/:id/complete
- */
 export const completeWithdrawal = async (req, res) => {
     try {
         const withdrawal = await Withdrawal.findById(req.params.id);
@@ -385,6 +380,10 @@ export const completeWithdrawal = async (req, res) => {
         withdrawal.completedAt = new Date();
         await withdrawal.save();
 
+        // 🔐 SNAPSHOT: Final logging 
+        const taskerModel = await Tasker.findById(withdrawal.tasker);
+        const currentTaskerBal = taskerModel.wallet || 0;
+
         await Transaction.create({
             tasker: withdrawal.tasker,
             amount: withdrawal.amount,
@@ -395,10 +394,11 @@ export const completeWithdrawal = async (req, res) => {
             provider: 'system',
             paymentPurpose: 'withdrawal',
             currency: 'NGN',
+            balanceBefore: currentTaskerBal, // 🔐
+            balanceAfter: currentTaskerBal,  // 🔐
             metadata: { withdrawalId: withdrawal._id.toString() }
         });
 
-        // Notify tasker about completed bank withdrawal
         try {
             await notifyWithdrawalCompleted(
                 withdrawal.tasker.toString(),

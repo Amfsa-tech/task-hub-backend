@@ -25,8 +25,27 @@ export const computeSpendingRange = (totalSpent) => {
     return '<1k';
 };
 
+/**
+ * Compute a trust score based on task completion ratio.
+ * Formula: (completedTasks / totalTasks) * 100, clamped 0–100.
+ * If totalTasks is 0, returns 0 (neutral).
+ *
+ * @param {number} completedTasks
+ * @param {number} totalTasks
+ * @returns {number} Trust score 0–100
+ */
+export const computeTrustScore = (completedTasks, totalTasks) => {
+    if (!totalTasks || totalTasks <= 0) return 0;
+    const score = (completedTasks / totalTasks) * 100;
+    return Math.min(100, Math.max(0, Math.round(score)));
+};
+
 export const formatPublicUser = (user, scope = 'limited') => {
     if (!user) return null;
+
+    const totalTasks = user.tasksPostedCount ?? 0;
+    const completedTasks = user.completedTasksCount ?? 0;
+    const trustScore = computeTrustScore(completedTasks, totalTasks);
 
     const base = {
         fullName: user.fullName || null,
@@ -35,12 +54,16 @@ export const formatPublicUser = (user, scope = 'limited') => {
             residentState: user.residentState || null,
             country: user.country || null,
         },
+        totalTasks,
+        trustScore,
+        joinedAt: user.createdAt || null,
     };
 
     if (scope === 'full') {
         return {
             ...base,
-            tasksPostedCount: user.tasksPostedCount ?? 0,
+            tasksPostedCount: totalTasks,
+            completedTasksCount: completedTasks,
             spendingRange: computeSpendingRange(user.totalSpent),
         };
     }
