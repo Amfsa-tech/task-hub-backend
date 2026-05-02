@@ -113,7 +113,14 @@ export const sendNotification = async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'Title, message, and audience are required' });
         }
 
-        // FIX 1: Sanitize frontend data. Force whatever they send into Title Case!
+        // FIX: Force frontend audience casing to match Strict DB Enums
+        let mappedAudience = 'Everyone';
+        const rawAudience = String(audience).toLowerCase().trim();
+        if (rawAudience === 'all users') mappedAudience = 'All Users';
+        else if (rawAudience === 'all taskers') mappedAudience = 'All Taskers';
+        else if (rawAudience === 'selected users') mappedAudience = 'Selected Users';
+
+        // Sanitize frontend channels
         const rawChannels = sentThrough && sentThrough.length > 0 ? sentThrough : ['Email', 'In-App'];
         const activesentThrough = rawChannels.map(ch => {
             const lowerCh = ch.toLowerCase();
@@ -122,67 +129,74 @@ export const sendNotification = async (req, res) => {
             return ch; // Fallback
         });
 
+        // Ensure Type matches strict Enums
+        let mappedType = 'Announcement';
+        if (type) {
+            const rawType = String(type).toLowerCase();
+            if (rawType.includes('alert')) mappedType = 'Alert';
+            else if (rawType.includes('warning')) mappedType = 'Warning';
+            else if (rawType.includes('update')) mappedType = 'Update';
+        }
+
         let recipientsCount = 0;
         let notificationsToInsert = []; 
         let emailRecipients = [];
 
-        if (audience === 'All Users') {
+        if (mappedAudience === 'All Users') {
             const users = await User.find().select('_id emailAddress fullName');
             recipientsCount = users.length;
             users.forEach(u => {
-                notificationsToInsert.push({ user: u._id, title, message, type: type || 'Announcement' });
+                notificationsToInsert.push({ user: u._id, title, message, type: mappedType });
                 if (u.emailAddress) emailRecipients.push({ to: u.emailAddress, name: u.fullName });
             });
-        } else if (audience === 'All Taskers') {
+        } else if (mappedAudience === 'All Taskers') {
             const taskers = await Tasker.find().select('_id emailAddress firstName');
             recipientsCount = taskers.length;
             taskers.forEach(t => {
-                notificationsToInsert.push({ tasker: t._id, title, message, type: type || 'Announcement' });
+                notificationsToInsert.push({ tasker: t._id, title, message, type: mappedType });
                 if (t.emailAddress) emailRecipients.push({ to: t.emailAddress, name: t.firstName });
             });
-        } else if (audience === 'Everyone') {
+        } else if (mappedAudience === 'Everyone') {
             const users = await User.find().select('_id emailAddress fullName');
             const taskers = await Tasker.find().select('_id emailAddress firstName');
             recipientsCount = users.length + taskers.length;
             
             users.forEach(u => {
-                notificationsToInsert.push({ user: u._id, title, message, type: type || 'Announcement' });
+                notificationsToInsert.push({ user: u._id, title, message, type: mappedType });
                 if (u.emailAddress) emailRecipients.push({ to: u.emailAddress, name: u.fullName });
             });
             taskers.forEach(t => {
-                notificationsToInsert.push({ tasker: t._id, title, message, type: type || 'Announcement' });
+                notificationsToInsert.push({ tasker: t._id, title, message, type: mappedType });
                 if (t.emailAddress) emailRecipients.push({ to: t.emailAddress, name: t.firstName });
             });
-        } else if (audience === 'Selected Users') {
+        } else if (mappedAudience === 'Selected Users') {
             recipientsCount = selectedUserIds ? selectedUserIds.length : 0;
             if (recipientsCount > 0) {
                 const matchedUsers = await User.find({ _id: { $in: selectedUserIds } }).select('_id emailAddress fullName');
                 const matchedTaskers = await Tasker.find({ _id: { $in: selectedUserIds } }).select('_id emailAddress firstName');
 
                 matchedUsers.forEach(u => {
-                    notificationsToInsert.push({ user: u._id, title, message, type: type || 'Announcement' });
+                    notificationsToInsert.push({ user: u._id, title, message, type: mappedType });
                     if (u.emailAddress) emailRecipients.push({ to: u.emailAddress, name: u.fullName });
                 });
                 matchedTaskers.forEach(t => {
-                    notificationsToInsert.push({ tasker: t._id, title, message, type: type || 'Announcement' });
+                    notificationsToInsert.push({ tasker: t._id, title, message, type: mappedType });
                     if (t.emailAddress) emailRecipients.push({ to: t.emailAddress, name: t.firstName });
                 });
             }
         }
 
-        // ADDED: Save the activesentThrough to the database so the frontend table can read it later
         const newNotification = await AdminNotification.create({
             title, 
             message, 
-            type: type || 'Announcement', 
-            audience, 
-            sentThrough: activesentThrough, // <--- SAVED HERE
+            type: mappedType, 
+            audience: mappedAudience, // Saved exactly as Mongoose wants it
+            sentThrough: activesentThrough, 
             recipientsCount, 
-            selectedUserIds: audience === 'Selected Users' ? selectedUserIds : [],
+            selectedUserIds: mappedAudience === 'Selected Users' ? selectedUserIds : [],
             sentBy: req.admin._id
         });
 
-        // ONLY fire In-App DB insertions if the Admin checked "In-App"
         if (activesentThrough.includes('In-App') && notificationsToInsert.length > 0) {
             const BATCH_SIZE = 1000;
             for (let i = 0; i < notificationsToInsert.length; i += BATCH_SIZE) {
@@ -190,7 +204,6 @@ export const sendNotification = async (req, res) => {
             }
         }
 
-        // ONLY fire Resend emails if the Admin checked "Email"
         if (activesentThrough.includes('Email') && emailRecipients.length > 0) {
             console.log(`Starting background email blast to ${emailRecipients.length} recipients...`);
             setTimeout(async () => {
@@ -214,7 +227,7 @@ export const sendNotification = async (req, res) => {
         await logAdminAction({
             adminId: req.admin._id, action: 'SENT_NOTIFICATION',
             resourceType: 'AdminNotification', resourceId: newNotification._id,
-            details: `Sent to ${audience} via ${activesentThrough.join(', ')}`, req
+            details: `Sent to ${mappedAudience} via ${activesentThrough.join(', ')}`, req
         });
 
         res.status(201).json({
@@ -239,9 +252,10 @@ export const resendNotification = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Notification record not found' });
         }
 
-        // Pull the sentThrough it was originally sent with
         const { title, message, type, audience, sentThrough } = notificationRecord;
         const activesentThrough = sentThrough && sentThrough.length > 0 ? sentThrough : ['Email', 'In-App'];
+        
+        let mappedType = type || 'Announcement';
 
         let recipientsCount = 0;
         let notificationsToInsert = []; 
@@ -251,14 +265,14 @@ export const resendNotification = async (req, res) => {
             const users = await User.find().select('_id emailAddress fullName');
             recipientsCount = users.length;
             users.forEach(u => {
-                notificationsToInsert.push({ user: u._id, title, message, type: type || 'Announcement' });
+                notificationsToInsert.push({ user: u._id, title, message, type: mappedType });
                 if (u.emailAddress) emailRecipients.push({ to: u.emailAddress, name: u.fullName });
             });
         } else if (audience === 'All Taskers') {
             const taskers = await Tasker.find().select('_id emailAddress firstName');
             recipientsCount = taskers.length;
             taskers.forEach(t => {
-                notificationsToInsert.push({ tasker: t._id, title, message, type: type || 'Announcement' });
+                notificationsToInsert.push({ tasker: t._id, title, message, type: mappedType });
                 if (t.emailAddress) emailRecipients.push({ to: t.emailAddress, name: t.firstName });
             });
         } else if (audience === 'Everyone') {
@@ -266,11 +280,11 @@ export const resendNotification = async (req, res) => {
             const taskers = await Tasker.find().select('_id emailAddress firstName');
             recipientsCount = users.length + taskers.length;
             users.forEach(u => {
-                notificationsToInsert.push({ user: u._id, title, message, type: type || 'Announcement' });
+                notificationsToInsert.push({ user: u._id, title, message, type: mappedType });
                 if (u.emailAddress) emailRecipients.push({ to: u.emailAddress, name: u.fullName });
             });
             taskers.forEach(t => {
-                notificationsToInsert.push({ tasker: t._id, title, message, type: type || 'Announcement' });
+                notificationsToInsert.push({ tasker: t._id, title, message, type: mappedType });
                 if (t.emailAddress) emailRecipients.push({ to: t.emailAddress, name: t.firstName });
             });
         } else if (audience === 'Selected Users') {
@@ -281,11 +295,11 @@ export const resendNotification = async (req, res) => {
                 const matchedTaskers = await Tasker.find({ _id: { $in: savedUserIds } }).select('_id emailAddress firstName');
 
                 matchedUsers.forEach(u => {
-                    notificationsToInsert.push({ user: u._id, title, message, type: type || 'Announcement' });
+                    notificationsToInsert.push({ user: u._id, title, message, type: mappedType });
                     if (u.emailAddress) emailRecipients.push({ to: u.emailAddress, name: u.fullName });
                 });
                 matchedTaskers.forEach(t => {
-                    notificationsToInsert.push({ tasker: t._id, title, message, type: type || 'Announcement' });
+                    notificationsToInsert.push({ tasker: t._id, title, message, type: mappedType });
                     if (t.emailAddress) emailRecipients.push({ to: t.emailAddress, name: t.firstName });
                 });
             } else {
@@ -293,7 +307,6 @@ export const resendNotification = async (req, res) => {
             }
         }
 
-        // ONLY fire In-App DB insertions if the original channel included "In-App"
         if (activesentThrough.includes('In-App') && notificationsToInsert.length > 0) {
             const BATCH_SIZE = 1000;
             for (let i = 0; i < notificationsToInsert.length; i += BATCH_SIZE) {
@@ -301,7 +314,6 @@ export const resendNotification = async (req, res) => {
             }
         }
 
-        // ONLY fire Resend emails if the original channel included "Email"
         if (activesentThrough.includes('Email') && emailRecipients.length > 0) {
             console.log(`Starting background email blast for RESEND to ${emailRecipients.length} recipients...`);
             setTimeout(async () => {
