@@ -11,6 +11,7 @@ import Transaction from '../models/transaction.js';
 import { notifyMatchingTaskers, notifyUserAboutTaskCompletion, notifyTaskerAboutTaskCancellation, notifyEscrowHeld, notifyEscrowRefunded, notifyUserTaskStarted, notifyTaskerPayoutReceived, notifyTaskerAboutOpenTaskCancellation, notifyTaskerAboutTaskUpdate, notifyTaskerAboutNewRating } from '../utils/notificationUtils.js';
 import User from '../models/user.js';
 import { uploadMultipleToCloudinary } from '../utils/uploadService.js';
+import { formatPublicUser } from '../utils/publicUserUtils.js';
 
 /**
  * Parse a multipart form field that may be a JSON string.
@@ -232,6 +233,13 @@ const createTask = async (req, res) => {
         });
         
         await task.save();
+
+        // Increment user's tasksPostedCount
+        try {
+            await User.updateOne({ _id: req.user._id }, { $inc: { tasksPostedCount: 1 } });
+        } catch (counterErr) {
+            console.error('Failed to increment tasksPostedCount:', counterErr);
+        }
         
         // Notify matching taskers about the new task (non-blocking)
         try {
@@ -291,20 +299,27 @@ const getAllTasks = async (req, res) => {
         
         // Get tasks with pagination
     const tasks = await Task.find(filterOptions)
-            .populate('user', 'fullName profilePicture')
+            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
             .populate('assignedTasker', 'firstName lastName profilePicture')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description')
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit);
+
+        // Transform user data to public shape (full scope — enriched user details)
+        const transformedTasks = tasks.map(task => {
+            const taskObj = task.toObject();
+            taskObj.user = formatPublicUser(taskObj.user, 'full');
+            return taskObj;
+        });
             
         res.status(200).json({
             status: "success",
-            count: tasks.length,
+            count: transformedTasks.length,
             totalPages: Math.ceil(totalTasks / limit),
             currentPage: page,
-            tasks
+            tasks: transformedTasks
         });
     } catch (error) {
         console.error("Get all tasks error:", error);
@@ -331,7 +346,7 @@ const getTaskById = async (req, res) => {
         }
         
     const task = await Task.findById(id)
-            .populate('user', 'fullName profilePicture')
+            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent createdAt')
             .populate('assignedTasker', 'firstName lastName profilePicture')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description');
@@ -342,10 +357,13 @@ const getTaskById = async (req, res) => {
                 message: "Task not found"
             });
         }
+
+        const taskObj = task.toObject();
+        taskObj.user = formatPublicUser(taskObj.user, 'full');
         
         res.status(200).json({
             status: "success",
-            task
+            task: taskObj
         });
     } catch (error) {
         console.error("Get task by ID error:", error);
@@ -828,6 +846,17 @@ const changeTaskStatus = async (req, res) => {
                 task.completionCode = undefined; // Clear sensitive code
                 await task.save();
 
+                // Increment user's totalSpent for spending range calculation
+                // and completedTasksCount for trust score calculation
+                try {
+                    await User.updateOne(
+                        { _id: task.user._id },
+                        { $inc: { totalSpent: task.escrowAmount, completedTasksCount: 1 } }
+                    );
+                } catch (spentErr) {
+                    console.error('Failed to increment totalSpent/completedTasksCount:', spentErr);
+                }
+
                 // Notify user about task completion
                 try {
                     const tasker = await Tasker.findById(task.assignedTasker).select('firstName lastName');
@@ -1132,7 +1161,7 @@ const getTaskerFeed = async (req, res) => {
         const fetchLimit = hasLocation ? limit * 5 : (cursor ? limit : 0);
         
         let taskQuery = Task.find(filterOptions)
-            .populate('user', 'fullName profilePicture')
+            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description')
             .select('-__v')
@@ -1207,6 +1236,9 @@ const getTaskerFeed = async (req, res) => {
         const tasksWithBidInfo = paginatedTasks.map(task => {
             const taskObj = task.toObject();
             const bidInfo = bidMap[task._id.toString()];
+            
+            // Transform user data to public shape (full scope for taskers)
+            taskObj.user = formatPublicUser(taskObj.user, 'full');
             
             // Add application type information
             const applicationInfo = {
@@ -1328,19 +1360,26 @@ const getTaskerTasks = async (req, res) => {
         const totalTasks = await Task.countDocuments(filterOptions);
 
         const tasks = await Task.find(filterOptions)
-            .populate('user', 'firstName lastName profilePicture')
+            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description')
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit);
 
+        // Transform user data to public shape (full scope for taskers)
+        const transformedTasks = tasks.map(task => {
+            const taskObj = task.toObject();
+            taskObj.user = formatPublicUser(taskObj.user, 'full');
+            return taskObj;
+        });
+
         res.status(200).json({
             status: "success",
-            count: tasks.length,
+            count: transformedTasks.length,
             totalPages: Math.ceil(totalTasks / limit),
             currentPage: page,
-            tasks
+            tasks: transformedTasks
         });
     } catch (error) {
         console.error("Get tasker tasks error:", error);

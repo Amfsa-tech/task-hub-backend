@@ -60,6 +60,11 @@ const userSchema = new Schema({
     verifyIdentity: { type: Boolean, default: false },
     notificationId: {type: String},
 
+    // Public profile stats (exposed to taskers)
+    tasksPostedCount: { type: Number, default: 0 },
+    completedTasksCount: { type: Number, default: 0 },
+    totalSpent: { type: Number, default: 0 },
+
     lastLoginAt: { type: Date },
     loginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date },
