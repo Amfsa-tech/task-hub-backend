@@ -263,6 +263,21 @@ export const creditWallet = async (transaction, paystackData) => {
         return;
     }
 
+    // 1. Find User to take a secure snapshot BEFORE adding funds
+    const user = await User.findById(transaction.user);
+    if (!user) {
+        console.error(`[Wallet Fund] User ${transaction.user} not found for transaction ${transaction._id}`);
+        return;
+    }
+
+    const previousBalance = user.wallet || 0;
+    const newBalance = previousBalance + transaction.amount;
+
+    // 2. Update the user's wallet manually instead of using $inc
+    user.wallet = newBalance;
+    await user.save();
+
+    // 3. Update the Transaction and permanently stamp the snapshots
     const txn = await Transaction.findOneAndUpdate(
         { _id: transaction._id, status: 'pending' },
         {
@@ -271,6 +286,8 @@ export const creditWallet = async (transaction, paystackData) => {
             gatewayResponse: paystackData.gateway_response,
             verifiedAt: new Date(),
             creditedAt: new Date(),
+            balanceBefore: previousBalance, // 🔐 SNAPSHOT SAVED
+            balanceAfter: newBalance,       // 🔐 SNAPSHOT SAVED
             metadata: {
                 ...transaction.metadata,
                 paystackChannel: paystackData.channel,
@@ -283,11 +300,6 @@ export const creditWallet = async (transaction, paystackData) => {
     if (!txn) {
         return;
     }
-
-    await User.updateOne(
-        { _id: txn.user },
-        { $inc: { wallet: txn.amount } }
-    );
 
     console.log(`[Wallet Fund] ✓ Credited ₦${txn.amount} to user ${txn.user} (ref: ${txn.reference})`);
 

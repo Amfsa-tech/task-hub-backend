@@ -44,6 +44,15 @@ const taskSchema = new Schema({
         type: Boolean, 
         default: false 
     },
+    // Add these to your schemas (Transaction, Withdrawal, Task)
+    balanceBefore: { 
+        type: Number, 
+        default: null // Null allows us to know which ones are old transactions
+    },
+    balanceAfter: { 
+        type: Number, 
+        default: null 
+    },
     deadline: { 
         type: Date 
     },

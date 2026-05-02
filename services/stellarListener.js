@@ -34,15 +34,11 @@ export const startDepositListener = () => {
                 try {
                     console.log(`[DEBUG] Saw a payment sent to: ${payment.to}`);
 
-                    // 1. Verify it's incoming (not an outgoing payout we sent)
                     if (payment.to !== MASTER_PUBLIC_KEY) return;
-
-                    // 2. Verify it is native XLM (not a custom token)
                     if (payment.asset_type !== 'native') return;
 
                     console.log(`\n💰 Incoming XLM Detected! Amount: ${payment.amount}`);
 
-                    // 3. Fetch the full transaction to read the Memo ID
                     const transaction = await payment.transaction();
                     const memo = transaction.memo;
 
@@ -52,37 +48,35 @@ export const startDepositListener = () => {
                     }
 
                     console.log(`🔍 Checking Database for Account with Memo ID: ${memo}`);
-
-                    // 4. Clean the memo (removes invisible spaces and forces uppercase)
                     const cleanMemo = String(memo).trim().toUpperCase();
 
-                    // 5. Check the User database first
                     let targetAccount = await User.findOne({ stellarMemoId: cleanMemo });
-
-                    // 6. If not found in Users, check the Tasker database
                     if (!targetAccount) {
                         targetAccount = await Tasker.findOne({ stellarMemoId: cleanMemo });
                     }
 
-                    // 7. CRITICAL: If STILL not found, stop here so the app doesn't crash!
                     if (!targetAccount) {
                         console.log(`⚠️ No User or Tasker found for Memo ID: ${cleanMemo}. Deposit ignored.`);
                         return;
                     }
 
-                    // 8. Calculate the Naira value
                     const xlmAmount = parseFloat(payment.amount);
                     const nairaValue = xlmAmount * XLM_TO_NGN_RATE;
 
-                    // 9. Credit the account's wallet
-                    targetAccount.wallet += nairaValue;
+                    // ---------------------------------------------------------
+                    // 🔐 SECURE SNAPSHOT LOGIC ADDED HERE
+                    // ---------------------------------------------------------
+                    const previousBalance = targetAccount.wallet || 0;
+                    const newBalance = previousBalance + nairaValue;
+                    
+                    targetAccount.wallet = newBalance;
                     await targetAccount.save();
+                    // ---------------------------------------------------------
 
                     console.log(`✅ Success! Credited ₦${nairaValue} to account ID: ${targetAccount._id}`);
 
-                    // 11. UPDATE THE TRANSACTION RECORD FOR THE ADMIN DASHBOARD
+                    // 11. UPDATE THE TRANSACTION RECORD WITH SNAPSHOTS
                     try {
-                        // Find the pending transaction record for this amount/user
                         const transactionRecord = await Transaction.findOneAndUpdate(
                             { 
                                 user: targetAccount._id, 
@@ -91,18 +85,20 @@ export const startDepositListener = () => {
                                 paymentPurpose: 'wallet_funding' 
                             },
                             { 
-                                status: 'success', // This lights up the green badge in Admin
+                                status: 'success', 
                                 verifiedAt: new Date(),
                                 provider: 'stellar',
-                                gatewayResponse: JSON.stringify(payment) // Save Stellar proof
+                                gatewayResponse: JSON.stringify(payment),
+                                // 🔐 SAVE SNAPSHOTS TO DB
+                                balanceBefore: previousBalance, 
+                                balanceAfter: newBalance        
                             },
-                            { sort: { createdAt: -1 }, new: true } // Get the most recent one
+                            { sort: { createdAt: -1 }, new: true } 
                         );
 
                         if (transactionRecord) {
                             console.log(`📝 Transaction record ${transactionRecord._id} marked as SUCCESS.`);
                         } else {
-                            // FALLBACK: If no pending record exists, create a successful one
                             await Transaction.create({
                                 user: targetAccount._id,
                                 amount: nairaValue,
@@ -111,17 +107,19 @@ export const startDepositListener = () => {
                                 paymentPurpose: 'wallet_funding',
                                 description: 'Stellar Deposit (Auto-detected)',
                                 reference: payment.id,
-                                provider: 'stellar'
+                                provider: 'stellar',
+                                // 🔐 SAVE SNAPSHOTS TO DB
+                                balanceBefore: previousBalance,
+                                balanceAfter: newBalance
                             });
-                            console.log(`🆕 No pending record found. Created new SUCCESS transaction record.`);
+                            console.log(`🆕 No pending record found. Created new SUCCESS transaction.`);
                         }
                     } catch (dbErr) {
                         console.error('Failed to update transaction status in DB:', dbErr);
                     }
 
-                    // 10. Notify the account holder about the deposit
+                    // Notifications...
                     try {
-                        // Check if it's a User or Tasker by looking at which collection found the memo
                         const isTaskerAccount = await Tasker.findOne({ stellarMemoId: cleanMemo });
                         if (isTaskerAccount) {
                             await notifyTaskerWalletFunded(targetAccount._id.toString(), nairaValue);

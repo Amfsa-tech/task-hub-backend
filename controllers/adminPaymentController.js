@@ -175,6 +175,7 @@ export const getAllPayments = async (req, res) => {
 };
 
 // GET /api/admin/payments/:id
+// GET /api/admin/payments/:id
 export const getPaymentById = async (req, res) => {
     try {
         const transactionId = req.params.id; 
@@ -205,12 +206,22 @@ export const getPaymentById = async (req, res) => {
             targetUser = task.user;
         } else if (deposit) {
             record = deposit;
-            source = 'Deposit';
             isDebit = false; // Money came IN to the platform
             amount = deposit.amount || 0;
-            description = 'Wallet Deposit via Gateway';
-            paymentStatus = (deposit.status === 'success' || deposit.status === 'completed') ? 'Completed' : 'Pending';
             targetUser = deposit.user;
+
+            // FIX 1: Dynamic Description based on provider
+            if (deposit.provider === 'stellar' || deposit.provider === 'crypto') {
+                source = 'Stellar Deposit';
+                description = 'Wallet Deposit via Stellar Crypto (XLM)';
+            } else {
+                source = 'Gateway Deposit';
+                description = 'Wallet Deposit via Paystack/Bank';
+            }
+
+            const successfulStatuses = ['success', 'completed', 'verified']; 
+            paymentStatus = successfulStatuses.includes(deposit.status) ? 'Completed' : 'Pending';
+            
         } else if (withdrawal) {
             record = withdrawal;
             source = 'Withdrawal';
@@ -225,11 +236,22 @@ export const getPaymentById = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Transaction not found in any ledger' });
         }
 
-        // 3. Calculate Ledger Math
+        // FIX 2: Check for database snapshots, fallback to safe math for old records
         const currentBalance = targetUser?.wallet || 0;
-        const previousBalance = isDebit 
+        
+        // Safe math fallback (prevents negative previous balances)
+        const fallbackPreviousBalance = isDebit 
             ? currentBalance + amount 
-            : currentBalance - amount;
+            : Math.max(0, currentBalance - amount); 
+
+        // If your new schema fields exist, use them! Otherwise, use the fallback.
+        const finalPreviousBalance = (record.balanceBefore !== undefined && record.balanceBefore !== null) 
+            ? record.balanceBefore 
+            : fallbackPreviousBalance;
+            
+        const finalBalanceAfter = (record.balanceAfter !== undefined && record.balanceAfter !== null) 
+            ? record.balanceAfter 
+            : currentBalance;
 
         // 4. Fetch the User/Tasker's 5 Most Recent Activities across ALL ledgers
         const [recentTasks, recentDeposits, recentWithdrawals] = await Promise.all([
@@ -262,8 +284,8 @@ export const getPaymentById = async (req, res) => {
                 },
                 user: {
                     email: targetUser?.emailAddress || 'Unknown',
-                    balanceAfter: currentBalance, 
-                    previousBalance: previousBalance, 
+                    balanceAfter: finalBalanceAfter, 
+                    previousBalance: finalPreviousBalance, 
                     transactionDate: record.createdAt || record.updatedAt
                 },
                 recentTransactions: recentHistory
@@ -271,7 +293,6 @@ export const getPaymentById = async (req, res) => {
         });
 
     } catch (error) {
-        // Sentry.captureException(error);
         console.error('Get global transaction details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch transaction details' });
     }

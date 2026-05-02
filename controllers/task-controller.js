@@ -28,7 +28,7 @@ const isValidObjectId = (id) => {
 };
 
 // Create a new task
-const createTask = async (req, res) => {
+export const createTask = async (req, res) => {
     try {
         // With multer multipart parsing, complex fields arrive as JSON strings
         const title = req.body.title;
@@ -184,7 +184,8 @@ const createTask = async (req, res) => {
         }
         
         // Validate budget
-        if (isNaN(budget) || budget <= 0) {
+        const taskBudget = Number(budget);
+        if (isNaN(taskBudget) || taskBudget <= 0) {
             return res.status(400).json({
                 status: "error",
                 message: "Invalid budget value",
@@ -212,6 +213,25 @@ const createTask = async (req, res) => {
                 });
             }
         }
+
+        // ==========================================
+        // 🔐 SECURE WALLET DEDUCTION & SNAPSHOT
+        // ==========================================
+        const userWalletDoc = await User.findById(req.user._id);
+        
+        if (userWalletDoc.wallet < taskBudget) {
+            return res.status(400).json({
+                status: "error",
+                message: "Insufficient wallet balance",
+                details: `You need at least ₦${taskBudget.toLocaleString()} in your wallet to fund this task's escrow.`
+            });
+        }
+
+        const prevBal = userWalletDoc.wallet || 0;
+        const newBal = prevBal - taskBudget;
+        userWalletDoc.wallet = newBal;
+        await userWalletDoc.save();
+        // ==========================================
         
         const task = new Task({
             title,
@@ -224,15 +244,41 @@ const createTask = async (req, res) => {
             location: {
                 latitude: location.latitude,
                 longitude: location.longitude,
-
             },
-            budget,
+            budget: taskBudget,
             isBiddingEnabled: isBiddingEnabled || false,
             deadline: deadline || null,
-            user: req.user._id
+            user: req.user._id,
+            // 🔐 Mark escrow as held
+            isEscrowHeld: true,
+            escrowAmount: taskBudget,
+            escrowStatus: 'held'
         });
         
         await task.save();
+
+        // ==========================================
+        // 🔐 CREATE TRANSACTION RECORD WITH SNAPSHOTS
+        // ==========================================
+        try {
+            await Transaction.create({
+                user: req.user._id,
+                amount: taskBudget,
+                type: 'debit',
+                description: `Task Escrow Funded: ${title}`,
+                status: 'success',
+                reference: `ESC-FUND-${task._id}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+                provider: 'system',
+                paymentPurpose: 'escrow_funding',
+                currency: 'NGN',
+                balanceBefore: prevBal, // 🔐
+                balanceAfter: newBal,   // 🔐
+                metadata: { taskId: task._id.toString() }
+            });
+        } catch (txnErr) {
+            console.error('Failed to create escrow_funding transaction:', txnErr);
+        }
+        // ==========================================
 
         // Increment user's tasksPostedCount
         try {
@@ -252,12 +298,12 @@ const createTask = async (req, res) => {
         
         res.status(201).json({
             status: "success",
-            message: "Task created successfully",
+            message: "Task created and escrow funded successfully",
             task
         });
     } catch (error) {
         console.error("Create task error:", error);
-        Sentry.captureException(error);
+        if (typeof Sentry !== 'undefined') Sentry.captureException(error);
         res.status(500).json({
             status: "error",
             message: "Error creating task",
@@ -672,7 +718,7 @@ const changeTaskStatus = async (req, res) => {
             });
         }
         
-    const task = await Task.findById(id).populate('user');
+        const task = await Task.findById(id).populate('user');
         if (!task) {
             return res.status(404).json({
                 status: "error",
@@ -741,14 +787,12 @@ const changeTaskStatus = async (req, res) => {
         
         // Special handling: assigned -> in-progress (generate completion code)
         if (isTasker && currentStatus === 'assigned' && status === 'in-progress') {
-            // Generate a 6-digit completion code for the user to give the tasker
             const completionCode = crypto.randomInt(100000, 999999).toString();
             task.completionCode = completionCode;
             task.status = 'in-progress';
             task.updatedAt = new Date();
             await task.save();
 
-            // Notify the user that the tasker has started work + send completion code
             try {
                 const tasker = await Tasker.findById(task.assignedTasker).select('firstName lastName');
                 await notifyUserTaskStarted(task.user._id || task.user, task, completionCode, tasker);
@@ -760,7 +804,7 @@ const changeTaskStatus = async (req, res) => {
                 message: 'Task started. A completion code has been sent to the task poster.',
                 task: {
                     ...task.toObject(),
-                    completionCode: undefined // Don't expose code to tasker
+                    completionCode: undefined 
                 }
             });
         }
@@ -786,23 +830,26 @@ const changeTaskStatus = async (req, res) => {
             try {
                 if (task.isEscrowHeld && task.escrowAmount > 0 && task.assignedTasker) {
                     
-                    // NEW MATH: Calculates fee so it is exactly 15% of the Tasker's final payout
                     const platformFeeRate = 0.15;
                     const taskerPayout = Math.round(task.escrowAmount / (1 + platformFeeRate));
                     const platformFee = task.escrowAmount - taskerPayout;
 
-                    await Tasker.updateOne(
-                        { _id: task.assignedTasker },
-                        { $inc: { wallet: taskerPayout } }
-                    );
+                    // 🔐 SNAPSHOT: Tasker Payout
+                    const taskerForPayout = await Tasker.findById(task.assignedTasker);
+                    const prevTaskerBal = taskerForPayout.wallet || 0;
+                    const newTaskerBal = prevTaskerBal + taskerPayout;
+                    taskerForPayout.wallet = newTaskerBal;
+                    await taskerForPayout.save();
                     
+                    // 🔐 SNAPSHOT: Fetch user to log their current balance (it doesn't change here, just logging)
+                    const userForFee = await User.findById(task.user._id);
+                    const currentUserBal = userForFee.wallet || 0;
+
                     task.isEscrowHeld = false;
                     task.platformFee = platformFee;
                     task.taskerPayout = taskerPayout;
                     task.escrowStatus = 'released';
                     task.completedAt = new Date();
-
-                    // ... (keep the rest of the transaction recording logic exactly the same)
 
                     // Record escrow_release transaction (tasker payout)
                     try {
@@ -817,13 +864,15 @@ const changeTaskStatus = async (req, res) => {
                             provider: 'system',
                             paymentPurpose: 'escrow_release',
                             currency: 'NGN',
+                            balanceBefore: prevTaskerBal, // 🔐
+                            balanceAfter: newTaskerBal,   // 🔐
                             metadata: { taskId: task._id.toString(), taskerPayout, platformFee }
                         });
                     } catch (txnErr) {
                         console.error('Failed to create escrow_release transaction:', txnErr);
                     }
 
-                    // Record platform_fee transaction
+                    // Record platform_fee transaction (User Ledger)
                     try {
                         await Transaction.create({
                             user: task.user._id,
@@ -835,6 +884,8 @@ const changeTaskStatus = async (req, res) => {
                             provider: 'system',
                             paymentPurpose: 'platform_fee',
                             currency: 'NGN',
+                            balanceBefore: currentUserBal, // 🔐
+                            balanceAfter: currentUserBal,  // 🔐
                             metadata: { taskId: task._id.toString(), escrowAmount: task.escrowAmount, feeRate: platformFeeRate }
                         });
                     } catch (txnErr) {
@@ -847,7 +898,6 @@ const changeTaskStatus = async (req, res) => {
                 await task.save();
 
                 // Increment user's totalSpent for spending range calculation
-                // and completedTasksCount for trust score calculation
                 try {
                     await User.updateOne(
                         { _id: task.user._id },
@@ -857,7 +907,6 @@ const changeTaskStatus = async (req, res) => {
                     console.error('Failed to increment totalSpent/completedTasksCount:', spentErr);
                 }
 
-                // Notify user about task completion
                 try {
                     const tasker = await Tasker.findById(task.assignedTasker).select('firstName lastName');
                     if (tasker) {
@@ -869,9 +918,8 @@ const changeTaskStatus = async (req, res) => {
                     console.error('Failed to send task completion notification:', notifyErr);
                 }
 
-                // Notify tasker about payout received
                 try {
-                    await notifyTaskerPayoutReceived(task.assignedTasker, task, taskerPayout);
+                    await notifyTaskerPayoutReceived(task.assignedTasker, task, task.taskerPayout || 0);
                 } catch (notifyErr) {
                     console.error('Failed to send payout notification to tasker:', notifyErr);
                 }
@@ -895,14 +943,16 @@ const changeTaskStatus = async (req, res) => {
         if (isUser && status === 'cancelled' && currentStatus === 'assigned') {
             try {
                 if (task.isEscrowHeld && task.escrowAmount > 0) {
-                    await User.updateOne(
-                        { _id: task.user._id },
-                        { $inc: { wallet: task.escrowAmount } }
-                    );
+                    // 🔐 SNAPSHOT: Refund User Escrow
+                    const refundUser = await User.findById(task.user._id);
+                    const prevBal = refundUser.wallet || 0;
+                    const newBal = prevBal + task.escrowAmount;
+                    refundUser.wallet = newBal;
+                    await refundUser.save();
+
                     task.isEscrowHeld = false;
                     task.escrowStatus = 'refunded';
 
-                    // Record escrow_refund transaction
                     try {
                         await Transaction.create({
                             user: task.user._id,
@@ -914,6 +964,8 @@ const changeTaskStatus = async (req, res) => {
                             provider: 'system',
                             paymentPurpose: 'escrow_refund',
                             currency: 'NGN',
+                            balanceBefore: prevBal, // 🔐
+                            balanceAfter: newBal,   // 🔐
                             metadata: { taskId: task._id.toString() }
                         });
                     } catch (txnErr) {
@@ -924,14 +976,12 @@ const changeTaskStatus = async (req, res) => {
                 task.updatedAt = new Date();
                 await task.save();
 
-                // Notify the assigned tasker about cancellation
                 if (task.assignedTasker) {
                     notifyTaskerAboutTaskCancellation(task.assignedTasker, task).catch((e) => {
                         console.error('notifyTaskerAboutTaskCancellation error:', e);
                     });
                 }
 
-                // Notify user about escrow refund
                 try {
                     notifyEscrowRefunded(task.user._id || task.user, task, task.escrowAmount).catch((e) => {
                         console.error('notifyEscrowRefunded error:', e);
@@ -959,14 +1009,16 @@ const changeTaskStatus = async (req, res) => {
         if (isUser && status === 'cancelled' && currentStatus === 'in-progress') {
             try {
                 if (task.isEscrowHeld && task.escrowAmount > 0) {
-                    await User.updateOne(
-                        { _id: task.user._id },
-                        { $inc: { wallet: task.escrowAmount } }
-                    );
+                    // 🔐 SNAPSHOT: Refund User Escrow
+                    const refundUser = await User.findById(task.user._id);
+                    const prevBal = refundUser.wallet || 0;
+                    const newBal = prevBal + task.escrowAmount;
+                    refundUser.wallet = newBal;
+                    await refundUser.save();
+
                     task.isEscrowHeld = false;
                     task.escrowStatus = 'refunded';
 
-                    // Record escrow_refund transaction
                     try {
                         await Transaction.create({
                             user: task.user._id,
@@ -978,6 +1030,8 @@ const changeTaskStatus = async (req, res) => {
                             provider: 'system',
                             paymentPurpose: 'escrow_refund',
                             currency: 'NGN',
+                            balanceBefore: prevBal, // 🔐
+                            balanceAfter: newBal,   // 🔐
                             metadata: { taskId: task._id.toString(), cancelledFrom: 'in-progress' }
                         });
                     } catch (txnErr) {
@@ -989,14 +1043,12 @@ const changeTaskStatus = async (req, res) => {
                 task.updatedAt = new Date();
                 await task.save();
 
-                // Notify the assigned tasker about cancellation
                 if (task.assignedTasker) {
                     notifyTaskerAboutTaskCancellation(task.assignedTasker, task).catch((e) => {
                         console.error('notifyTaskerAboutTaskCancellation error:', e);
                     });
                 }
 
-                // Notify user about escrow refund (in-progress cancellation)
                 try {
                     notifyEscrowRefunded(task.user._id || task.user, task, task.escrowAmount).catch((e) => {
                         console.error('notifyEscrowRefunded error:', e);
@@ -1026,7 +1078,6 @@ const changeTaskStatus = async (req, res) => {
             task.updatedAt = new Date();
             await task.save();
 
-            // Notify all taskers who bid on this open task
             try {
                 const openBids = await Bid.find({ task: task._id, status: 'pending' }).select('tasker');
                 for (const bid of openBids) {
@@ -1045,7 +1096,7 @@ const changeTaskStatus = async (req, res) => {
             });
         }
 
-        // Default path for other valid transitions (should be minimal with current rules)
+        // Default path for other valid transitions
         task.status = status;
         task.updatedAt = new Date();
         await task.save();
@@ -1548,7 +1599,6 @@ const submitRating = async (req, res) => {
 };
 
 export  {
-    createTask,
     getAllTasks,
     getTaskById,
     updateTask,

@@ -44,6 +44,15 @@ const withdrawalSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Admin'
     },
+    // Add these to your schemas (Transaction, Withdrawal, Task)
+    balanceBefore: { 
+        type: Number, 
+        default: null // Null allows us to know which ones are old transactions
+    },
+    balanceAfter: { 
+        type: Number, 
+        default: null 
+    },
     reviewedAt: { type: Date },
     rejectionReason: { type: String },
     // Timestamps
