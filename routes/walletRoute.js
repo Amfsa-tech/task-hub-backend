@@ -1,4 +1,5 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit'; // NEW IMPORT
 import {
     initializeFunding,
     verifyFunding,
@@ -9,63 +10,68 @@ import {
     getTaskerBalance,
     getTaskerTransactions,
     setupTransactionPin,
-    getBanks,               // <-- ADDED BACK
-    getTaskerBankAccount    // <-- ADDED BACK
+    getBanks,               
+    getTaskerBankAccount    
 } from '../controllers/walletController.js';
 
 import { setBankAccount } from '../controllers/withdrawalController.js';
-
 import { protectAny } from '../middlewares/authMiddleware.js'; 
 
 const router = express.Router();
 
 // ==========================================
-// SECURITY: Protect all wallet routes
+// SECURITY: Rate Limiters
 // ==========================================
+// Limits to 5 payment initializations per 5 minutes per IP
+const paymentInitLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000, 
+    max: 5, 
+    message: { status: 'error', message: 'Too many payment requests. Please try again in 5 minutes.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+// Limits to 3 withdrawal requests per hour per IP
+const withdrawalLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, 
+    max: 3, 
+    message: { status: 'error', message: 'Withdrawal rate limit exceeded. Try again later.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 router.use(protectAny);
 
 // ==========================================
 // BANK LIST
 // ==========================================
-// GET /api/wallet/banks
 router.get('/banks', getBanks);
 
 // ==========================================
-// FIAT FUNDING (PAYSTACK)
+// FIAT FUNDING (DYNAMIC FLUTTERWAVE/PAYSTACK)
 // ==========================================
-// POST /api/wallet/fund/initialize
-router.post('/fund/initialize', initializeFunding);
-
-// GET /api/wallet/fund/verify?reference=...
+// Apply the rate limiter directly to the initialize route
+router.post('/fund/initialize', paymentInitLimiter, initializeFunding);
 router.get('/fund/verify', verifyFunding);
 
 // ==========================================
 // USER BALANCES & HISTORY
 // ==========================================
-// GET /api/wallet/user/balance
 router.get('/user/balance', getUserBalance);
-
-// GET /api/wallet/user/transactions
 router.get('/user/transactions', getUserTransactions);
 
 // ==========================================
 // CRYPTO BRIDGE (STELLAR DEPOSITS & WITHDRAWALS)
 // ==========================================
-// GET /api/wallet/stellar/deposit-info
 router.get('/stellar/deposit-info', getStellarDepositInfo);
-
-// POST /api/wallet/withdraw
-router.post('/withdraw', requestWithdrawal);
+// Apply limiter to withdrawals
+router.post('/withdraw', withdrawalLimiter, requestWithdrawal);
 
 // ==========================================
 // TASKER BALANCES, BANK & HISTORY 
 // ==========================================
-// GET /api/wallet/tasker/bank-account
 router.get('/tasker/bank-account', getTaskerBankAccount);
-
-// POST /api/wallet/tasker/bank-account
 router.post('/tasker/bank-account', setBankAccount);
-
 router.get('/tasker/balance', getTaskerBalance);
 router.get('/tasker/transactions', getTaskerTransactions);
 router.post('/tasker/pin/setup', setupTransactionPin);

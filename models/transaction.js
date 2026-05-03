@@ -32,8 +32,8 @@ const transactionSchema = new mongoose.Schema({
     },
     provider: {
         type: String,
-        enum: ['paystack', 'system', 'stellar'],
-        default: 'system'
+        enum: ['paystack', 'stellar', 'system', 'flutterwave'],
+        default: 'flutterwave'
     },
     paymentPurpose: {
         type: String,
