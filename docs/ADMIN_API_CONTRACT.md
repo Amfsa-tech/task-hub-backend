@@ -172,14 +172,16 @@ The API strictly enforces role-based access. Attempting to access an endpoint wi
 
 ---
 
+Here is the updated documentation block for your API. I have updated the descriptions to include the new dynamic payment gateway switch so your frontend developer knows exactly what to look for and how to change it.
+
 ## 11. System Settings (`/api/admin/settings`)
 
 | Method | Endpoint | Description | Roles |
-| --- | --- | --- | --- |
-| **GET** | `/api/admin/settings` | Fetch global toggles (Maintenance mode, etc.). | `super_admin` |
-| **PATCH** | `/api/admin/settings` | Update settings (e.g., `{"system.maintenanceMode": true}`). | `super_admin` |
+| :--- | :--- | :--- | :--- |
+| **GET** | `/api/admin/settings` | Fetch global platform settings (Maintenance mode, active fiat gateway, etc.). Returns the `payments.activeFiatGateway` state to render the UI. | `super_admin` |
+| **PATCH** | `/api/admin/settings` | Update settings. Send a nested JSON payload (e.g., `{"payments": {"activeFiatGateway": "paystack"}}`) to dynamically switch providers. | `super_admin` |
 
----
+> **Note on Payment Gateways:** For the `PATCH` endpoint, the `activeFiatGateway` field strictly accepts either `"flutterwave"` or `"paystack"`. Updating this instantly routes all new fiat transactions to the selected provider.
 
 ## 12. Staff Management (`/api/admin/staff`)
 
