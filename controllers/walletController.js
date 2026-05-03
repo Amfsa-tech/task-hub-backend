@@ -3,7 +3,7 @@ import Transaction from '../models/transaction.js';
 import User from '../models/user.js';
 import Withdrawal from '../models/withdrawal.js'; // NEW IMPORT
 import paystackService from '../services/paystack_service.js';
-import AdminSettings from '../models/AdminSettings.js';
+import AdminSettings from '../models/adminSettings.js';
 import bcrypt from 'bcryptjs'; // NEW IMPORT
 import Tasker from '../models/tasker.js';
 import flutterwaveService from '../services/flutterwave_service.js'; // NEW IMPORT
