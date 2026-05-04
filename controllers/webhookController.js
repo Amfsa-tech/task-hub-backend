@@ -1,17 +1,18 @@
 import AdminNotification from '../models/adminNotification.js'; // Adjust path to your model
 
 // POST /api/webhooks/resend
+// POST /api/webhooks/resend
 export const handleResendWebhook = async (req, res) => {
     try {
         const event = req.body;
 
         // We only care when an email is opened
         if (event.type === 'email.opened') {
-            // Extract our hidden tag
-            const tags = event.data.email.tags || [];
+            // FIX: Removed `.email` so it doesn't crash!
+            const tags = event.data?.tags || [];
             const notifTag = tags.find(t => t.name === 'notificationId');
 
-            if (notifTag) {
+            if (notifTag && notifTag.value) {
                 // Increment the open count instantly!
                 await AdminNotification.findByIdAndUpdate(
                     notifTag.value,
