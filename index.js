@@ -36,6 +36,7 @@ import universityRoutes from './routes/universityRoute.js';
 import ninSubmissionRoutes from './routes/taskerNinRoute.js';
 import userNotificationRoutes from './routes/notificationRoutes.js';
 import pushSubscriptionRoutes from './routes/pushSubscriptionRoute.js';
+import webhookRoutes from './routes/webhookRoutes.js';
 import { checkMaintenanceMode } from './middlewares/maintenanceMiddleware.js';
 import { startDepositListener } from './services/stellarListener.js';
 
@@ -156,6 +157,7 @@ app.use('/api/nin', ninSubmissionRoutes);
 app.use('/api/notifications', userNotificationRoutes);
 // Web Push subscription management
 app.use('/api/push', pushSubscriptionRoutes);
+app.use(webhookRoutes); // Webhooks for Resend and OneSignal - no auth, must be last before error handlers
 
 
 // Base route
