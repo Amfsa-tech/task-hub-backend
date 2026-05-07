@@ -175,7 +175,6 @@ export const getAllPayments = async (req, res) => {
 };
 
 // GET /api/admin/payments/:id
-// GET /api/admin/payments/:id
 export const getPaymentById = async (req, res) => {
     try {
         const transactionId = req.params.id; 
@@ -210,17 +209,17 @@ export const getPaymentById = async (req, res) => {
             amount = deposit.amount || 0;
             targetUser = deposit.user;
 
-            // FIX: Check provider OR description for older test records
-            const isStellar = deposit.provider === 'stellar' || 
-                              deposit.provider === 'crypto' || 
-                              (deposit.description && deposit.description.toLowerCase().includes('stellar'));
+            // FIX: Prioritize the exact description saved in the database!
+            description = deposit.description || `Wallet Deposit via ${deposit.provider ? deposit.provider.toUpperCase() : 'GATEWAY'}`;
 
-            if (isStellar) {
+            // Set the source dynamically based on the provider
+            if (deposit.provider === 'stellar' || deposit.provider === 'crypto') {
                 source = 'Stellar Deposit';
-                description = 'Wallet Deposit via Stellar Crypto (XLM)';
+            } else if (deposit.provider) {
+                // Capitalizes the first letter (e.g., 'flutterwave' -> 'Flutterwave Deposit')
+                source = `${deposit.provider.charAt(0).toUpperCase() + deposit.provider.slice(1)} Deposit`;
             } else {
                 source = 'Gateway Deposit';
-                description = 'Wallet Deposit via Paystack/Bank';
             }
 
             const successfulStatuses = ['success', 'completed', 'verified']; 
@@ -247,8 +246,11 @@ export const getPaymentById = async (req, res) => {
             ? currentBalance + amount 
             : Math.max(0, currentBalance - amount); 
 
-        const finalPreviousBalance = (record.balanceBefore !== undefined && record.balanceBefore !== null) 
-            ? record.balanceBefore 
+        // Check for 'previousBalance' (new format) or 'balanceBefore' (old format)
+        const savedPreviousBalance = record.previousBalance !== undefined ? record.previousBalance : record.balanceBefore;
+
+        const finalPreviousBalance = (savedPreviousBalance !== undefined && savedPreviousBalance !== null) 
+            ? savedPreviousBalance 
             : fallbackPreviousBalance;
             
         const finalBalanceAfter = (record.balanceAfter !== undefined && record.balanceAfter !== null) 
@@ -264,8 +266,8 @@ export const getPaymentById = async (req, res) => {
 
         let recentHistory = [];
         recentTasks.forEach(t => recentHistory.push({ description: `Task: ${t.title}`, type: t.status === 'completed' ? 'debit' : 'credit', amount: t.budget, date: t.updatedAt }));
-        recentDeposits.forEach(d => recentHistory.push({ description: 'Wallet Deposit', type: 'credit', amount: d.amount, date: d.createdAt }));
-        recentWithdrawals.forEach(w => recentHistory.push({ description: 'Withdrawal', type: 'debit', amount: w.amount, date: w.createdAt }));
+        recentDeposits.forEach(d => recentHistory.push({ description: d.description || 'Wallet Deposit', type: 'credit', amount: d.amount, date: d.createdAt }));
+        recentWithdrawals.forEach(w => recentHistory.push({ description: w.payoutMethod === 'stellar_crypto' ? 'Crypto Withdrawal' : 'Bank Withdrawal', type: 'debit', amount: w.amount, date: w.createdAt }));
 
         recentHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
         recentHistory = recentHistory.slice(0, 5);
