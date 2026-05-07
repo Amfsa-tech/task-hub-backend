@@ -1,20 +1,17 @@
 import crypto from 'crypto';
 import Transaction from '../models/transaction.js';
 import User from '../models/user.js';
-import Withdrawal from '../models/withdrawal.js'; // NEW IMPORT
+import Withdrawal from '../models/withdrawal.js';
 import paystackService from '../services/paystack_service.js';
 import AdminSettings from '../models/adminSettings.js';
-import bcrypt from 'bcryptjs'; // NEW IMPORT
+import bcrypt from 'bcryptjs';
 import Tasker from '../models/tasker.js';
-import flutterwaveService from '../services/flutterwave_service.js'; // NEW IMPORT
-import axios from 'axios'; // Make sure this is at the top of your controller file if it isn't already!
+import flutterwaveService from '../services/flutterwave_service.js';
+import axios from 'axios'; 
 import * as Sentry from '@sentry/node';
 import { notifyWalletFunded } from '../utils/notificationUtils.js';
 
-/**
- * GET /api/wallet/banks
- * Fetches the official list of Nigerian banks from Paystack
- */// Helper to get active gateway
+// Helper to get active gateway
 const getActiveGateway = async () => {
     let settings = await AdminSettings.findOne();
     if (!settings) settings = await AdminSettings.create({});
@@ -24,6 +21,10 @@ const getActiveGateway = async () => {
     return { providerName, service };
 };
 
+/**
+ * GET /api/wallet/banks
+ * Fetches the official list of Nigerian banks from Paystack or Flutterwave
+ */
 export const getBanks = async (req, res) => {
     try {
         const { service } = await getActiveGateway();
@@ -54,7 +55,7 @@ export const getTaskerBankAccount = async (req, res) => {
 
         return res.status(200).json({
             status: 'success',
-            data: tasker.bankAccount || null // Returns null if they haven't saved one yet
+            data: tasker.bankAccount || null 
         });
     } catch (error) {
         Sentry.captureException(error);
@@ -62,7 +63,6 @@ export const getTaskerBankAccount = async (req, res) => {
         return res.status(500).json({ status: 'error', message: 'Failed to fetch bank account details' });
     }
 };
-
 
 export const initializeFunding = async (req, res) => {
     try {
@@ -75,7 +75,8 @@ export const initializeFunding = async (req, res) => {
         }
 
         const { providerName, service } = await getActiveGateway();
-        const koboAmount = Math.round(nairaAmount * 100); // Standardize to kobo for backend processing
+        // Convert to kobo (Standard backend storage format)
+        const koboAmount = Math.round(nairaAmount * 100); 
         const reference = `WF-${user._id}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
         const transaction = await Transaction.create({
@@ -85,7 +86,7 @@ export const initializeFunding = async (req, res) => {
             description: `Wallet funding via ${providerName.toUpperCase()}`,
             status: 'pending',
             reference,
-            provider: providerName, // Crucial: Locks the provider to the transaction!
+            provider: providerName,
             paymentPurpose: 'wallet_funding',
             currency: 'NGN',
             metadata: { initiatedAt: new Date().toISOString() },
@@ -140,17 +141,16 @@ export const verifyFunding = async (req, res) => {
             });
         }
 
-        // Dynamically pick the service based on what was saved when the transaction was initialized
         const service = transaction.provider === 'paystack' ? paystackService : flutterwaveService;
         const gatewayData = await service.verifyTransaction(reference);
 
         if (gatewayData.status === 'success') {
-            // Verify Amount
             const expectedKobo = Math.round(transaction.amount * 100);
             if (gatewayData.amount !== expectedKobo) {
                  return res.status(400).json({ status: 'error', message: 'Value mismatch detected' });
             }
 
+            // Perform the snapshot and credit
             await creditWallet(transaction, gatewayData);
             const updated = await Transaction.findById(transaction._id);
 
@@ -182,6 +182,7 @@ export const verifyFunding = async (req, res) => {
 
 /**
  * Credits the user's wallet atomically using findOneAndUpdate for idempotency.
+ * THIS FIXES THE ADMIN DASHBOARD DISPLAY.
  */
 export const creditWallet = async (transaction, gatewayData) => {
     if (transaction.status === 'success') return;
@@ -189,22 +190,25 @@ export const creditWallet = async (transaction, gatewayData) => {
     const user = await User.findById(transaction.user);
     if (!user) return;
 
+    // TAKING THE BALANCE SNAPSHOTS
     const previousBalance = user.wallet || 0;
     const newBalance = previousBalance + transaction.amount;
 
+    // Update the user's actual wallet
     user.wallet = newBalance;
     await user.save();
 
+    // Update the transaction record with the snapshots
     const txn = await Transaction.findOneAndUpdate(
         { _id: transaction._id, status: 'pending' },
         {
-            status: 'success',
+            status: 'success', // Admin dashboard checks for success
             providerTransactionId: String(gatewayData.id),
             gatewayResponse: gatewayData.gateway_response,
             verifiedAt: new Date(),
             creditedAt: new Date(),
-            balanceBefore: previousBalance, 
-            balanceAfter: newBalance,       
+            previousBalance: previousBalance, // <-- FIXED: Matched to frontend expectation
+            balanceAfter: newBalance,         // <-- FIXED: Matched to frontend expectation
             metadata: {
                 ...transaction.metadata,
                 channel: gatewayData.channel,
@@ -281,7 +285,7 @@ export const getUserTransactions = async (req, res) => {
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit)
-            .select('amount type description status reference paymentPurpose createdAt metadata');
+            .select('amount type description status reference paymentPurpose createdAt metadata previousBalance balanceAfter');
 
         return res.json({
             status: 'success',
@@ -307,7 +311,6 @@ export const getUserTransactions = async (req, res) => {
 
 /**
  * GET /api/wallet/stellar/deposit-info
- * Returns Master Wallet Address and User's Memo ID for the QR Code screen
  */
 export const getStellarDepositInfo = async (req, res) => {
     try {
@@ -317,7 +320,6 @@ export const getStellarDepositInfo = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'User not found' });
         }
 
-        // Generate Memo ID on the fly if they don't have one yet
         if (!user.stellarMemoId) {
             user.stellarMemoId = crypto.randomBytes(4).toString('hex').toUpperCase();
             await user.save();
@@ -329,7 +331,7 @@ export const getStellarDepositInfo = async (req, res) => {
                 masterWalletAddress: process.env.STELLAR_MASTER_PUBLIC_KEY,
                 userMemoId: user.stellarMemoId,
                 network: process.env.STELLAR_NETWORK || 'TESTNET',
-                exchangeRate: 1500 // NGN per XLM (Match this with your listener)
+                exchangeRate: 1500 
             }
         });
     } catch (error) {
@@ -341,36 +343,25 @@ export const getStellarDepositInfo = async (req, res) => {
 
 /**
  * POST /api/wallet/withdraw
- * Creates a withdrawal request (Crypto or Bank) and deducts funds from the wallet
- */
-/**
- * POST /api/wallet/withdraw
  * Creates a withdrawal request (Crypto or Bank) and deducts funds from the TASKER's wallet
  */
 export const requestWithdrawal = async (req, res) => {
     try {
         const { amount, payoutMethod, stellarAddress, bankDetails, transactionPin } = req.body;
-        // Depending on your auth middleware, the ID might be on req.tasker._id or req.user._id.
-        // Assuming your middleware decodes the JWT to req.user regardless of account type:
         const taskerId = req.user._id; 
 
-        // 1. CORRECTION: Fetch from Tasker model, not User model
         const tasker = await Tasker.findById(taskerId);
-
         if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
 
-        // 2. Basic Validation
         const withdrawAmount = Number(amount);
         if (isNaN(withdrawAmount) || withdrawAmount < 5000) {
             return res.status(400).json({ status: 'error', message: 'Minimum withdrawal is ₦5,000' });
         }
 
-        // Check the TASKER'S wallet balance
         if (tasker.wallet < withdrawAmount) {
             return res.status(400).json({ status: 'error', message: 'Insufficient wallet balance' });
         }
 
-        // 3. Verify Transaction PIN on the Tasker model
         if (!tasker.transactionPin) {
              return res.status(400).json({ status: 'error', message: 'Please set up a transaction PIN in your settings first' });
         }
@@ -380,9 +371,8 @@ export const requestWithdrawal = async (req, res) => {
             return res.status(401).json({ status: 'error', message: 'Invalid Transaction PIN' });
         }
 
-        // 4. Construct the Pending Withdrawal Request
         const newWithdrawal = new Withdrawal({
-            tasker: taskerId, // Explicitly linked to the Tasker
+            tasker: taskerId, 
             amount: withdrawAmount,
             payoutMethod: payoutMethod, 
             status: 'pending'
@@ -404,7 +394,6 @@ export const requestWithdrawal = async (req, res) => {
 
         await newWithdrawal.save();
 
-        // 5. CORRECTION: Deduct the requested amount from the TASKER's wallet to lock it in
         tasker.wallet -= withdrawAmount;
         await tasker.save();
 
@@ -423,10 +412,9 @@ export const requestWithdrawal = async (req, res) => {
 
 export const setupTransactionPin = async (req, res) => {
     try {
-        const { pin, password } = req.body; // Require their login password for security
+        const { pin, password } = req.body; 
         const taskerId = req.user._id;
 
-        // 1. Validate the PIN is exactly 4 digits
         if (!pin || !/^\d{4}$/.test(pin)) {
             return res.status(400).json({ status: 'error', message: 'PIN must be exactly 4 digits' });
         }
@@ -434,13 +422,11 @@ export const setupTransactionPin = async (req, res) => {
         const tasker = await Tasker.findById(taskerId);
         if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
 
-        // 2. Security Check: Verify their actual account password before allowing a PIN change
         const isPasswordValid = await bcrypt.compare(password, tasker.password);
         if (!isPasswordValid) {
             return res.status(401).json({ status: 'error', message: 'Incorrect account password' });
         }
 
-        // 3. Hash the 4-digit PIN and save it
         const salt = await bcrypt.genSalt(10);
         tasker.transactionPin = await bcrypt.hash(pin.toString(), salt);
         await tasker.save();
@@ -459,7 +445,6 @@ export const setupTransactionPin = async (req, res) => {
 
 /**
  * GET /api/wallet/tasker/balance
- * Returns the Tasker's earned wallet balance and pending withdrawals.
  */
 export const getTaskerBalance = async (req, res) => {
     try {
@@ -468,7 +453,6 @@ export const getTaskerBalance = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Tasker not found' });
         }
 
-        // Calculate how much money they currently have locked in pending withdrawal requests
         const pendingWithdrawalsAgg = await Withdrawal.aggregate([
             { $match: { tasker: tasker._id, status: { $in: ['pending', 'processing', 'approved'] } } },
             { $group: { _id: null, total: { $sum: '$amount' } } }
@@ -480,7 +464,7 @@ export const getTaskerBalance = async (req, res) => {
             data: {
                 walletBalance: tasker.wallet,
                 pendingWithdrawals: pendingWithdrawals,
-                availableToWithdraw: tasker.wallet // Assuming their wallet balance reflects actual withdrawable cash
+                availableToWithdraw: tasker.wallet 
             }
         });
     } catch (error) {
@@ -492,7 +476,6 @@ export const getTaskerBalance = async (req, res) => {
 
 /**
  * GET /api/wallet/tasker/transactions?page=1&limit=10
- * Returns the Tasker's history (Earnings, Payouts, Withdrawals).
  */
 export const getTaskerTransactions = async (req, res) => {
     try {
@@ -501,7 +484,6 @@ export const getTaskerTransactions = async (req, res) => {
         const limit = parseInt(req.query.limit) || 10;
         const skip = (page - 1) * limit;
 
-        // CRITICAL: Filter by the 'tasker' field, not 'user'
         const filter = { tasker: taskerId };
 
         const total = await Transaction.countDocuments(filter);
@@ -509,7 +491,7 @@ export const getTaskerTransactions = async (req, res) => {
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit)
-            .select('amount type description status reference paymentPurpose createdAt metadata');
+            .select('amount type description status reference paymentPurpose createdAt metadata previousBalance balanceAfter');
 
         return res.json({
             status: 'success',
