@@ -300,3 +300,51 @@ export const sendBulkUserEmail = async (req, res) => {
         }
     }
 };
+
+// GET /api/admin/users-list
+export const getLightweightUsersList = async (req, res) => {
+    try {
+        // 1. .select() ensures we ONLY pull these exact fields from the DB. 
+        // .lean() strips away Mongoose formatting, making the query lightning fast.
+        const users = await User.find().select('_id fullName emailAddress').lean();
+        const taskers = await Tasker.find().select('_id firstName lastName emailAddress').lean();
+
+        // 2. Format Users to match the frontend's requested shape
+        const formattedUsers = users.map(user => {
+            // Splitting fullName into firstName and lastName for the frontend
+            const nameParts = user.fullName ? user.fullName.split(' ') : [''];
+            return {
+                _id: user._id,
+                userType: 'user', // The frontend guy requested this
+                firstName: nameParts[0] || '',
+                lastName: nameParts.slice(1).join(' ') || '',
+                emailAddress: user.emailAddress
+            };
+        });
+
+        // 3. Format Taskers
+        const formattedTaskers = taskers.map(tasker => ({
+            _id: tasker._id,
+            userType: 'tasker',
+            firstName: tasker.firstName || '',
+            lastName: tasker.lastName || '',
+            emailAddress: tasker.emailAddress
+        }));
+
+        // 4. Combine into one clean array
+        const allAccounts = [...formattedUsers, ...formattedTaskers];
+
+        res.status(200).json({
+            status: 'success',
+            results: allAccounts.length,
+            data: allAccounts // This matches their screenshot perfectly
+        });
+
+    } catch (error) {
+        console.error('Failed to fetch lightweight users list:', error);
+        res.status(500).json({ 
+            status: 'error', 
+            message: 'Failed to fetch users' 
+        });
+    }
+};

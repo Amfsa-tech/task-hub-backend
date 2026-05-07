@@ -1,4 +1,4 @@
-import { FLW_SECRET_KEY, PAYSTACK_CALLBACK_URL } from '../config/envConfig.js';
+import { FLW_SECRET_KEY, FRONTEND_URL } from '../config/envConfig.js';
 import axios from 'axios';
 
 const FLW_BASE_URL = 'https://api.flutterwave.com/v3';
@@ -26,16 +26,19 @@ class FlutterwaveService {
         };
     }
 
+    // --- 1. RECEIVE MONEY (Wallet Funding) ---
     async initializeTransaction({ email, amount, reference, metadata = {} }) {
         // FLW uses raw Naira, not kobo! 
-        // We divide by 100 if the controller passed it in as kobo to match Paystack's flow
         const actualAmount = amount >= 100 ? amount / 100 : amount;
+
+        // DYNAMIC CALLBACK: Uses localhost in dev, and real domain in production based on your .env
+        const redirectUrl = `${FRONTEND_URL}/verify-payment`; 
 
         const payload = {
             tx_ref: reference,
             amount: actualAmount,
             currency: 'NGN',
-            redirect_url: PAYSTACK_CALLBACK_URL, // You can reuse the same frontend callback page
+            redirect_url: redirectUrl, 
             customer: { email },
             meta: metadata,
             customizations: {
@@ -47,10 +50,9 @@ class FlutterwaveService {
         try {
             const response = await axios.post(`${this.baseUrl}/payments`, payload, { headers: this.headers });
             
-            // Mirroring Paystack's return shape for controller compatibility
             return {
                 authorization_url: response.data.data.link,
-                access_code: reference // FLW doesn't use access_code the same way, we use ref
+                access_code: reference 
             };
         } catch (error) {
             throw new FlutterwaveRequestError(
@@ -64,7 +66,6 @@ class FlutterwaveService {
 
     async verifyTransaction(reference) {
         try {
-            // First we have to fetch the transaction by tx_ref to get its ID
             const txResponse = await axios.get(`${this.baseUrl}/transactions?tx_ref=${encodeURIComponent(reference)}`, { headers: this.headers });
             
             if (!txResponse.data.data || txResponse.data.data.length === 0) {
@@ -72,15 +73,12 @@ class FlutterwaveService {
             }
 
             const txId = txResponse.data.data[0].id;
-            
-            // Then verify the actual ID
             const verifyResponse = await axios.get(`${this.baseUrl}/transactions/${txId}/verify`, { headers: this.headers });
             const data = verifyResponse.data.data;
 
-            // Mirror Paystack's return shape
             return {
                 status: data.status === 'successful' ? 'success' : 'failed',
-                amount: Math.round(data.amount * 100), // Convert back to kobo to match Paystack expectations
+                amount: Math.round(data.amount * 100), // Convert back to kobo for backend consistency
                 gateway_response: data.processor_response,
                 id: data.id,
                 channel: data.payment_type,
@@ -96,6 +94,40 @@ class FlutterwaveService {
         }
     }
 
+    // --- 2. SEND MONEY (Tasker Payouts) ---
+    async initiatePayout({ accountNumber, bankCode, amount, reference, narration = 'TaskHub Payout' }) {
+        // Convert kobo back to raw Naira if necessary
+        const actualAmount = amount >= 100 ? amount / 100 : amount;
+
+        const payload = {
+            account_bank: bankCode,
+            account_number: accountNumber,
+            amount: actualAmount,
+            narration: narration,
+            currency: "NGN",
+            reference: reference,
+            debit_currency: "NGN"
+        };
+
+        try {
+            const response = await axios.post(`${this.baseUrl}/transfers`, payload, { headers: this.headers });
+            
+            return {
+                status: 'success',
+                transfer_code: response.data.data.id, // FLW uses this ID to track the transfer
+                message: response.data.message
+            };
+        } catch (error) {
+            throw new FlutterwaveRequestError(
+                error.response?.data?.message || 'Failed to initiate FLW payout',
+                error.response?.status,
+                error.response?.data,
+                'Could not process payout to bank account.'
+            );
+        }
+    }
+
+    // --- 3. UTILITIES ---
     async listBanks() {
         try {
             const response = await axios.get(`${this.baseUrl}/banks/NG`, { headers: this.headers });
