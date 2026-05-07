@@ -33,7 +33,7 @@ export const findNearbyTaskers = async ({ latitude, longitude } = {}) => {
     // Fetch candidates sorted by rating, with extra buffer for precise filtering
     const limit = hasLocation ? MAX_RESULTS * 5 : MAX_RESULTS;
     const taskers = await Tasker.find(query)
-        .select('firstName lastName profilePicture averageRating area residentState location subCategories')
+        .select('firstName lastName profilePicture bio averageRating area residentState location subCategories previousWork websiteLink')
         .populate({ path: 'subCategories', select: 'displayName', options: { limit: 1 } })
         .sort({ averageRating: -1 })
         .limit(limit)
@@ -59,7 +59,7 @@ export const findNearbyTaskers = async ({ latitude, longitude } = {}) => {
             const nearbyIds = new Set(results.map(t => t._id.toString()));
             const fillCount = MAX_RESULTS - results.length;
             const fallback = await Tasker.find({ isActive: true, _id: { $nin: [...nearbyIds] } })
-                .select('firstName lastName profilePicture averageRating area residentState location subCategories')
+                .select('firstName lastName profilePicture bio averageRating area residentState location subCategories previousWork websiteLink')
                 .populate({ path: 'subCategories', select: 'displayName', options: { limit: 1 } })
                 .sort({ averageRating: -1 })
                 .limit(fillCount)
@@ -81,11 +81,14 @@ export const findNearbyTaskers = async ({ latitude, longitude } = {}) => {
         firstName: t.firstName,
         lastName: t.lastName,
         profilePicture: t.profilePicture,
+        bio: t.bio || '',
         averageRating: t.averageRating,
         completedJobs: jobCountMap[t._id.toString()] || 0,
         primaryCategory: t.subCategories?.[0]?.displayName || null,
         area: t.area || null,
         residentState: t.residentState,
+        previousWork: t.previousWork || [],
+        websiteLink: t.websiteLink || '',
         ...(hasLocation && t.distance != null ? { distance: Math.round((t.distance / 1000) * 10) / 10 } : {})
     }));
 };

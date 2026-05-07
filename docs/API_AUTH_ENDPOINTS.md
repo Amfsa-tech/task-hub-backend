@@ -175,6 +175,7 @@ Authorization: Bearer {accessToken}
     "country": "United States",
     "residentState": "California",
     "address": "123 Main Street, Los Angeles, CA",
+    "bio": "I post quick errands and local tasks around Lagos.",
     "wallet": 0,
     "isEmailVerified": true,
     "lastLogin": "2023-12-07T10:30:00.000Z",
@@ -211,6 +212,7 @@ Authorization: Bearer {accessToken}
     "originState": "Texas",
     "residentState": "California",
     "address": "456 Oak Avenue, San Francisco, CA",
+    "bio": "Reliable campus tasker with experience in errands, repairs, and deliveries.",
     "wallet": 150,
     "categories": [
       {
@@ -255,6 +257,7 @@ Authorization: Bearer {accessToken}
   "country": "Canada",
   "residentState": "Ontario",
   "address": "789 New Street, Toronto, ON",
+  "bio": "Short public profile bio, maximum 500 characters.",
   "profilePicture": "https://example.com/profile.jpg"
 }
 ```
@@ -273,6 +276,7 @@ Authorization: Bearer {accessToken}
 **Error Responses:**
 - `400` - No valid fields to update
 - `400` - Phone number already in use
+- `400` - Bio must be a string or must not exceed 500 characters
 - `401` - Invalid or expired token
 - `500` - Server error
 
@@ -802,4 +806,4 @@ const logout = async () => {
 
 ---
 
-This completes the TaskHub Authentication API documentation. All endpoints are ready for integration with frontend applications. 
+This completes the TaskHub Authentication API documentation. All endpoints are ready for integration with frontend applications.

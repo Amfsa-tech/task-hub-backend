@@ -15,7 +15,48 @@ All media uploads use **multipart/form-data**. The backend handles uploading fil
 
 ---
 
-## 1. Create Task
+## 1. Update Profile Picture
+
+**`PUT /api/auth/profile-picture`**
+
+Auth: `Bearer <user_or_tasker_token>`
+
+### Request
+
+`Content-Type: multipart/form-data`
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `profilePicture` | file | Yes* | One image file |
+
+\* The legacy JSON body `{ "profilePicture": "https://..." }` is still supported, but new clients should upload the image file to the backend.
+
+### Example
+
+```js
+const form = new FormData();
+form.append('profilePicture', fileInput.files[0]);
+
+const res = await fetch('/api/auth/profile-picture', {
+  method: 'PUT',
+  headers: { Authorization: `Bearer ${token}` },
+  body: form,
+});
+```
+
+### Success Response — `200`
+
+```json
+{
+  "status": "success",
+  "message": "Profile picture updated successfully",
+  "profilePicture": "https://res.cloudinary.com/.../taskhub/profile-pictures/abc123.jpg"
+}
+```
+
+---
+
+## 2. Create Task
 
 **`POST /api/tasks`**
 
@@ -106,7 +147,7 @@ const res = await fetch(`${BASE_URL}/api/tasks`, {
 
 ---
 
-## 2. Update Task
+## 3. Update Task
 
 **`PUT /api/tasks/:id`**
 
@@ -136,7 +177,27 @@ const res = await fetch(`/api/tasks/${taskId}`, {
 
 ---
 
-## 3. Send Chat Message
+## 4. Tasker Previous Work
+
+**`POST /api/auth/previous-work`**
+
+Auth: `Bearer <tasker_token>`
+
+### Request
+
+`Content-Type: multipart/form-data`
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `images` | file(s) | Yes | Up to 5 images per request, max 10 saved portfolio images total |
+
+Images are uploaded to Cloudinary and appended to `previousWork`. If the request would exceed 10 saved images, the backend rejects it before uploading to Cloudinary.
+
+**`DELETE /api/auth/previous-work`** removes the image from the tasker's portfolio and deletes the matching Cloudinary asset by `publicId`.
+
+---
+
+## 5. Send Chat Message
 
 **`POST /api/chat/conversations/:id/messages`**
 

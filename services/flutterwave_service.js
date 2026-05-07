@@ -69,12 +69,17 @@ class FlutterwaveService {
             const txResponse = await axios.get(`${this.baseUrl}/transactions?tx_ref=${encodeURIComponent(reference)}`, { headers: this.headers });
             
             if (!txResponse.data.data || txResponse.data.data.length === 0) {
-                 return { status: 'failed', gateway_response: 'Transaction not found' };
+                 // Return pending instead of failed so that the frontend can retry/poll
+                 return { status: 'pending', gateway_response: 'Transaction not found or still processing' };
             }
 
             const txId = txResponse.data.data[0].id;
             const verifyResponse = await axios.get(`${this.baseUrl}/transactions/${txId}/verify`, { headers: this.headers });
             const data = verifyResponse.data.data;
+
+            let finalStatus = 'pending';
+            if (data.status === 'successful') finalStatus = 'success';
+            else if (data.status === 'failed' || data.status === 'cancelled' || data.status === 'reversed') finalStatus = 'failed';
 
             return {
                 status: data.status === 'successful' ? 'success' : 'failed',

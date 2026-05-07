@@ -11,6 +11,7 @@ const userSchema = new Schema({
     residentState: { type: String, required: true },
     area: { type: String,  },
     address: { type: String, required: true },
+    bio: { type: String, default: '', trim: true, maxlength: 500 },
     password: { type: String },
     wallet: { type: Number, default: 0 },
 
