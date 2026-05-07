@@ -495,6 +495,54 @@ async function markNotificationRead(notificationId) {
 
 ---
 
+### 5.6 Delete Notification
+
+**`DELETE /api/notifications/:id`**
+
+Auth: `Bearer <user_or_tasker_token>`
+
+Permanently deletes a single in-app notification owned by the logged-in account.
+
+#### Request
+
+**Path Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | Yes | The notification `_id` to delete |
+
+#### Response
+
+**Success (200):**
+```json
+{
+  "status": "success",
+  "message": "Notification deleted successfully"
+}
+```
+
+**Error Responses:**
+
+| Status | Condition | Response |
+|--------|-----------|----------|
+| 403 | Notification doesn't belong to this user/tasker | `{ "status": "error", "message": "Unauthorized" }` |
+| 404 | Notification not found | `{ "status": "error", "message": "Notification not found" }` |
+| 500 | Server error | `{ "status": "error", "message": "Failed to delete notification" }` |
+
+#### Frontend Implementation
+
+**JavaScript:**
+```js
+async function deleteNotification(notificationId) {
+  await fetch(`${BASE_URL}/api/notifications/${notificationId}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+}
+```
+
+---
+
 ## 6. Service Worker Setup
 
 The service worker (`sw.js`) must be placed at the **root** of the frontend project so it can handle push events for the entire app scope.

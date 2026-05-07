@@ -345,7 +345,7 @@ const getAllTasks = async (req, res) => {
         
         // Get tasks with pagination
     const tasks = await Task.find(filterOptions)
-            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
+            .populate('user', 'fullName profilePicture bio country residentState tasksPostedCount completedTasksCount totalSpent')
             .populate('assignedTasker', 'firstName lastName profilePicture')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description')
@@ -392,7 +392,7 @@ const getTaskById = async (req, res) => {
         }
         
     const task = await Task.findById(id)
-            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent createdAt')
+            .populate('user', 'fullName profilePicture bio country residentState tasksPostedCount completedTasksCount totalSpent createdAt')
             .populate('assignedTasker', 'firstName lastName profilePicture')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description');
@@ -1212,7 +1212,7 @@ const getTaskerFeed = async (req, res) => {
         const fetchLimit = hasLocation ? limit * 5 : (cursor ? limit : 0);
         
         let taskQuery = Task.find(filterOptions)
-            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
+            .populate('user', 'fullName profilePicture bio country residentState tasksPostedCount completedTasksCount totalSpent')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description')
             .select('-__v')
@@ -1411,7 +1411,7 @@ const getTaskerTasks = async (req, res) => {
         const totalTasks = await Task.countDocuments(filterOptions);
 
         const tasks = await Task.find(filterOptions)
-            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
+            .populate('user', 'fullName profilePicture bio country residentState tasksPostedCount completedTasksCount totalSpent')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description')
             .sort({ createdAt: -1 })
@@ -1609,4 +1609,4 @@ export  {
     getCompletionCode,
     getTaskerTasks,
     submitRating
-}; 
+};

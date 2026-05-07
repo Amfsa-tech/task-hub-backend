@@ -302,6 +302,7 @@ export const getUser = async (req, res) => {
       country: req.user.country,
       residentState: req.user.residentState,
       address: req.user.address,
+      bio: req.user.bio || "",
       wallet: req.user.wallet,
       isEmailVerified: req.user.isEmailVerified,
       isKYCVerified: req.user.isKYCVerified,
@@ -567,6 +568,7 @@ export const getTasker = async (req, res) => {
       originState: tasker.originState,
       residentState: tasker.residentState,
       address: tasker.address,
+      bio: tasker.bio || "",
       wallet: tasker.wallet,
       location: tasker.location,
       mainCategories: tasker.mainCategories,
@@ -805,6 +807,7 @@ export const updateProfile = async (req, res) => {
     const allowedUpdates = [
       "fullName", "firstName", "lastName", "phoneNumber", 
       "country", "residentState", "address", "profilePicture",
+      "bio",
     ];
     
     const updates = {};
@@ -817,6 +820,17 @@ export const updateProfile = async (req, res) => {
     for (const field of allowedUpdates) {
       if (req.body[field] !== undefined) {
         updates[field] = req.body[field];
+      }
+    }
+
+    if (updates.bio !== undefined) {
+      if (typeof updates.bio !== "string") {
+        return res.status(400).json({ status: "error", message: "Bio must be a string" });
+      }
+
+      updates.bio = updates.bio.trim();
+      if (updates.bio.length > 500) {
+        return res.status(400).json({ status: "error", message: "Bio must not exceed 500 characters" });
       }
     }
 

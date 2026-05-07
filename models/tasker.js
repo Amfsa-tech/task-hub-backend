@@ -11,6 +11,7 @@ const taskerSchema = new Schema({
     originState: { type: String, required: true },
     residentState: { type: String, required: true, index: true }, // ADDED: For Location Analytics
     address: { type: String, required: true },
+    bio: { type: String, default: '', trim: true, maxlength: 500 },
     
     location: {
         latitude: { type: Number },

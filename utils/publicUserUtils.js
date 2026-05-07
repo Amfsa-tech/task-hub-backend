@@ -50,6 +50,7 @@ export const formatPublicUser = (user, scope = 'limited') => {
     const base = {
         fullName: user.fullName || null,
         profilePicture: user.profilePicture || null,
+        bio: user.bio || '',
         location: {
             residentState: user.residentState || null,
             country: user.country || null,
