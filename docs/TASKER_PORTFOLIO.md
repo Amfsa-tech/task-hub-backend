@@ -75,12 +75,20 @@ Content-Type: multipart/form-data
 
 ### 2. Delete a Previous Work Image
 
-Removes a single image from the tasker's `previousWork` array by its Cloudinary `publicId`.
+Removes one or more images from the authenticated tasker's `previousWork` array.
+The backend only searches within the current tasker's portfolio, so a tasker cannot remove another tasker's work.
 
 ```
 DELETE /api/auth/previous-work
 Authorization: Bearer <tasker_token>
 Content-Type: application/json
+```
+
+You can also delete one image by portfolio item `_id`:
+
+```
+DELETE /api/auth/previous-work/:id
+Authorization: Bearer <tasker_token>
 ```
 
 **Request body:**
@@ -91,12 +99,42 @@ Content-Type: application/json
 }
 ```
 
+Supported selectors:
+
+```json
+{
+  "id": "665f...",
+  "publicId": "taskhub/previous-work/abc123",
+  "url": "https://res.cloudinary.com/.../abc123.jpg",
+  "index": 0
+}
+```
+
+For bulk deletion, send arrays:
+
+```json
+{
+  "ids": ["665f...", "6660..."],
+  "publicIds": ["taskhub/previous-work/abc123"],
+  "urls": ["https://res.cloudinary.com/.../def456.jpg"],
+  "indexes": [0, 2]
+}
+```
+
 **Success response** `200`:
 
 ```json
 {
   "status": "success",
   "message": "Previous work image removed",
+  "removedCount": 1,
+  "removedPreviousWork": [
+    {
+      "_id": "665f...",
+      "url": "https://res.cloudinary.com/.../taskhub/previous-work/abc123.jpg",
+      "publicId": "taskhub/previous-work/abc123"
+    }
+  ],
   "previousWork": [
     {
       "url": "https://res.cloudinary.com/.../taskhub/previous-work/def456.jpg",
@@ -110,8 +148,8 @@ Content-Type: application/json
 
 | Status | Message | Cause |
 |--------|---------|-------|
-| `400` | `publicId is required` | Missing field |
-| `404` | `Image not found in previous work` | No matching publicId |
+| `400` | `Provide at least one previous work identifier: id, publicId, url, or index` | Missing selector |
+| `404` | `No matching previous work found` | No selector matched the authenticated tasker's portfolio |
 
 ---
 

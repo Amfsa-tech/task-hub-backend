@@ -64,6 +64,7 @@ router.post('/set-password', protectAny, setPassword);
 router.put('/profile', protectAny, updateProfile);
 router.put('/profile-picture', protectAny, uploadProfilePicture, handleMulterError, updateProfilePicture);
 router.post('/previous-work', protectTasker, uploadTaskImages, handleMulterError, uploadPreviousWork);
+router.delete('/previous-work/:id', protectTasker, deletePreviousWork);
 router.delete('/previous-work', protectTasker, deletePreviousWork);
 router.put('/categories', protectTasker, updateTaskerCategories);
 router.put('/location', protectTasker, updateTaskerLocation);
