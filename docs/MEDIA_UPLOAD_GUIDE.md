@@ -193,7 +193,7 @@ Auth: `Bearer <tasker_token>`
 
 Images are uploaded to Cloudinary and appended to `previousWork`. If the request would exceed 10 saved images, the backend rejects it before uploading to Cloudinary.
 
-**`DELETE /api/auth/previous-work`** removes the image from the tasker's portfolio and deletes the matching Cloudinary asset by `publicId`.
+**`DELETE /api/auth/previous-work`** removes selected images from the authenticated tasker's portfolio and deletes matching Cloudinary assets. It accepts `id`, `publicId`, `url`, `index`, or array forms like `ids`, `publicIds`, `urls`, and `indexes`. **`DELETE /api/auth/previous-work/:id`** is also supported for deleting by portfolio item `_id`.
 
 ---
 
