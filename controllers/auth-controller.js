@@ -8,7 +8,7 @@ import mongoose from "mongoose";
 import Category from "../models/category.js";
 import University from "../models/university.js";
 import KYCVerification from "../models/kycVerification.js";
-import { uploadMultipleToCloudinary } from "../utils/uploadService.js";
+import { deleteFromCloudinary, uploadMultipleToCloudinary, uploadToCloudinary } from "../utils/uploadService.js";
 import { logActivity } from '../utils/activityLogger.js';
 import {
   generateToken,
@@ -895,17 +895,25 @@ export const logout = async (req, res) => {
 
 export const updateProfilePicture = async (req, res) => {
   try {
-    const { profilePicture } = req.body;
-    if (!profilePicture) return res.status(400).json({ status: "error", message: "Profile picture URL is required" });
-    
+    if (!req.user) {
+      return res.status(401).json({ status: "error", message: "User not authenticated" });
+    }
+
+    let profilePicture = req.body?.profilePicture;
+
+    if (req.file) {
+      const uploaded = await uploadToCloudinary(req.file.buffer, 'taskhub/profile-pictures');
+      profilePicture = uploaded.url;
+    }
+
+    if (!profilePicture) {
+      return res.status(400).json({ status: "error", message: "Profile picture file or URL is required" });
+    }
+
     try {
       new URL(profilePicture);
     } catch (error) {
       return res.status(400).json({ status: "error", message: "Invalid profile picture URL format" });
-    }
-    
-    if (!req.user) {
-      return res.status(401).json({ status: "error", message: "User not authenticated" });
     }
 
     req.user.profilePicture = profilePicture;
@@ -928,19 +936,18 @@ export const uploadPreviousWork = async (req, res) => {
       return res.status(400).json({ status: "error", message: "At least one image is required" });
     }
 
-    const uploaded = await uploadMultipleToCloudinary(req.files, 'taskhub/previous-work');
-
     // Append to existing previous work instead of replacing
     const tasker = req.tasker;
     const current = tasker.previousWork || [];
-    const combined = [...current, ...uploaded];
-
-    if (combined.length > 10) {
+    if (current.length + req.files.length > 10) {
       return res.status(400).json({
         status: "error",
-        message: `Maximum 10 previous work images allowed. You have ${current.length}, tried to add ${uploaded.length}`,
+        message: `Maximum 10 previous work images allowed. You have ${current.length}, tried to add ${req.files.length}`,
       });
     }
+
+    const uploaded = await uploadMultipleToCloudinary(req.files, 'taskhub/previous-work');
+    const combined = [...current, ...uploaded];
 
     tasker.previousWork = combined;
     await tasker.save();
@@ -977,7 +984,8 @@ export const deletePreviousWork = async (req, res) => {
       return res.status(404).json({ status: "error", message: "Image not found in previous work" });
     }
 
-    tasker.previousWork.splice(index, 1);
+    const [removed] = tasker.previousWork.splice(index, 1);
+    await deleteFromCloudinary(removed.publicId);
     await tasker.save();
 
     res.status(200).json({

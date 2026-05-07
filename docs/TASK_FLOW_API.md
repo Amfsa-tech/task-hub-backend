@@ -239,9 +239,17 @@ Auth: protectUser
   "count": 3,
   "totalPages": 1,
   "currentPage": 1,
-  "tasks": [ { "...task objects..." } ]
+  "tasks": [
+    {
+      "...": "task fields",
+      "bidCount": 3,
+      "pendingBidCount": 3
+    }
+  ]
 }
 ```
+
+> `bidCount` and `pendingBidCount` help the client show visible bid/application activity on the user's task list.
 
 ---
 
@@ -262,7 +270,7 @@ Returns open tasks matching the tasker's categories and location. Paginated.
 
 ```
 GET /api/tasks/:id
-Auth: none (public)
+Auth: optional. Include the task owner's user token to receive owner-only bid details.
 ```
 
 **Success Response (200):**
@@ -277,10 +285,26 @@ Auth: none (public)
     "status": "open",
     "isBiddingEnabled": true,
     "user": { "fullName": "John Doe", "profilePicture": "..." },
+    "bidCount": 3,
+    "pendingBidCount": 3,
+    "bids": [
+      {
+        "_id": "bidId",
+        "tasker": { "firstName": "Ade", "lastName": "Johnson", "profilePicture": "..." },
+        "amount": 4500,
+        "message": "...",
+        "bidType": "custom",
+        "status": "pending",
+        "bidTypeLabel": "Custom Bid",
+        "isFixedPrice": false
+      }
+    ],
     "...": "..."
   }
 }
 ```
+
+> `bids`, `bidCount`, and `pendingBidCount` are only included when the authenticated requester owns the task. Public and non-owner requests still receive the public task details without bid data.
 
 ---
 

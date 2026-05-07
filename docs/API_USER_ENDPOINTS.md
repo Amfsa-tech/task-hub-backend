@@ -178,6 +178,14 @@ Authorization: Bearer {accessToken}
 
 ## Bidding Management
 
+### Owner Task Bid Visibility
+
+The user's own task list and authenticated task detail response now include bid activity:
+
+- `GET /api/tasks/user/tasks` returns `bidCount` and `pendingBidCount` on each task.
+- `GET /api/tasks/:id` returns `bids`, `bidCount`, and `pendingBidCount` when called with the owning user's token.
+- Public or non-owner task detail requests do not include bid data.
+
 ### 5. Get Task Bids
 
 **Endpoint:** `GET /api/bids/task/:taskId`
@@ -816,4 +824,4 @@ All error responses follow this format:
 4. **Update profile** with additional information as needed
 5. **Use authenticated endpoints** with the Bearer token
 
-For shared authentication features (email verification, password reset, etc.), refer to the main [API_AUTH_ENDPOINTS.md](./API_AUTH_ENDPOINTS.md) documentation. 
+For shared authentication features (email verification, password reset, etc.), refer to the main [API_AUTH_ENDPOINTS.md](./API_AUTH_ENDPOINTS.md) documentation.

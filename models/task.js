@@ -95,13 +95,14 @@ const taskSchema = new Schema({
     escrowStatus: {
         type: String,
         enum: [
+            'not_held',
             'held',
             'release_requested',
             'released',
             'refund_requested',
             'refunded'
         ],
-        default: 'held',
+        default: 'not_held',
         index: true // ADDED: helps with financial queries
     }
 });

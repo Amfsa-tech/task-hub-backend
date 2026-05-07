@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { createTask, getAllTasks, getTaskById, updateTask, deleteTask, getUserTasks, changeTaskStatus, getTaskerFeed, getCompletionCode, getTaskerTasks, submitRating } from '../controllers/task-controller.js';
-import { protectUser, protectTasker } from '../middlewares/authMiddleware.js';
+import { protectUser, protectTasker, optionalAuth } from '../middlewares/authMiddleware.js';
 import { uploadTaskImages, handleMulterError } from '../middlewares/uploadMiddleware.js';
 
 const router = Router();
@@ -19,7 +19,7 @@ router.put('/:id', protectUser, uploadTaskImages, handleMulterError, updateTask)
 router.delete('/:id', protectUser, deleteTask);
 
 // Dynamic route for getting a specific task must come after more specific routes
-router.get('/:id', getTaskById);
+router.get('/:id', optionalAuth, getTaskById);
 
 // Completion code route (user/task poster only)
 router.get('/:id/completion-code', protectUser, getCompletionCode);
@@ -31,4 +31,4 @@ router.post('/:id/rate', protectUser, submitRating);
 router.patch('/:id/status', protectUser, changeTaskStatus); // For user to cancel task
 router.patch('/:id/status/tasker', protectTasker, changeTaskStatus); // For tasker to update status
 
-export default router; 
+export default router;

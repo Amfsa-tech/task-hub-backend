@@ -37,6 +37,16 @@ export const uploadTaskImages = multer({
     },
 }).array('images', 5);
 
+/** Upload one profile picture */
+export const uploadProfilePicture = multer({
+    storage,
+    fileFilter: imageFilter,
+    limits: {
+        fileSize: MAX_FILE_SIZE,
+        files: 1,
+    },
+}).single('profilePicture');
+
 /** Upload up to 5 chat attachments (images + documents) */
 export const uploadChatAttachments = multer({
     storage,

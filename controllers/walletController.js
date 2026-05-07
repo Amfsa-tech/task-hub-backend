@@ -244,7 +244,7 @@ export const getUserBalance = async (req, res) => {
             data: {
                 walletBalance: user.wallet,
                 totalInEscrow: totalEscrow,
-                availableBalance: user.wallet - totalEscrow
+                availableBalance: user.wallet
             }
         });
     } catch (error) {
