@@ -344,66 +344,90 @@ export const getStellarDepositInfo = async (req, res) => {
  */
 export const requestWithdrawal = async (req, res) => {
     try {
-        const { amount, payoutMethod, stellarAddress, bankDetails, transactionPin } = req.body;
-        const taskerId = req.user._id; 
-
-        const tasker = await Tasker.findById(taskerId);
-        if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
-
-        const withdrawAmount = Number(amount);
-        if (isNaN(withdrawAmount) || withdrawAmount < 5000) {
-            return res.status(400).json({ status: 'error', message: 'Minimum withdrawal is ₦5,000' });
+        const authId = req.tasker ? req.tasker._id : req.user._id; 
+        const tasker = await Tasker.findById(authId).select('wallet bankAccount');
+        
+        if (!tasker) {
+            return res.status(404).json({ status: 'error', message: 'Tasker not found' });
         }
 
-        if (tasker.wallet < withdrawAmount) {
+        const { amount, payoutMethod, stellarAddress } = req.body;
+        const withdrawAmount = Number(amount);
+        
+        if (!withdrawAmount || withdrawAmount < 5000) {
+            return res.status(400).json({
+                status: 'error',
+                message: `Minimum withdrawal amount is ₦5,000`
+            });
+        }
+
+        if (withdrawAmount > tasker.wallet) {
             return res.status(400).json({ status: 'error', message: 'Insufficient wallet balance' });
         }
 
-        if (!tasker.transactionPin) {
-             return res.status(400).json({ status: 'error', message: 'Please set up a transaction PIN in your settings first' });
-        }
-        
-        const isPinValid = await bcrypt.compare(transactionPin.toString(), tasker.transactionPin);
-        if (!isPinValid) {
-            return res.status(401).json({ status: 'error', message: 'Invalid Transaction PIN' });
+        const existingWithdrawal = await Withdrawal.findOne({
+            tasker: authId,
+            status: { $in: ['pending', 'approved'] }
+        });
+
+        if (existingWithdrawal) {
+            return res.status(400).json({ status: 'error', message: 'You already have a pending withdrawal request' });
         }
 
-        const newWithdrawal = new Withdrawal({
-            tasker: taskerId, 
+        const prevBal = tasker.wallet || 0;
+        const newBal = prevBal - withdrawAmount;
+
+        const withdrawalData = {
+            tasker: authId,
             amount: withdrawAmount,
-            payoutMethod: payoutMethod, 
-            status: 'pending'
-        });
+            status: 'pending',
+            payoutMethod: payoutMethod || 'bank_transfer',
+            previousBalance: prevBal, 
+            balanceAfter: newBal     
+        };
 
         if (payoutMethod === 'stellar_crypto') {
             if (!stellarAddress) {
                 return res.status(400).json({ status: 'error', message: 'Stellar wallet address is required' });
             }
-            newWithdrawal.stellarDetails = { publicKey: stellarAddress };
-        } else if (payoutMethod === 'bank_transfer') {
-            if (!bankDetails || !bankDetails.accountNumber) {
-                return res.status(400).json({ status: 'error', message: 'Bank details are required for fiat withdrawal' });
-            }
-            newWithdrawal.bankDetails = bankDetails;
+            withdrawalData.stellarDetails = { publicKey: stellarAddress };
         } else {
-            return res.status(400).json({ status: 'error', message: 'Invalid payout method' });
+            if (!tasker.bankAccount || !tasker.bankAccount.accountNumber) {
+                return res.status(400).json({ status: 'error', message: 'Please add a bank account first' });
+            }
+            withdrawalData.bankDetails = {
+                bankName: tasker.bankAccount.bankName,
+                bankCode: tasker.bankAccount.bankCode,
+                accountNumber: tasker.bankAccount.accountNumber,
+                accountName: tasker.bankAccount.accountName
+            };
         }
 
-        await newWithdrawal.save();
+        const withdrawal = await Withdrawal.create(withdrawalData);
 
-        tasker.wallet -= withdrawAmount;
+        tasker.wallet = newBal;
         await tasker.save();
+
+        try {
+            await notifyWithdrawalRequested(authId, withdrawAmount, payoutMethod || 'bank_transfer');
+        } catch (notifyErr) {
+            console.error('Failed to send withdrawal request notification:', notifyErr);
+        }
 
         return res.status(201).json({
             status: 'success',
-            message: 'Withdrawal request submitted successfully. Awaiting admin approval.',
-            data: { withdrawalId: newWithdrawal._id }
+            message: 'Withdrawal request submitted. Awaiting admin approval.',
+            data: {
+                withdrawalId: withdrawal._id,
+                amount: withdrawal.amount,
+                status: withdrawal.status,
+                bankDetails: withdrawal.bankDetails
+            }
         });
-
     } catch (error) {
-        console.error('Withdrawal request error:', error);
+        console.error('Request withdrawal error:', error);
         Sentry.captureException(error);
-        return res.status(500).json({ status: 'error', message: 'Failed to submit withdrawal request' });
+        return res.status(500).json({ status: 'error', message: 'Could not process withdrawal request' });
     }
 };
 
