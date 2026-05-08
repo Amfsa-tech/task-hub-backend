@@ -2,7 +2,6 @@ import AdminNotification from '../models/adminNotification.js'; // Adjust path t
 import { FLW_WEBHOOK_SECRET } from '../config/envConfig.js';
 
 // POST /api/webhooks/resend
-// POST /api/webhooks/resend
 export const handleResendWebhook = async (req, res) => {
     try {
         const event = req.body;

@@ -59,10 +59,10 @@ const transactionSchema = new mongoose.Schema({
     creditedAt: {
         type: Date
     },
-    // Add these to your schemas (Transaction, Withdrawal, Task)
-    balanceBefore: { 
+    // CHANGED: Renamed to previousBalance to match the frontend & controllers
+    previousBalance: { 
         type: Number, 
-        default: null // Null allows us to know which ones are old transactions
+        default: null 
     },
     balanceAfter: { 
         type: Number, 
@@ -70,4 +70,4 @@ const transactionSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
-export default mongoose.model('Transaction', transactionSchema);
+export default mongoose.model('Transaction', transactionSchema)
