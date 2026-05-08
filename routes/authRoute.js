@@ -31,7 +31,7 @@ import {
     setPassword
 } from '../controllers/auth-controller.js';
 import { protectUser, protectTasker, protectAny } from '../middlewares/authMiddleware.js';
-import { uploadTaskImages, handleMulterError } from '../middlewares/uploadMiddleware.js';
+import { uploadProfilePicture, uploadTaskImages, handleMulterError } from '../middlewares/uploadMiddleware.js';
 
 const router = express.Router();
 
@@ -62,8 +62,9 @@ router.post('/reset-password', resetPassword);
 router.post('/change-password', protectAny, changePassword);
 router.post('/set-password', protectAny, setPassword);
 router.put('/profile', protectAny, updateProfile);
-router.put('/profile-picture', protectAny, updateProfilePicture);
+router.put('/profile-picture', protectAny, uploadProfilePicture, handleMulterError, updateProfilePicture);
 router.post('/previous-work', protectTasker, uploadTaskImages, handleMulterError, uploadPreviousWork);
+router.delete('/previous-work/:id', protectTasker, deletePreviousWork);
 router.delete('/previous-work', protectTasker, deletePreviousWork);
 router.put('/categories', protectTasker, updateTaskerCategories);
 router.put('/location', protectTasker, updateTaskerLocation);

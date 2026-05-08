@@ -2,6 +2,7 @@ import Bid from '../models/bid.js';
 import Task from '../models/task.js';
 import User from '../models/user.js';
 import Transaction from '../models/transaction.js';
+import Tasker from '../models/tasker.js';
 import crypto from 'crypto';
 import { notifyUserAboutNewBid, notifyTaskerAboutBidAcceptance, notifyTaskerAboutBidRejection, notifyEscrowHeld, notifyUserAboutTaskAssignment, notifyUserAboutBidWithdrawal } from '../utils/notificationUtils.js';
 import Conversation from '../models/conversation.js';
@@ -441,41 +442,95 @@ const acceptBid = async (req, res) => {
         }
         
         // Use atomic operations instead of a multi-document transaction.
-        // Step 1: Atomically claim the bid (pending → accepted). Only one caller can win.
+        // Task assignment is claimed before the wallet debit so only one acceptance can win.
+        const amountToHold = bid.amount;
+        if (isNaN(amountToHold) || amountToHold <= 0) {
+            return res.status(400).json({
+                status: "error",
+                message: "Cannot accept a bid with an invalid amount"
+            });
+        }
+
+        if (bid.task.isEscrowHeld) {
+            return res.status(400).json({
+                status: "error",
+                message: "Task already has escrow held"
+            });
+        }
+
+        const taskClaim = await Task.updateOne(
+            {
+                _id: bid.task._id,
+                status: 'open',
+                isEscrowHeld: { $ne: true }
+            },
+            {
+                status: 'assigned',
+                assignedTasker: bid.tasker,
+                updatedAt: Date.now()
+            }
+        );
+
+        if (!taskClaim.modifiedCount) {
+            return res.status(400).json({
+                status: "error",
+                message: "Task was already assigned by another request"
+            });
+        }
+
         const claimResult = await Bid.updateOne(
-            { _id: bid._id, status: 'pending' },
+            { _id: bid._id, task: bid.task._id, status: 'pending' },
             { status: 'accepted' }
         );
         if (!claimResult.modifiedCount) {
+            await Task.updateOne(
+                { _id: bid.task._id, status: 'assigned', assignedTasker: bid.tasker, isEscrowHeld: { $ne: true } },
+                {
+                    status: 'open',
+                    assignedTasker: null,
+                    escrowAmount: 0,
+                    escrowStatus: 'not_held',
+                    updatedAt: Date.now()
+                }
+            );
             return res.status(400).json({
                 status: "error",
                 message: "Bid was already processed by another request"
             });
         }
-        bid.status = 'accepted'; // update in-memory copy for the response
+        bid.status = 'accepted';
 
-        // Step 2: Atomically deduct wallet balance (with sufficiency check)
-        const amountToHold = bid.amount;
-        const walletUpdate = await User.updateOne(
+        const userBeforeDebit = await User.findOneAndUpdate(
             { _id: bid.task.user, wallet: { $gte: amountToHold } },
-            { $inc: { wallet: -amountToHold } }
+            { $inc: { wallet: -amountToHold } },
+            { new: false, select: 'wallet' }
         );
 
-        if (!walletUpdate.matchedCount || !walletUpdate.modifiedCount) {
-            // Revert bid status since wallet deduction failed
-            await Bid.updateOne({ _id: bid._id }, { status: 'pending' });
+        if (!userBeforeDebit) {
+            await Bid.updateOne({ _id: bid._id, status: 'accepted' }, { status: 'pending' });
+            await Task.updateOne(
+                { _id: bid.task._id, status: 'assigned', assignedTasker: bid.tasker, isEscrowHeld: { $ne: true } },
+                {
+                    status: 'open',
+                    assignedTasker: null,
+                    escrowAmount: 0,
+                    escrowStatus: 'not_held',
+                    updatedAt: Date.now()
+                }
+            );
             return res.status(402).json({
                 status: "error",
                 message: "Insufficient wallet balance to accept this bid"
             });
         }
 
-        // Step 3: Update task — assign tasker and set escrow fields
-        await Task.findByIdAndUpdate(
-            bid.task._id,
+        const balanceBefore = userBeforeDebit.wallet || 0;
+        const balanceAfter = balanceBefore - amountToHold;
+
+        // Mark the claimed task escrow as held.
+        const escrowUpdate = await Task.updateOne(
+            { _id: bid.task._id, status: 'assigned', assignedTasker: bid.tasker },
             {
-                status: 'assigned',
-                assignedTasker: bid.tasker,
                 isEscrowHeld: true,
                 escrowAmount: amountToHold,
                 escrowAt: new Date(),
@@ -484,7 +539,33 @@ const acceptBid = async (req, res) => {
             }
         );
 
-        // Step 3b: Record escrow_hold transaction
+        if (!escrowUpdate.modifiedCount) {
+            await User.updateOne({ _id: bid.task.user }, { $inc: { wallet: amountToHold } });
+            await Bid.updateOne({ _id: bid._id, status: 'accepted' }, { status: 'pending' });
+            await Task.updateOne(
+                { _id: bid.task._id, status: 'assigned', assignedTasker: bid.tasker },
+                {
+                    status: 'open',
+                    assignedTasker: null,
+                    isEscrowHeld: false,
+                    escrowAmount: 0,
+                    escrowStatus: 'not_held',
+                    updatedAt: Date.now()
+                }
+            );
+            return res.status(500).json({
+                status: "error",
+                message: "Could not hold escrow for this bid"
+            });
+        }
+
+        bid.task.status = 'assigned';
+        bid.task.assignedTasker = bid.tasker;
+        bid.task.isEscrowHeld = true;
+        bid.task.escrowAmount = amountToHold;
+        bid.task.escrowStatus = 'held';
+
+        // Record the escrow hold after the wallet debit succeeds.
         try {
             await Transaction.create({
                 user: bid.task.user,
@@ -496,6 +577,8 @@ const acceptBid = async (req, res) => {
                 provider: 'system',
                 paymentPurpose: 'escrow_hold',
                 currency: 'NGN',
+                balanceBefore,
+                balanceAfter,
                 metadata: { taskId: bid.task._id.toString(), bidId: bid._id.toString(), taskerId: bid.tasker.toString() }
             });
         } catch (txnErr) {
@@ -701,4 +784,4 @@ export  {
     acceptBid,
     getTaskerBids,
     getBidById
-}; 
+};

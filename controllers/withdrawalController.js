@@ -3,28 +3,34 @@ import Withdrawal from '../models/withdrawal.js';
 import Tasker from '../models/tasker.js';
 import Task from '../models/task.js';
 import paystackService from '../services/paystack_service.js';
+import flutterwaveService from '../services/flutterwave_service.js';
+import AdminSettings from '../models/adminSettings.js';
 import * as Sentry from '@sentry/node';
 import { notifyWithdrawalRequested } from '../utils/notificationUtils.js';
 
 const MINIMUM_WITHDRAWAL = 5000;
 const WITHDRAWAL_COOLDOWN_HOURS = 24;
 
-/**
- * GET /api/wallet/tasker/balance
- * Returns the tasker's wallet balance and withdrawable amount.
- * Withdrawable = wallet balance, but only if 24 hours have passed since last completed task.
- */
+// Dynamically route bank queries to the active gateway
+const getActiveGateway = async () => {
+    let settings = await AdminSettings.findOne();
+    if (!settings) settings = await AdminSettings.create({});
+    
+    const providerName = settings.payments?.activeFiatGateway || 'flutterwave';
+    const service = providerName === 'paystack' ? paystackService : flutterwaveService;
+    return { providerName, service };
+};
+
 export const getTaskerBalance = async (req, res) => {
     try {
-        // Fresh read to get current wallet balance (req.tasker may be stale)
-        const tasker = await Tasker.findById(req.tasker._id).select('wallet bankAccount');
+        const authId = req.tasker ? req.tasker._id : req.user._id;
+        const tasker = await Tasker.findById(authId).select('wallet bankAccount');
         if (!tasker) {
             return res.status(404).json({ status: 'error', message: 'Tasker not found' });
         }
 
-        // Find the most recent completed task for this tasker
         const lastCompletedTask = await Task.findOne({
-            assignedTasker: req.tasker._id,
+            assignedTasker: tasker._id,
             status: 'completed'
         }).sort({ completedAt: -1 }).select('completedAt');
 
@@ -34,7 +40,6 @@ export const getTaskerBalance = async (req, res) => {
         let nextWithdrawableAt = null;
 
         if (!lastCompletedTask || !lastCompletedTask.completedAt) {
-            // No completed tasks — wallet balance is withdrawable if > 0
             withdrawableAmount = tasker.wallet;
             canWithdraw = tasker.wallet >= MINIMUM_WITHDRAWAL;
         } else {
@@ -50,7 +55,6 @@ export const getTaskerBalance = async (req, res) => {
             }
         }
 
-        // Check for pending withdrawals
         const pendingWithdrawal = await Withdrawal.findOne({
             tasker: tasker._id,
             status: { $in: ['pending', 'approved'] }
@@ -78,51 +82,35 @@ export const getTaskerBalance = async (req, res) => {
     } catch (error) {
         console.error('Get tasker balance error:', error);
         Sentry.captureException(error);
-        return res.status(500).json({
-            status: 'error',
-            message: 'Could not fetch balance'
-        });
+        return res.status(500).json({ status: 'error', message: 'Could not fetch balance' });
     }
 };
 
-/**
- * POST /api/wallet/tasker/bank-account
- * Add or update bank account details for withdrawals.
- * Resolves account with Paystack and creates a transfer recipient.
- */
 export const setBankAccount = async (req, res) => {
     try {
-        const tasker = req.tasker;
+        const authId = req.tasker ? req.tasker._id : req.user._id;
+        const tasker = await Tasker.findById(authId);
         const { accountNumber, bankCode } = req.body;
 
         if (!accountNumber || !bankCode) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Account number and bank code are required'
-            });
+            return res.status(400).json({ status: 'error', message: 'Account number and bank code are required' });
         }
 
-        // Validate account number format (10 digits for Nigerian banks)
         if (!/^\d{10}$/.test(accountNumber)) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Account number must be 10 digits'
-            });
+            return res.status(400).json({ status: 'error', message: 'Account number must be 10 digits' });
         }
 
-        // Resolve account with Paystack to verify ownership
-        const resolved = await paystackService.resolveAccountNumber(accountNumber, bankCode);
-
-        // Get bank name from bank list
-        const banks = await paystackService.listBanks();
+        // Dynamically resolve the account using Flutterwave (or Paystack if switched)
+        const { service } = await getActiveGateway();
+        const resolved = await service.resolveAccountNumber(accountNumber, bankCode);
+        const banks = await service.listBanks();
         const bank = banks.find(b => b.code === bankCode);
 
-        // Update tasker bank account
         tasker.bankAccount = {
             bankName: bank?.name || bankCode,
             bankCode,
             accountNumber,
-            accountName: resolved.account_name
+            accountName: resolved.account_name || resolved.accountName // Handle both FLW and Paystack response shapes
         };
         await tasker.save();
 
@@ -136,35 +124,19 @@ export const setBankAccount = async (req, res) => {
             }
         });
     } catch (error) {
-        if (error?.name === 'PaystackRequestError') {
-            Sentry.captureException(error);
-            return res.status(400).json({
-                status: 'error',
-                message: error.publicMessage
-            });
-        }
         console.error('Set bank account error:', error);
         Sentry.captureException(error);
-        return res.status(500).json({
-            status: 'error',
-            message: 'Could not save bank account'
-        });
+        return res.status(400).json({ status: 'error', message: 'Could not verify bank account details' });
     }
 };
 
-/**
- * GET /api/wallet/tasker/bank-account
- * Get the tasker's saved bank account details.
- */
 export const getBankAccount = async (req, res) => {
     try {
-        const tasker = req.tasker;
+        const authId = req.tasker ? req.tasker._id : req.user._id;
+        const tasker = await Tasker.findById(authId).select('bankAccount');
 
-        if (!tasker.bankAccount || !tasker.bankAccount.accountNumber) {
-            return res.json({
-                status: 'success',
-                data: null
-            });
+        if (!tasker || !tasker.bankAccount || !tasker.bankAccount.accountNumber) {
+            return res.json({ status: 'success', data: null });
         }
 
         return res.json({
@@ -179,26 +151,20 @@ export const getBankAccount = async (req, res) => {
     } catch (error) {
         console.error('Get bank account error:', error);
         Sentry.captureException(error);
-        return res.status(500).json({
-            status: 'error',
-            message: 'Could not fetch bank account'
-        });
+        return res.status(500).json({ status: 'error', message: 'Could not fetch bank account' });
     }
 };
 
-/**
- * POST /api/wallet/tasker/withdraw
- * Request a withdrawal. Goes to admin for approval.
- * Minimum: ₦5,000. Must be 24hrs after last completed task.
- */
 export const requestWithdrawal = async (req, res) => {
     try {
-        const tasker = await Tasker.findById(req.tasker._id).select('wallet bankAccount');
+        const authId = req.tasker ? req.tasker._id : req.user._id; 
+        const tasker = await Tasker.findById(authId).select('wallet bankAccount');
+        
         if (!tasker) {
             return res.status(404).json({ status: 'error', message: 'Tasker not found' });
         }
 
-        const { amount } = req.body;
+        const { amount, payoutMethod, stellarAddress } = req.body;
         const withdrawAmount = Number(amount);
         
         if (!withdrawAmount || withdrawAmount < MINIMUM_WITHDRAWAL) {
@@ -209,69 +175,56 @@ export const requestWithdrawal = async (req, res) => {
         }
 
         if (withdrawAmount > tasker.wallet) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Insufficient wallet balance'
-            });
-        }
-
-        if (!tasker.bankAccount || !tasker.bankAccount.accountNumber) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Please add a bank account before requesting a withdrawal'
-            });
-        }
-
-        const lastCompletedTask = await Task.findOne({
-            assignedTasker: req.tasker._id,
-            status: 'completed'
-        }).sort({ completedAt: -1 }).select('completedAt');
-
-        if (lastCompletedTask && lastCompletedTask.completedAt) {
-            const hoursSinceLast = (Date.now() - lastCompletedTask.completedAt.getTime()) / (1000 * 60 * 60);
-            if (hoursSinceLast < WITHDRAWAL_COOLDOWN_HOURS) {
-                const nextTime = new Date(lastCompletedTask.completedAt.getTime() + WITHDRAWAL_COOLDOWN_HOURS * 60 * 60 * 1000);
-                return res.status(400).json({
-                    status: 'error',
-                    message: `You can withdraw after ${nextTime.toISOString()}. Must wait 24 hours after last completed task.`
-                });
-            }
+            return res.status(400).json({ status: 'error', message: 'Insufficient wallet balance' });
         }
 
         const existingWithdrawal = await Withdrawal.findOne({
-            tasker: req.tasker._id,
+            tasker: authId,
             status: { $in: ['pending', 'approved'] }
         });
 
         if (existingWithdrawal) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'You already have a pending withdrawal request'
-            });
+            return res.status(400).json({ status: 'error', message: 'You already have a pending withdrawal request' });
         }
 
-        // 🔐 SNAPSHOT: Deducting wallet safely
+        // Snapshot balances to sync correctly with Admin Dashboard logic
         const prevBal = tasker.wallet || 0;
         const newBal = prevBal - withdrawAmount;
-        tasker.wallet = newBal;
-        await tasker.save();
 
-        const withdrawal = await Withdrawal.create({
-            tasker: req.tasker._id,
+        const withdrawalData = {
+            tasker: authId,
             amount: withdrawAmount,
             status: 'pending',
-            balanceBefore: prevBal, // 🔐
-            balanceAfter: newBal,   // 🔐
-            bankDetails: {
+            payoutMethod: payoutMethod || 'bank_transfer',
+            previousBalance: prevBal, 
+            balanceAfter: newBal     
+        };
+
+        if (payoutMethod === 'stellar_crypto') {
+            if (!stellarAddress) {
+                return res.status(400).json({ status: 'error', message: 'Stellar wallet address is required' });
+            }
+            withdrawalData.stellarDetails = { publicKey: stellarAddress };
+        } else {
+            if (!tasker.bankAccount || !tasker.bankAccount.accountNumber) {
+                return res.status(400).json({ status: 'error', message: 'Please add a bank account first' });
+            }
+            withdrawalData.bankDetails = {
                 bankName: tasker.bankAccount.bankName,
                 bankCode: tasker.bankAccount.bankCode,
                 accountNumber: tasker.bankAccount.accountNumber,
                 accountName: tasker.bankAccount.accountName
-            }
-        });
+            };
+        }
+
+        const withdrawal = await Withdrawal.create(withdrawalData);
+
+        // Deduct from wallet
+        tasker.wallet = newBal;
+        await tasker.save();
 
         try {
-            await notifyWithdrawalRequested(req.tasker._id, withdrawAmount, 'bank_transfer');
+            await notifyWithdrawalRequested(authId, withdrawAmount, payoutMethod || 'bank_transfer');
         } catch (notifyErr) {
             console.error('Failed to send withdrawal request notification:', notifyErr);
         }
@@ -289,26 +242,19 @@ export const requestWithdrawal = async (req, res) => {
     } catch (error) {
         console.error('Request withdrawal error:', error);
         Sentry.captureException(error);
-        return res.status(500).json({
-            status: 'error',
-            message: 'Could not process withdrawal request'
-        });
+        return res.status(500).json({ status: 'error', message: 'Could not process withdrawal request' });
     }
 };
 
-/**
- * GET /api/wallet/tasker/withdrawals
- * Get tasker's withdrawal history.
- */
 export const getWithdrawalHistory = async (req, res) => {
     try {
-        const tasker = req.tasker;
+        const authId = req.tasker ? req.tasker._id : req.user._id;
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const skip = (page - 1) * limit;
 
-        const total = await Withdrawal.countDocuments({ tasker: tasker._id });
-        const withdrawals = await Withdrawal.find({ tasker: tasker._id })
+        const total = await Withdrawal.countDocuments({ tasker: authId });
+        const withdrawals = await Withdrawal.find({ tasker: authId })
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit);
@@ -324,20 +270,16 @@ export const getWithdrawalHistory = async (req, res) => {
     } catch (error) {
         console.error('Get withdrawal history error:', error);
         Sentry.captureException(error);
-        return res.status(500).json({
-            status: 'error',
-            message: 'Could not fetch withdrawal history'
-        });
+        return res.status(500).json({ status: 'error', message: 'Could not fetch withdrawal history' });
     }
 };
 
-/**
- * GET /api/wallet/banks
- * List available banks (public for bank selection dropdowns).
- */
 export const listBanks = async (req, res) => {
     try {
-        const banks = await paystackService.listBanks();
+        // Fetch dynamically from Flutterwave or Paystack
+        const { service } = await getActiveGateway();
+        const banks = await service.listBanks();
+        
         const simplified = banks.map(b => ({
             name: b.name,
             code: b.code,
@@ -349,17 +291,8 @@ export const listBanks = async (req, res) => {
             data: simplified
         });
     } catch (error) {
-        if (error?.name === 'PaystackRequestError') {
-            return res.status(502).json({
-                status: 'error',
-                message: error.publicMessage
-            });
-        }
         console.error('List banks error:', error);
         Sentry.captureException(error);
-        return res.status(500).json({
-            status: 'error',
-            message: 'Could not fetch bank list'
-        });
+        return res.status(500).json({ status: 'error', message: 'Could not fetch bank list.' });
     }
 };

@@ -8,7 +8,7 @@ import mongoose from "mongoose";
 import Category from "../models/category.js";
 import University from "../models/university.js";
 import KYCVerification from "../models/kycVerification.js";
-import { uploadMultipleToCloudinary } from "../utils/uploadService.js";
+import { deleteFromCloudinary, uploadMultipleToCloudinary, uploadToCloudinary } from "../utils/uploadService.js";
 import { logActivity } from '../utils/activityLogger.js';
 import {
   generateToken,
@@ -302,6 +302,7 @@ export const getUser = async (req, res) => {
       country: req.user.country,
       residentState: req.user.residentState,
       address: req.user.address,
+      bio: req.user.bio || "",
       wallet: req.user.wallet,
       isEmailVerified: req.user.isEmailVerified,
       isKYCVerified: req.user.isKYCVerified,
@@ -567,6 +568,7 @@ export const getTasker = async (req, res) => {
       originState: tasker.originState,
       residentState: tasker.residentState,
       address: tasker.address,
+      bio: tasker.bio || "",
       wallet: tasker.wallet,
       location: tasker.location,
       mainCategories: tasker.mainCategories,
@@ -805,6 +807,7 @@ export const updateProfile = async (req, res) => {
     const allowedUpdates = [
       "fullName", "firstName", "lastName", "phoneNumber", 
       "country", "residentState", "address", "profilePicture",
+      "bio",
     ];
     
     const updates = {};
@@ -817,6 +820,17 @@ export const updateProfile = async (req, res) => {
     for (const field of allowedUpdates) {
       if (req.body[field] !== undefined) {
         updates[field] = req.body[field];
+      }
+    }
+
+    if (updates.bio !== undefined) {
+      if (typeof updates.bio !== "string") {
+        return res.status(400).json({ status: "error", message: "Bio must be a string" });
+      }
+
+      updates.bio = updates.bio.trim();
+      if (updates.bio.length > 500) {
+        return res.status(400).json({ status: "error", message: "Bio must not exceed 500 characters" });
       }
     }
 
@@ -881,17 +895,25 @@ export const logout = async (req, res) => {
 
 export const updateProfilePicture = async (req, res) => {
   try {
-    const { profilePicture } = req.body;
-    if (!profilePicture) return res.status(400).json({ status: "error", message: "Profile picture URL is required" });
-    
+    if (!req.user) {
+      return res.status(401).json({ status: "error", message: "User not authenticated" });
+    }
+
+    let profilePicture = req.body?.profilePicture;
+
+    if (req.file) {
+      const uploaded = await uploadToCloudinary(req.file.buffer, 'taskhub/profile-pictures');
+      profilePicture = uploaded.url;
+    }
+
+    if (!profilePicture) {
+      return res.status(400).json({ status: "error", message: "Profile picture file or URL is required" });
+    }
+
     try {
       new URL(profilePicture);
     } catch (error) {
       return res.status(400).json({ status: "error", message: "Invalid profile picture URL format" });
-    }
-    
-    if (!req.user) {
-      return res.status(401).json({ status: "error", message: "User not authenticated" });
     }
 
     req.user.profilePicture = profilePicture;
@@ -914,19 +936,18 @@ export const uploadPreviousWork = async (req, res) => {
       return res.status(400).json({ status: "error", message: "At least one image is required" });
     }
 
-    const uploaded = await uploadMultipleToCloudinary(req.files, 'taskhub/previous-work');
-
     // Append to existing previous work instead of replacing
     const tasker = req.tasker;
     const current = tasker.previousWork || [];
-    const combined = [...current, ...uploaded];
-
-    if (combined.length > 10) {
+    if (current.length + req.files.length > 10) {
       return res.status(400).json({
         status: "error",
-        message: `Maximum 10 previous work images allowed. You have ${current.length}, tried to add ${uploaded.length}`,
+        message: `Maximum 10 previous work images allowed. You have ${current.length}, tried to add ${req.files.length}`,
       });
     }
+
+    const uploaded = await uploadMultipleToCloudinary(req.files, 'taskhub/previous-work');
+    const combined = [...current, ...uploaded];
 
     tasker.previousWork = combined;
     await tasker.save();
@@ -952,23 +973,94 @@ export const uploadPreviousWork = async (req, res) => {
 
 export const deletePreviousWork = async (req, res) => {
   try {
-    const { publicId } = req.body;
-    if (!publicId) {
-      return res.status(400).json({ status: "error", message: "publicId is required" });
+    const { id: paramId } = req.params || {};
+    const {
+      id,
+      workId,
+      previousWorkId,
+      publicId,
+      url,
+      index,
+      ids,
+      workIds,
+      previousWorkIds,
+      publicIds,
+      urls,
+      indexes,
+    } = req.body || {};
+
+    const selectors = [
+      ...[paramId, id, workId, previousWorkId].filter(Boolean).map(value => ({ type: 'id', value: value.toString() })),
+      ...[publicId].filter(Boolean).map(value => ({ type: 'publicId', value: value.toString() })),
+      ...[url].filter(Boolean).map(value => ({ type: 'url', value: value.toString() })),
+      ...(index !== undefined && index !== null ? [{ type: 'index', value: Number(index) }] : []),
+      ...(Array.isArray(ids) ? ids.map(value => ({ type: 'id', value: value?.toString() })) : []),
+      ...(Array.isArray(workIds) ? workIds.map(value => ({ type: 'id', value: value?.toString() })) : []),
+      ...(Array.isArray(previousWorkIds) ? previousWorkIds.map(value => ({ type: 'id', value: value?.toString() })) : []),
+      ...(Array.isArray(publicIds) ? publicIds.map(value => ({ type: 'publicId', value: value?.toString() })) : []),
+      ...(Array.isArray(urls) ? urls.map(value => ({ type: 'url', value: value?.toString() })) : []),
+      ...(Array.isArray(indexes) ? indexes.map(value => ({ type: 'index', value: Number(value) })) : []),
+    ].filter(selector => selector.value !== undefined && selector.value !== null && selector.value !== '' && !(selector.type === 'index' && Number.isNaN(selector.value)));
+
+    if (selectors.length === 0) {
+      return res.status(400).json({
+        status: "error",
+        message: "Provide at least one previous work identifier: id, publicId, url, or index"
+      });
     }
 
     const tasker = req.tasker;
-    const index = (tasker.previousWork || []).findIndex(img => img.publicId === publicId);
-    if (index === -1) {
-      return res.status(404).json({ status: "error", message: "Image not found in previous work" });
+    const previousWork = tasker.previousWork || [];
+    const indexesToRemove = new Set();
+
+    for (const selector of selectors) {
+      if (selector.type === 'index') {
+        const numericIndex = Number(selector.value);
+        if (Number.isInteger(numericIndex) && numericIndex >= 0 && numericIndex < previousWork.length) {
+          indexesToRemove.add(numericIndex);
+        }
+        continue;
+      }
+
+      previousWork.forEach((img, imgIndex) => {
+        if (selector.type === 'id' && img._id?.toString() === selector.value) {
+          indexesToRemove.add(imgIndex);
+        }
+        if (selector.type === 'publicId' && img.publicId === selector.value) {
+          indexesToRemove.add(imgIndex);
+        }
+        if (selector.type === 'url' && img.url === selector.value) {
+          indexesToRemove.add(imgIndex);
+        }
+      });
     }
 
-    tasker.previousWork.splice(index, 1);
+    if (indexesToRemove.size === 0) {
+      return res.status(404).json({ status: "error", message: "No matching previous work found" });
+    }
+
+    const removed = [...indexesToRemove]
+      .sort((a, b) => b - a)
+      .map(removeIndex => tasker.previousWork.splice(removeIndex, 1)[0])
+      .filter(Boolean);
+
+    const deleteResults = await Promise.allSettled(
+      removed
+        .map(img => img.publicId)
+        .filter(Boolean)
+        .map(publicIdToDelete => deleteFromCloudinary(publicIdToDelete))
+    );
+    deleteResults
+      .filter(result => result.status === 'rejected')
+      .forEach(result => console.error('Previous work Cloudinary delete error:', result.reason));
+
     await tasker.save();
 
     res.status(200).json({
       status: "success",
-      message: "Previous work image removed",
+      message: removed.length === 1 ? "Previous work image removed" : "Previous work images removed",
+      removedCount: removed.length,
+      removedPreviousWork: removed,
       previousWork: tasker.previousWork,
     });
   } catch (error) {

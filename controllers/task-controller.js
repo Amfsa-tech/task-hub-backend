@@ -10,7 +10,7 @@ import Bid from '../models/bid.js';
 import Transaction from '../models/transaction.js';
 import { notifyMatchingTaskers, notifyUserAboutTaskCompletion, notifyTaskerAboutTaskCancellation, notifyEscrowHeld, notifyEscrowRefunded, notifyUserTaskStarted, notifyTaskerPayoutReceived, notifyTaskerAboutOpenTaskCancellation, notifyTaskerAboutTaskUpdate, notifyTaskerAboutNewRating } from '../utils/notificationUtils.js';
 import User from '../models/user.js';
-import { uploadMultipleToCloudinary } from '../utils/uploadService.js';
+import { deleteFromCloudinary, uploadMultipleToCloudinary } from '../utils/uploadService.js';
 import { formatPublicUser } from '../utils/publicUserUtils.js';
 
 /**
@@ -20,6 +20,16 @@ import { formatPublicUser } from '../utils/publicUserUtils.js';
 const parseField = (value) => {
     if (typeof value !== 'string') return value;
     try { return JSON.parse(value); } catch { return value; }
+};
+
+const cleanupCloudinaryAssets = async (assets = []) => {
+    const publicIds = assets.map(asset => asset?.publicId).filter(Boolean);
+    if (publicIds.length === 0) return;
+
+    const results = await Promise.allSettled(publicIds.map(publicId => deleteFromCloudinary(publicId)));
+    results
+        .filter(result => result.status === 'rejected')
+        .forEach(result => console.error('Cloudinary cleanup error:', result.reason));
 };
 
 // Helper function to check if ID is valid
@@ -169,20 +179,6 @@ export const createTask = async (req, res) => {
             }
         }
 
-        // Upload images to Cloudinary if files were attached
-        let uploadedImages = [];
-        if (req.files && req.files.length > 0) {
-            try {
-                uploadedImages = await uploadMultipleToCloudinary(req.files, 'taskhub/tasks');
-            } catch (uploadError) {
-                console.error('Cloudinary upload error:', uploadError);
-                return res.status(500).json({
-                    status: "error",
-                    message: "Failed to upload images",
-                });
-            }
-        }
-        
         // Validate budget
         const taskBudget = Number(budget);
         if (isNaN(taskBudget) || taskBudget <= 0) {
@@ -214,25 +210,21 @@ export const createTask = async (req, res) => {
             }
         }
 
-        // ==========================================
-        // 🔐 SECURE WALLET DEDUCTION & SNAPSHOT
-        // ==========================================
-        const userWalletDoc = await User.findById(req.user._id);
-        
-        if (userWalletDoc.wallet < taskBudget) {
-            return res.status(400).json({
-                status: "error",
-                message: "Insufficient wallet balance",
-                details: `You need at least ₦${taskBudget.toLocaleString()} in your wallet to fund this task's escrow.`
-            });
+
+        // Upload images only after request validation passes.
+        let uploadedImages = [];
+        if (req.files && req.files.length > 0) {
+            try {
+                uploadedImages = await uploadMultipleToCloudinary(req.files, 'taskhub/tasks');
+            } catch (uploadError) {
+                console.error('Cloudinary upload error:', uploadError);
+                return res.status(500).json({
+                    status: "error",
+                    message: "Failed to upload images",
+                });
+            }
         }
 
-        const prevBal = userWalletDoc.wallet || 0;
-        const newBal = prevBal - taskBudget;
-        userWalletDoc.wallet = newBal;
-        await userWalletDoc.save();
-        // ==========================================
-        
         const task = new Task({
             title,
             description,
@@ -249,36 +241,14 @@ export const createTask = async (req, res) => {
             isBiddingEnabled: isBiddingEnabled || false,
             deadline: deadline || null,
             user: req.user._id,
-            // 🔐 Mark escrow as held
-            isEscrowHeld: true,
-            escrowAmount: taskBudget,
-            escrowStatus: 'held'
+            // Escrow is funded when the owner accepts a bid.
+            isEscrowHeld: false,
+            escrowAmount: 0,
+            escrowStatus: 'not_held'
         });
         
         await task.save();
 
-        // ==========================================
-        // 🔐 CREATE TRANSACTION RECORD WITH SNAPSHOTS
-        // ==========================================
-        try {
-            await Transaction.create({
-                user: req.user._id,
-                amount: taskBudget,
-                type: 'debit',
-                description: `Task Escrow Funded: ${title}`,
-                status: 'success',
-                reference: `ESC-FUND-${task._id}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
-                provider: 'system',
-                paymentPurpose: 'escrow_funding',
-                currency: 'NGN',
-                balanceBefore: prevBal, // 🔐
-                balanceAfter: newBal,   // 🔐
-                metadata: { taskId: task._id.toString() }
-            });
-        } catch (txnErr) {
-            console.error('Failed to create escrow_funding transaction:', txnErr);
-        }
-        // ==========================================
 
         // Increment user's tasksPostedCount
         try {
@@ -298,7 +268,7 @@ export const createTask = async (req, res) => {
         
         res.status(201).json({
             status: "success",
-            message: "Task created and escrow funded successfully",
+            message: "Task created successfully",
             task
         });
     } catch (error) {
@@ -345,7 +315,7 @@ const getAllTasks = async (req, res) => {
         
         // Get tasks with pagination
     const tasks = await Task.find(filterOptions)
-            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
+            .populate('user', 'fullName profilePicture bio country residentState tasksPostedCount completedTasksCount totalSpent')
             .populate('assignedTasker', 'firstName lastName profilePicture')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description')
@@ -378,6 +348,48 @@ const getAllTasks = async (req, res) => {
     }
 };
 
+const attachBidSummary = async (tasks) => {
+    const taskIds = tasks.map(task => task._id);
+    if (taskIds.length === 0) {
+        return tasks;
+    }
+
+    const bidCounts = await Bid.aggregate([
+        { $match: { task: { $in: taskIds } } },
+        {
+            $group: {
+                _id: '$task',
+                bidCount: { $sum: 1 },
+                pendingBidCount: {
+                    $sum: {
+                        $cond: [{ $eq: ['$status', 'pending'] }, 1, 0]
+                    }
+                }
+            }
+        }
+    ]);
+
+    const bidCountMap = Object.fromEntries(
+        bidCounts.map(item => [
+            item._id.toString(),
+            {
+                bidCount: item.bidCount,
+                pendingBidCount: item.pendingBidCount
+            }
+        ])
+    );
+
+    return tasks.map(task => {
+        const taskObj = typeof task.toObject === 'function' ? task.toObject() : task;
+        const counts = bidCountMap[taskObj._id.toString()] || { bidCount: 0, pendingBidCount: 0 };
+
+        return {
+            ...taskObj,
+            ...counts
+        };
+    });
+};
+
 // Get a specific task by ID
 const getTaskById = async (req, res) => {
     try {
@@ -392,7 +404,7 @@ const getTaskById = async (req, res) => {
         }
         
     const task = await Task.findById(id)
-            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent createdAt')
+            .populate('user', 'fullName profilePicture bio country residentState tasksPostedCount completedTasksCount totalSpent createdAt')
             .populate('assignedTasker', 'firstName lastName profilePicture')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description');
@@ -404,8 +416,23 @@ const getTaskById = async (req, res) => {
             });
         }
 
-        const taskObj = task.toObject();
+        const isTaskOwner = req.userType === 'user' && task.user?._id?.toString() === req.user._id.toString();
+        let taskObj = task.toObject();
         taskObj.user = formatPublicUser(taskObj.user, 'full');
+
+        if (isTaskOwner) {
+            const bids = await Bid.find({ task: task._id })
+                .populate('tasker', 'firstName lastName profilePicture bio averageRating previousWork websiteLink')
+                .sort({ createdAt: -1 });
+
+            taskObj.bids = bids.map(bid => ({
+                ...bid.toObject(),
+                bidTypeLabel: bid.bidType === 'fixed' ? 'Fixed Price Application' : 'Custom Bid',
+                isFixedPrice: bid.bidType === 'fixed'
+            }));
+            taskObj.bidCount = bids.length;
+            taskObj.pendingBidCount = bids.filter(bid => bid.status === 'pending').length;
+        }
         
         res.status(200).json({
             status: "success",
@@ -554,6 +581,11 @@ const updateTask = async (req, res) => {
             { new: true, runValidators: true }
         );
 
+        // Remove replaced task images from Cloudinary after the DB update succeeds.
+        if (uploadedImages) {
+            await cleanupCloudinaryAssets(task.images);
+        }
+
         // Notify assigned tasker about the update (if task is assigned/in-progress)
         if (task.assignedTasker && ['assigned', 'in-progress'].includes(task.status)) {
             try {
@@ -644,6 +676,7 @@ const deleteTask = async (req, res) => {
         }
 
     await Task.findByIdAndDelete(id);
+    await cleanupCloudinaryAssets(task.images);
         
         res.status(200).json({
             status: "success",
@@ -686,13 +719,15 @@ const getUserTasks = async (req, res) => {
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit);
+
+        const tasksWithBidSummary = await attachBidSummary(tasks);
             
         res.status(200).json({
             status: "success",
-            count: tasks.length,
+            count: tasksWithBidSummary.length,
             totalPages: Math.ceil(totalTasks / limit),
             currentPage: page,
-            tasks
+            tasks: tasksWithBidSummary
         });
     } catch (error) {
         console.error("Get user tasks error:", error);
@@ -1212,7 +1247,7 @@ const getTaskerFeed = async (req, res) => {
         const fetchLimit = hasLocation ? limit * 5 : (cursor ? limit : 0);
         
         let taskQuery = Task.find(filterOptions)
-            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
+            .populate('user', 'fullName profilePicture bio country residentState tasksPostedCount completedTasksCount totalSpent')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description')
             .select('-__v')
@@ -1411,7 +1446,7 @@ const getTaskerTasks = async (req, res) => {
         const totalTasks = await Task.countDocuments(filterOptions);
 
         const tasks = await Task.find(filterOptions)
-            .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
+            .populate('user', 'fullName profilePicture bio country residentState tasksPostedCount completedTasksCount totalSpent')
             .populate('mainCategory', 'name displayName description')
             .populate('subCategory', 'name displayName description')
             .sort({ createdAt: -1 })
@@ -1609,4 +1644,4 @@ export  {
     getCompletionCode,
     getTaskerTasks,
     submitRating
-}; 
+};

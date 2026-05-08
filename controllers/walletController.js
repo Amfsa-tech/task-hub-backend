@@ -1,36 +1,38 @@
 import crypto from 'crypto';
 import Transaction from '../models/transaction.js';
 import User from '../models/user.js';
-import Withdrawal from '../models/withdrawal.js'; // NEW IMPORT
+import Withdrawal from '../models/withdrawal.js';
 import paystackService from '../services/paystack_service.js';
-import bcrypt from 'bcryptjs'; // NEW IMPORT
+import AdminSettings from '../models/adminSettings.js';
+import bcrypt from 'bcryptjs';
 import Tasker from '../models/tasker.js';
-import axios from 'axios'; // Make sure this is at the top of your controller file if it isn't already!
+import flutterwaveService from '../services/flutterwave_service.js';
+import axios from 'axios'; 
 import * as Sentry from '@sentry/node';
 import { notifyWalletFunded } from '../utils/notificationUtils.js';
 
-/**
- * POST /api/wallet/fund/initialize
- * Creates a pending transaction and returns a Paystack authorization URL.
- * Requires: protectUser middleware (req.user populated)
- */
-// ==========================================
-// BANK ACCOUNTS & PAYSTACK BANKS
-// ==========================================
+// Helper to get active gateway
+const getActiveGateway = async () => {
+    let settings = await AdminSettings.findOne();
+    if (!settings) settings = await AdminSettings.create({});
+    
+    const providerName = settings.payments?.activeFiatGateway || 'flutterwave';
+    const service = providerName === 'paystack' ? paystackService : flutterwaveService;
+    return { providerName, service };
+};
 
 /**
  * GET /api/wallet/banks
- * Fetches the official list of Nigerian banks from Paystack
+ * Fetches the official list of Nigerian banks from Paystack or Flutterwave
  */
 export const getBanks = async (req, res) => {
     try {
-        const response = await axios.get('https://api.paystack.co/bank?country=nigeria', {
-            headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` }
-        });
+        const { service } = await getActiveGateway();
+        const banks = await service.listBanks();
         
         return res.status(200).json({
             status: 'success',
-            data: response.data.data
+            data: banks.map(b => ({ name: b.name, code: b.code }))
         });
     } catch (error) {
         Sentry.captureException(error);
@@ -53,7 +55,7 @@ export const getTaskerBankAccount = async (req, res) => {
 
         return res.status(200).json({
             status: 'success',
-            data: tasker.bankAccount || null // Returns null if they haven't saved one yet
+            data: tasker.bankAccount || null 
         });
     } catch (error) {
         Sentry.captureException(error);
@@ -62,46 +64,35 @@ export const getTaskerBankAccount = async (req, res) => {
     }
 };
 
-
 export const initializeFunding = async (req, res) => {
     try {
         const { amount } = req.body;
         const user = req.user;
 
-        // Validate amount (expect Naira from client, convert to kobo for Paystack)
         const nairaAmount = Number(amount);
-        if (isNaN(nairaAmount)) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Invalid amount value',
-            });
-        }
-        if (nairaAmount < 100) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Minimum funding amount is ₦100',
-            });
+        if (isNaN(nairaAmount) || nairaAmount < 100) {
+            return res.status(400).json({ status: 'error', message: 'Minimum funding amount is ₦100' });
         }
 
-        const koboAmount = Math.round(nairaAmount * 100);
+        const { providerName, service } = await getActiveGateway();
+        // Convert to kobo (Standard backend storage format)
+        const koboAmount = Math.round(nairaAmount * 100); 
         const reference = `WF-${user._id}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
-        // Create a pending transaction record
         const transaction = await Transaction.create({
             user: user._id,
             amount: nairaAmount,
             type: 'credit',
-            description: 'Wallet funding via Paystack',
+            description: `Wallet funding via ${providerName.toUpperCase()}`,
             status: 'pending',
             reference,
-            provider: 'paystack',
+            provider: providerName,
             paymentPurpose: 'wallet_funding',
             currency: 'NGN',
             metadata: { initiatedAt: new Date().toISOString() },
         });
 
-        // Initialize with Paystack
-        const paystackData = await paystackService.initializeTransaction({
+        const gatewayData = await service.initializeTransaction({
             email: user.emailAddress,
             amount: koboAmount,
             reference,
@@ -114,32 +105,17 @@ export const initializeFunding = async (req, res) => {
 
         return res.status(200).json({
             status: 'success',
-            message: 'Payment initialized',
+            message: `Payment initialized via ${providerName}`,
             data: {
-                authorizationUrl: paystackData.authorization_url,
-                accessCode: paystackData.access_code,
+                authorizationUrl: gatewayData.authorization_url,
                 reference,
+                provider: providerName
             },
         });
     } catch (error) {
         Sentry.captureException(error);
-        if (error?.name === 'PaystackRequestError') {
-            console.error('[Wallet Fund] Initialize error:', {
-                message: error.message,
-                statusCode: error.statusCode,
-                details: error.details,
-            });
-            return res.status(502).json({
-                status: 'error',
-                message: error.publicMessage,
-            });
-        }
-
         console.error('[Wallet Fund] Initialize error:', error);
-        return res.status(500).json({
-            status: 'error',
-            message: 'Could not initialize payment',
-        });
+        return res.status(500).json({ status: 'error', message: error.publicMessage || 'Could not initialize payment' });
     }
 };
 
@@ -152,162 +128,99 @@ export const verifyFunding = async (req, res) => {
         const { reference } = req.query;
         const user = req.user;
 
-        if (!reference) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Reference is required',
-            });
-        }
+        if (!reference) return res.status(400).json({ status: 'error', message: 'Reference is required' });
 
-        // Find the internal transaction
         const transaction = await Transaction.findOne({ reference, user: user._id });
+        if (!transaction) return res.status(404).json({ status: 'error', message: 'Transaction not found' });
 
-        if (!transaction) {
-            return res.status(404).json({
-                status: 'error',
-                message: 'Transaction not found',
-            });
-        }
-
-        // Already processed — return current state
-        if (transaction.status === 'success') {
+        if (transaction.status === 'success' || transaction.status === 'failed') {
             return res.status(200).json({
                 status: 'success',
-                message: 'Payment already verified and credited',
-                data: {
-                    reference: transaction.reference,
-                    amount: transaction.amount,
-                    transactionStatus: transaction.status,
-                    creditedAt: transaction.creditedAt,
-                },
+                message: `Payment previously processed as ${transaction.status}`,
+                data: { reference: transaction.reference, transactionStatus: transaction.status },
             });
         }
 
-        if (transaction.status === 'failed') {
-            return res.status(200).json({
-                status: 'success',
-                message: 'Payment failed',
-                data: {
-                    reference: transaction.reference,
-                    amount: transaction.amount,
-                    transactionStatus: transaction.status,
-                },
-            });
-        }
+        const service = transaction.provider === 'paystack' ? paystackService : flutterwaveService;
+        const gatewayData = await service.verifyTransaction(reference);
 
-        // Still pending — verify with Paystack
-        const paystackData = await paystackService.verifyTransaction(reference);
+        if (gatewayData.status === 'success') {
+            const expectedKobo = Math.round(transaction.amount * 100);
+            if (gatewayData.amount !== expectedKobo) {
+                 return res.status(400).json({ status: 'error', message: 'Value mismatch detected' });
+            }
 
-        if (paystackData.status === 'success') {
-            await creditWallet(transaction, paystackData);
+            // Perform the snapshot and credit
+            await creditWallet(transaction, gatewayData);
             const updated = await Transaction.findById(transaction._id);
 
             return res.status(200).json({
                 status: 'success',
                 message: 'Payment verified and wallet credited',
-                data: {
-                    reference: updated.reference,
-                    amount: updated.amount,
-                    transactionStatus: updated.status,
-                    creditedAt: updated.creditedAt,
-                },
+                data: { reference: updated.reference, transactionStatus: updated.status },
             });
         }
 
-        // Payment not yet successful on Paystack side
-        if (paystackData.status === 'failed' || paystackData.status === 'reversed') {
+        if (gatewayData.status === 'failed' || gatewayData.status === 'reversed') {
             transaction.status = 'failed';
-            transaction.gatewayResponse = paystackData.gateway_response;
+            transaction.gatewayResponse = gatewayData.gateway_response;
             transaction.verifiedAt = new Date();
             await transaction.save();
         }
 
         return res.status(200).json({
             status: 'success',
-            message: `Payment status: ${paystackData.status}`,
-            data: {
-                reference: transaction.reference,
-                amount: transaction.amount,
-                transactionStatus: paystackData.status === 'failed' || paystackData.status === 'reversed'
-                    ? 'failed'
-                    : 'pending',
-            },
+            message: `Payment status: ${gatewayData.status}`,
+            data: { reference: transaction.reference, transactionStatus: 'pending' },
         });
     } catch (error) {
         Sentry.captureException(error);
-        if (error?.name === 'PaystackRequestError') {
-            console.error('[Wallet Fund] Verify error:', {
-                message: error.message,
-                statusCode: error.statusCode,
-                details: error.details,
-            });
-            return res.status(502).json({
-                status: 'error',
-                message: error.publicMessage,
-            });
-        }
-
         console.error('[Wallet Fund] Verify error:', error);
-        return res.status(500).json({
-            status: 'error',
-            message: 'Could not verify payment',
-        });
+        return res.status(500).json({ status: 'error', message: 'Could not verify payment' });
     }
 };
 
 /**
  * Credits the user's wallet atomically using findOneAndUpdate for idempotency.
+ * THIS FIXES THE ADMIN DASHBOARD DISPLAY.
  */
-export const creditWallet = async (transaction, paystackData) => {
-    if (transaction.status === 'success') {
-        return;
-    }
+export const creditWallet = async (transaction, gatewayData) => {
+    if (transaction.status === 'success') return;
 
-    // 1. Find User to take a secure snapshot BEFORE adding funds
     const user = await User.findById(transaction.user);
-    if (!user) {
-        console.error(`[Wallet Fund] User ${transaction.user} not found for transaction ${transaction._id}`);
-        return;
-    }
+    if (!user) return;
 
     const previousBalance = user.wallet || 0;
     const newBalance = previousBalance + transaction.amount;
 
-    // 2. Update the user's wallet manually instead of using $inc
     user.wallet = newBalance;
     await user.save();
 
-    // 3. Update the Transaction and permanently stamp the snapshots
     const txn = await Transaction.findOneAndUpdate(
         { _id: transaction._id, status: 'pending' },
         {
-            status: 'success',
-            providerTransactionId: String(paystackData.id),
-            gatewayResponse: paystackData.gateway_response,
+            status: 'success', 
+            providerTransactionId: String(gatewayData.id),
+            gatewayResponse: gatewayData.gateway_response,
             verifiedAt: new Date(),
             creditedAt: new Date(),
-            balanceBefore: previousBalance, // 🔐 SNAPSHOT SAVED
-            balanceAfter: newBalance,       // 🔐 SNAPSHOT SAVED
+            previousBalance: previousBalance, 
+            balanceAfter: newBalance,         
             metadata: {
                 ...transaction.metadata,
-                paystackChannel: paystackData.channel,
-                paystackPaidAt: paystackData.paid_at,
+                channel: gatewayData.channel,
+                paidAt: gatewayData.paid_at,
             },
         },
         { new: true }
     );
 
-    if (!txn) {
-        return;
-    }
-
-    console.log(`[Wallet Fund] ✓ Credited ₦${txn.amount} to user ${txn.user} (ref: ${txn.reference})`);
-
-    // Notify user about successful wallet funding
-    try {
-        await notifyWalletFunded(txn.user.toString(), txn.amount, 'paystack');
-    } catch (notifyErr) {
-        console.error('[Wallet Fund] Failed to send funding notification:', notifyErr);
+    if (txn) {
+        try {
+            await notifyWalletFunded(txn.user.toString(), txn.amount, txn.provider);
+        } catch (notifyErr) {
+            console.error('Notification Error:', notifyErr);
+        }
     }
 };
 
@@ -332,7 +245,7 @@ export const getUserBalance = async (req, res) => {
             data: {
                 walletBalance: user.wallet,
                 totalInEscrow: totalEscrow,
-                availableBalance: user.wallet - totalEscrow
+                availableBalance: user.wallet
             }
         });
     } catch (error) {
@@ -369,7 +282,7 @@ export const getUserTransactions = async (req, res) => {
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit)
-            .select('amount type description status reference paymentPurpose createdAt metadata');
+            .select('amount type description status reference paymentPurpose createdAt metadata previousBalance balanceAfter');
 
         return res.json({
             status: 'success',
@@ -395,7 +308,6 @@ export const getUserTransactions = async (req, res) => {
 
 /**
  * GET /api/wallet/stellar/deposit-info
- * Returns Master Wallet Address and User's Memo ID for the QR Code screen
  */
 export const getStellarDepositInfo = async (req, res) => {
     try {
@@ -405,7 +317,6 @@ export const getStellarDepositInfo = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'User not found' });
         }
 
-        // Generate Memo ID on the fly if they don't have one yet
         if (!user.stellarMemoId) {
             user.stellarMemoId = crypto.randomBytes(4).toString('hex').toUpperCase();
             await user.save();
@@ -417,7 +328,7 @@ export const getStellarDepositInfo = async (req, res) => {
                 masterWalletAddress: process.env.STELLAR_MASTER_PUBLIC_KEY,
                 userMemoId: user.stellarMemoId,
                 network: process.env.STELLAR_NETWORK || 'TESTNET',
-                exchangeRate: 1500 // NGN per XLM (Match this with your listener)
+                exchangeRate: 1500 
             }
         });
     } catch (error) {
@@ -429,92 +340,102 @@ export const getStellarDepositInfo = async (req, res) => {
 
 /**
  * POST /api/wallet/withdraw
- * Creates a withdrawal request (Crypto or Bank) and deducts funds from the wallet
- */
-/**
- * POST /api/wallet/withdraw
  * Creates a withdrawal request (Crypto or Bank) and deducts funds from the TASKER's wallet
  */
 export const requestWithdrawal = async (req, res) => {
     try {
-        const { amount, payoutMethod, stellarAddress, bankDetails, transactionPin } = req.body;
-        // Depending on your auth middleware, the ID might be on req.tasker._id or req.user._id.
-        // Assuming your middleware decodes the JWT to req.user regardless of account type:
-        const taskerId = req.user._id; 
-
-        // 1. CORRECTION: Fetch from Tasker model, not User model
-        const tasker = await Tasker.findById(taskerId);
-
-        if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
-
-        // 2. Basic Validation
-        const withdrawAmount = Number(amount);
-        if (isNaN(withdrawAmount) || withdrawAmount < 5000) {
-            return res.status(400).json({ status: 'error', message: 'Minimum withdrawal is ₦5,000' });
+        const authId = req.tasker ? req.tasker._id : req.user._id; 
+        const tasker = await Tasker.findById(authId).select('wallet bankAccount');
+        
+        if (!tasker) {
+            return res.status(404).json({ status: 'error', message: 'Tasker not found' });
         }
 
-        // Check the TASKER'S wallet balance
-        if (tasker.wallet < withdrawAmount) {
+        const { amount, payoutMethod, stellarAddress } = req.body;
+        const withdrawAmount = Number(amount);
+        
+        if (!withdrawAmount || withdrawAmount < 5000) {
+            return res.status(400).json({
+                status: 'error',
+                message: `Minimum withdrawal amount is ₦5,000`
+            });
+        }
+
+        if (withdrawAmount > tasker.wallet) {
             return res.status(400).json({ status: 'error', message: 'Insufficient wallet balance' });
         }
 
-        // 3. Verify Transaction PIN on the Tasker model
-        if (!tasker.transactionPin) {
-             return res.status(400).json({ status: 'error', message: 'Please set up a transaction PIN in your settings first' });
-        }
-        
-        const isPinValid = await bcrypt.compare(transactionPin.toString(), tasker.transactionPin);
-        if (!isPinValid) {
-            return res.status(401).json({ status: 'error', message: 'Invalid Transaction PIN' });
+        const existingWithdrawal = await Withdrawal.findOne({
+            tasker: authId,
+            status: { $in: ['pending', 'approved'] }
+        });
+
+        if (existingWithdrawal) {
+            return res.status(400).json({ status: 'error', message: 'You already have a pending withdrawal request' });
         }
 
-        // 4. Construct the Pending Withdrawal Request
-        const newWithdrawal = new Withdrawal({
-            tasker: taskerId, // Explicitly linked to the Tasker
+        const prevBal = tasker.wallet || 0;
+        const newBal = prevBal - withdrawAmount;
+
+        const withdrawalData = {
+            tasker: authId,
             amount: withdrawAmount,
-            payoutMethod: payoutMethod, 
-            status: 'pending'
-        });
+            status: 'pending',
+            payoutMethod: payoutMethod || 'bank_transfer',
+            previousBalance: prevBal, 
+            balanceAfter: newBal     
+        };
 
         if (payoutMethod === 'stellar_crypto') {
             if (!stellarAddress) {
                 return res.status(400).json({ status: 'error', message: 'Stellar wallet address is required' });
             }
-            newWithdrawal.stellarDetails = { publicKey: stellarAddress };
-        } else if (payoutMethod === 'bank_transfer') {
-            if (!bankDetails || !bankDetails.accountNumber) {
-                return res.status(400).json({ status: 'error', message: 'Bank details are required for fiat withdrawal' });
-            }
-            newWithdrawal.bankDetails = bankDetails;
+            withdrawalData.stellarDetails = { publicKey: stellarAddress };
         } else {
-            return res.status(400).json({ status: 'error', message: 'Invalid payout method' });
+            if (!tasker.bankAccount || !tasker.bankAccount.accountNumber) {
+                return res.status(400).json({ status: 'error', message: 'Please add a bank account first' });
+            }
+            withdrawalData.bankDetails = {
+                bankName: tasker.bankAccount.bankName,
+                bankCode: tasker.bankAccount.bankCode,
+                accountNumber: tasker.bankAccount.accountNumber,
+                accountName: tasker.bankAccount.accountName
+            };
         }
 
-        await newWithdrawal.save();
+        const withdrawal = await Withdrawal.create(withdrawalData);
 
-        // 5. CORRECTION: Deduct the requested amount from the TASKER's wallet to lock it in
-        tasker.wallet -= withdrawAmount;
+        tasker.wallet = newBal;
         await tasker.save();
+
+        try {
+            await notifyWithdrawalRequested(authId, withdrawAmount, payoutMethod || 'bank_transfer');
+        } catch (notifyErr) {
+            console.error('Failed to send withdrawal request notification:', notifyErr);
+        }
 
         return res.status(201).json({
             status: 'success',
-            message: 'Withdrawal request submitted successfully. Awaiting admin approval.',
-            data: { withdrawalId: newWithdrawal._id }
+            message: 'Withdrawal request submitted. Awaiting admin approval.',
+            data: {
+                withdrawalId: withdrawal._id,
+                amount: withdrawal.amount,
+                status: withdrawal.status,
+                bankDetails: withdrawal.bankDetails
+            }
         });
-
     } catch (error) {
-        console.error('Withdrawal request error:', error);
+        console.error('Request withdrawal error:', error);
         Sentry.captureException(error);
-        return res.status(500).json({ status: 'error', message: 'Failed to submit withdrawal request' });
+        return res.status(500).json({ status: 'error', message: 'Could not process withdrawal request' });
     }
 };
 
 export const setupTransactionPin = async (req, res) => {
     try {
-        const { pin, password } = req.body; // Require their login password for security
+        const { pin, password } = req.body; 
         const taskerId = req.user._id;
 
-        // 1. Validate the PIN is exactly 4 digits
         if (!pin || !/^\d{4}$/.test(pin)) {
             return res.status(400).json({ status: 'error', message: 'PIN must be exactly 4 digits' });
         }
@@ -522,13 +443,11 @@ export const setupTransactionPin = async (req, res) => {
         const tasker = await Tasker.findById(taskerId);
         if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
 
-        // 2. Security Check: Verify their actual account password before allowing a PIN change
         const isPasswordValid = await bcrypt.compare(password, tasker.password);
         if (!isPasswordValid) {
             return res.status(401).json({ status: 'error', message: 'Incorrect account password' });
         }
 
-        // 3. Hash the 4-digit PIN and save it
         const salt = await bcrypt.genSalt(10);
         tasker.transactionPin = await bcrypt.hash(pin.toString(), salt);
         await tasker.save();
@@ -547,7 +466,6 @@ export const setupTransactionPin = async (req, res) => {
 
 /**
  * GET /api/wallet/tasker/balance
- * Returns the Tasker's earned wallet balance and pending withdrawals.
  */
 export const getTaskerBalance = async (req, res) => {
     try {
@@ -556,7 +474,6 @@ export const getTaskerBalance = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Tasker not found' });
         }
 
-        // Calculate how much money they currently have locked in pending withdrawal requests
         const pendingWithdrawalsAgg = await Withdrawal.aggregate([
             { $match: { tasker: tasker._id, status: { $in: ['pending', 'processing', 'approved'] } } },
             { $group: { _id: null, total: { $sum: '$amount' } } }
@@ -568,7 +485,7 @@ export const getTaskerBalance = async (req, res) => {
             data: {
                 walletBalance: tasker.wallet,
                 pendingWithdrawals: pendingWithdrawals,
-                availableToWithdraw: tasker.wallet // Assuming their wallet balance reflects actual withdrawable cash
+                availableToWithdraw: tasker.wallet 
             }
         });
     } catch (error) {
@@ -580,7 +497,6 @@ export const getTaskerBalance = async (req, res) => {
 
 /**
  * GET /api/wallet/tasker/transactions?page=1&limit=10
- * Returns the Tasker's history (Earnings, Payouts, Withdrawals).
  */
 export const getTaskerTransactions = async (req, res) => {
     try {
@@ -589,7 +505,6 @@ export const getTaskerTransactions = async (req, res) => {
         const limit = parseInt(req.query.limit) || 10;
         const skip = (page - 1) * limit;
 
-        // CRITICAL: Filter by the 'tasker' field, not 'user'
         const filter = { tasker: taskerId };
 
         const total = await Transaction.countDocuments(filter);
@@ -597,7 +512,7 @@ export const getTaskerTransactions = async (req, res) => {
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit)
-            .select('amount type description status reference paymentPurpose createdAt metadata');
+            .select('amount type description status reference paymentPurpose createdAt metadata previousBalance balanceAfter');
 
         return res.json({
             status: 'success',

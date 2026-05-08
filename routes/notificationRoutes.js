@@ -2,7 +2,8 @@ import express from 'express';
 import { 
     getMyNotifications, 
     markNotificationRead,
-    markAllNotificationsRead
+    markAllNotificationsRead,
+    deleteNotification
 } from '../controllers/notificationController.js';
 
 // Assuming your middleware is named protectUser
@@ -27,5 +28,9 @@ router.patch('/read-all', markAllNotificationsRead);
 // PATCH /api/notifications/:id/read
 // Frontend calls this when a user clicks a specific notification
 router.patch('/:id/read', markNotificationRead);
+
+// DELETE /api/notifications/:id
+// Frontend calls this to permanently remove one notification
+router.delete('/:id', deleteNotification);
 
 export default router;

@@ -451,6 +451,7 @@ Authorization: Bearer <tasker_token>
     "emailAddress": "adekola@example.com",
     "phoneNumber": "+2348012345678",
     "profilePicture": "https://cdn.example.com/photo.jpg",
+    "bio": "Reliable campus tasker with experience in errands and deliveries.",
     "residentState": "Lagos",
     "wallet": 12500,
     "location": {
@@ -522,11 +523,19 @@ GET /api/taskers/nearby?latitude=6.5158&longitude=3.3898
       "firstName": "Adekola",
       "lastName": "Ogunbiyi",
       "profilePicture": "https://cdn.example.com/photo.jpg",
+      "bio": "Reliable local electrician with same-day availability.",
       "averageRating": 4.8,
       "completedJobs": 23,
       "primaryCategory": "Electrician",
       "area": null,
       "residentState": "Lagos",
+      "previousWork": [
+        {
+          "url": "https://cdn.example.com/work-1.jpg",
+          "publicId": "taskhub/taskers/work-1"
+        }
+      ],
+      "websiteLink": "https://myportfolio.com",
       "distance": 2.3
     },
     {
@@ -534,11 +543,14 @@ GET /api/taskers/nearby?latitude=6.5158&longitude=3.3898
       "firstName": "Chioma",
       "lastName": "Nwosu",
       "profilePicture": "",
+      "bio": "",
       "averageRating": 4.6,
       "completedJobs": 15,
       "primaryCategory": "Laundry Pickup",
       "area": null,
       "residentState": "Lagos",
+      "previousWork": [],
+      "websiteLink": "",
       "distance": 4.1
     }
   ]
@@ -546,6 +558,8 @@ GET /api/taskers/nearby?latitude=6.5158&longitude=3.3898
 ```
 
 ### Response Fields
+
+Additional response fields now include `bio` (public profile bio, max 500 characters), `previousWork` (portfolio images as `{ url, publicId }`), and `websiteLink` (tasker's public portfolio or website URL).
 
 | Field | Type | Description |
 |---|---|---|

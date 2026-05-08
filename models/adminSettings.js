@@ -1,4 +1,4 @@
-import { Schema, model } from 'mongoose';
+import mongoose, { Schema, model } from 'mongoose';
 
 const adminSettingsSchema = new Schema({
     system: {
@@ -16,11 +16,20 @@ const adminSettingsSchema = new Schema({
         reportAlerts: { type: Boolean, default: true },
         kycSubmissionAlerts: { type: Boolean, default: true }
     },
+    payments: {
+        activeFiatGateway: { 
+            type: String, 
+            enum: ['flutterwave', 'paystack'], 
+            default: 'flutterwave' 
+        }
+    },
     systemInfo: {
         version: { type: String, default: '1.0.0' },
         lastBackup: { type: Date, default: Date.now }
     }
 }, { timestamps: true });
 
-const AdminSettings = model('AdminSettings', adminSettingsSchema);
+// FIX: Use mongoose.models to check for the compiled model
+const AdminSettings = mongoose.models.AdminSettings || model('AdminSettings', adminSettingsSchema);
+
 export default AdminSettings;

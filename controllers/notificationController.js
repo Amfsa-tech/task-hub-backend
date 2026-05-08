@@ -1,6 +1,14 @@
 import Notification from '../models/notification.js';
 import * as Sentry from '@sentry/node';
 
+const ownsNotification = (notification, accountId) => {
+    const id = accountId.toString();
+    return (
+        notification.user?.toString() === id ||
+        notification.tasker?.toString() === id
+    );
+};
+
 /**
  * GET /api/notifications
  * Fetches the logged-in user's or tasker's notifications
@@ -46,10 +54,7 @@ export const markNotificationRead = async (req, res) => {
         }
 
         // Security check: Ensure this notification actually belongs to the person clicking it
-        if (
-            (notification.user && notification.user.toString() !== req.user._id.toString()) &&
-            (notification.tasker && notification.tasker.toString() !== req.user._id.toString())
-        ) {
+        if (!ownsNotification(notification, req.user._id)) {
             return res.status(403).json({ status: 'error', message: 'Unauthorized' });
         }
 
@@ -61,6 +66,33 @@ export const markNotificationRead = async (req, res) => {
         Sentry.captureException(error);
         console.error('Mark read error:', error);
         return res.status(500).json({ status: 'error', message: 'Failed to update notification' });
+    }
+};
+
+/**
+ * DELETE /api/notifications/:id
+ * Permanently deletes a specific notification owned by the logged-in user/tasker
+ */
+export const deleteNotification = async (req, res) => {
+    try {
+        const notification = await Notification.findById(req.params.id);
+
+        if (!notification) {
+            return res.status(404).json({ status: 'error', message: 'Notification not found' });
+        }
+
+        // Security check: Ensure this notification actually belongs to the person deleting it
+        if (!ownsNotification(notification, req.user._id)) {
+            return res.status(403).json({ status: 'error', message: 'Unauthorized' });
+        }
+
+        await Notification.deleteOne({ _id: notification._id });
+
+        return res.json({ status: 'success', message: 'Notification deleted successfully' });
+    } catch (error) {
+        Sentry.captureException(error);
+        console.error('Delete notification error:', error);
+        return res.status(500).json({ status: 'error', message: 'Failed to delete notification' });
     }
 };
 
