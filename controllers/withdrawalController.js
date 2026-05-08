@@ -6,7 +6,7 @@ import paystackService from '../services/paystack_service.js';
 import * as Sentry from '@sentry/node';
 import { notifyWithdrawalRequested } from '../utils/notificationUtils.js';
 
-const MINIMUM_WITHDRAWAL = 5000;
+const MINIMUM_WITHDRAWAL = 500;
 const WITHDRAWAL_COOLDOWN_HOURS = 24;
 
 /**
@@ -189,7 +189,7 @@ export const getBankAccount = async (req, res) => {
 /**
  * POST /api/wallet/tasker/withdraw
  * Request a withdrawal. Goes to admin for approval.
- * Minimum: ₦5,000. Must be 24hrs after last completed task.
+ * Minimum: ₦500. Must be 24hrs after last completed task.
  */
 export const requestWithdrawal = async (req, res) => {
     try {

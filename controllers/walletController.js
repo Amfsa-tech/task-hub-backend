@@ -361,8 +361,8 @@ export const requestWithdrawal = async (req, res) => {
 
         // 2. Basic Validation
         const withdrawAmount = Number(amount);
-        if (isNaN(withdrawAmount) || withdrawAmount < 5000) {
-            return res.status(400).json({ status: 'error', message: 'Minimum withdrawal is ₦5,000' });
+        if (isNaN(withdrawAmount) || withdrawAmount < 500) {
+            return res.status(400).json({ status: 'error', message: 'Minimum withdrawal is ₦500' });
         }
 
         // Check the TASKER'S wallet balance

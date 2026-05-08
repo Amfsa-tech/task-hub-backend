@@ -710,7 +710,7 @@ Auth: protectTasker
     "withdrawableAmount": 3825,
     "canWithdraw": false,
     "nextWithdrawableAt": "2026-03-17T15:00:00.000Z",
-    "minimumWithdrawal": 5000,
+    "minimumWithdrawal": 500,
     "hasBankAccount": true,
     "hasPendingWithdrawal": false,
     "pendingWithdrawalAmount": 0
@@ -719,7 +719,7 @@ Auth: protectTasker
 ```
 
 **`canWithdraw` is `false` when:**
-- Balance < ₦5,000 (`minimumWithdrawal`)
+- Balance < ₦500 (`minimumWithdrawal`)
 - Less than 24 hours since last completed task (see `nextWithdrawableAt`)
 - There's already a pending/approved withdrawal
 
@@ -811,12 +811,12 @@ Auth: protectTasker
 **Request Body:**
 ```json
 {
-  "amount": 5000
+  "amount": 500
 }
 ```
 
 **Validation rules:**
-- Minimum: ₦5,000
+- Minimum: ₦500
 - Must not exceed wallet balance
 - Must have a saved bank account
 - Must be 24+ hours since last completed task
@@ -829,7 +829,7 @@ Auth: protectTasker
   "message": "Withdrawal request submitted. Awaiting admin approval.",
   "data": {
     "withdrawalId": "withdrawalObjectId",
-    "amount": 5000,
+    "amount": 500,
     "status": "pending",
     "bankDetails": {
       "bankName": "Access Bank",
@@ -863,7 +863,7 @@ Auth: protectTasker
   "withdrawals": [
     {
       "_id": "...",
-      "amount": 5000,
+      "amount": 500,
       "status": "pending",
       "bankDetails": { "bankName": "Access Bank", "accountNumber": "0123456789", "accountName": "JOHN ADEWALE" },
       "createdAt": "2026-03-17T16:00:00.000Z"

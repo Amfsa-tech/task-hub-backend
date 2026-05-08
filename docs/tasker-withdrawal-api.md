@@ -25,7 +25,7 @@
 │                                                                     │
 │  1. Tasker adds bank account (Paystack-verified)                    │
 │  2. Tasker checks balance (must wait 24hr after last task)          │
-│  3. Tasker requests withdrawal (min ₦5,000)                         │
+│  3. Tasker requests withdrawal (min ₦500)                           │
 │  4. Amount deducted from wallet immediately                         │
 │  5. Admin reviews → approves or rejects                             │
 │     - Approve → admin manually sends money to bank account          │
@@ -249,7 +249,7 @@ Authorization: Bearer <tasker_token>
     "withdrawableAmount": 25000,
     "canWithdraw": true,
     "nextWithdrawableAt": null,
-    "minimumWithdrawal": 5000,
+    "minimumWithdrawal": 500,
     "hasBankAccount": true,
     "hasPendingWithdrawal": false,
     "pendingWithdrawalAmount": 0
@@ -265,7 +265,7 @@ Authorization: Bearer <tasker_token>
 | `withdrawableAmount` | number | Amount available to withdraw right now (0 if within 24hr cooldown) |
 | `canWithdraw` | boolean | `true` if tasker can request a withdrawal right now |
 | `nextWithdrawableAt` | string\|null | ISO timestamp of when withdrawal becomes available (if in cooldown) |
-| `minimumWithdrawal` | number | Minimum withdrawal amount (₦5,000) |
+| `minimumWithdrawal` | number | Minimum withdrawal amount (₦500) |
 | `hasBankAccount` | boolean | Whether tasker has a saved bank account |
 | `hasPendingWithdrawal` | boolean | Whether there's an active withdrawal request |
 | `pendingWithdrawalAmount` | number | Amount locked in pending withdrawal (0 if none) |
@@ -274,7 +274,7 @@ Authorization: Bearer <tasker_token>
 
 1. `hasPendingWithdrawal === true` → "You have a pending withdrawal"
 2. `nextWithdrawableAt !== null` → "Withdraw available at {time}" (24hr cooldown)
-3. `withdrawableAmount < minimumWithdrawal` → "Minimum ₦5,000 required"
+3. `withdrawableAmount < minimumWithdrawal` → "Minimum ₦500 required"
 4. `hasBankAccount === false` → "Add a bank account first"
 
 ---
@@ -313,7 +313,7 @@ Body:
 **Errors:**
 | Status | Message | Cause |
 |--------|---------|-------|
-| 400 | Minimum withdrawal amount is ₦5,000 | Amount too low |
+| 400 | Minimum withdrawal amount is ₦500 | Amount too low |
 | 400 | Insufficient wallet balance | Amount exceeds wallet |
 | 400 | Please add a bank account before requesting a withdrawal | No bank account |
 | 400 | You can withdraw after {ISO date}. Must wait 24 hours after last completed task. | 24hr cooldown active |
@@ -358,7 +358,7 @@ Authorization: Bearer <tasker_token>
     {
       "_id": "664def789...",
       "tasker": "664abc789...",
-      "amount": 5000,
+      "amount": 500,
       "status": "rejected",
       "bankDetails": { ... },
       "rejectionReason": "Suspicious activity detected",
@@ -410,7 +410,7 @@ Authorization: Bearer <tasker_token>
 - [ ] If `canWithdraw === false`, show appropriate reason (see logic above)
 - [ ] Show "Add Bank Account" prompt if `hasBankAccount === false`
 - [ ] Show pending withdrawal banner if `hasPendingWithdrawal === true` with amount
-- [ ] "Withdraw" button → validate amount ≥ 5,000, ≤ `withdrawableAmount`
+- [ ] "Withdraw" button → validate amount ≥ 500, ≤ `withdrawableAmount`
 
 ### Bank Account Setup
 - [ ] Fetch bank list from `GET /wallet/banks` (cache it)
@@ -462,7 +462,7 @@ Some errors include additional fields:
 | Rule | Value |
 |------|-------|
 | Platform fee | 15% (deducted at task completion) |
-| Minimum withdrawal | ₦5,000 |
+| Minimum withdrawal | ₦500 |
 | Withdrawal cooldown | 24 hours after last completed task |
 | Concurrent withdrawals | 1 at a time (pending/approved/processing) |
 | Wallet deduction timing | Immediately on withdrawal request |
