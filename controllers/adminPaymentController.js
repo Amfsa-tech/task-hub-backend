@@ -63,8 +63,7 @@ export const getAllPayments = async (req, res) => {
     try {
         const { page = 1, limit = 10, type, search, startDate, endDate } = req.query;
 
-        // 1. FETCH EVERYTHING IN PARALLEL (Lightning Fast)
-        // Note: Check that your Withdrawal model is actually named 'Withdrawal' and refs 'tasker'
+        // 1. FETCH EVERYTHING IN PARALLEL
         const [tasks, deposits, withdrawals] = await Promise.all([
             Task.find({ budget: { $gt: 0 }, status: { $in: ['assigned', 'in-progress', 'completed'] } })
                 .populate('user', 'fullName emailAddress profilePicture'),
@@ -80,33 +79,47 @@ export const getAllPayments = async (req, res) => {
         tasks.forEach(t => {
             unifiedLedger.push({
                 _id: t._id,
-                user: t.user, // Populated payer
+                user: t.user, 
                 description: `Task Escrow: ${t.title}`,
                 source: 'Task Payment',
                 type: t.status === 'completed' ? 'debit' : 'credit',
                 amount: t.budget,
                 status: t.status === 'completed' ? 'released' : 'held',
-                date: t.updatedAt
+                date: t.updatedAt,
+                // NEW FIELDS REQUESTED BY FRONTEND
+                provider: 'system',
+                currency: 'NGN',
+                paymentPurpose: t.status === 'completed' ? 'escrow_release' : 'escrow_hold'
             });
         });
 
         // 3. STANDARDIZE DEPOSITS (Wallet Funding)
         deposits.forEach(d => {
+            let sourceLabel = 'Gateway Deposit';
+            if (d.provider === 'stellar' || d.provider === 'crypto') {
+                sourceLabel = 'Stellar Deposit';
+            } else if (d.provider) {
+                sourceLabel = `${d.provider.charAt(0).toUpperCase() + d.provider.slice(1)} Deposit`;
+            }
+
             unifiedLedger.push({
                 _id: d._id,
-                user: d.user, // Populated funder
-                description: 'Wallet Deposit via Gateway',
-                source: 'Deposit',
+                user: d.user, 
+                description: d.description || `Wallet Deposit via ${d.provider ? d.provider.toUpperCase() : 'GATEWAY'}`,
+                source: sourceLabel,
                 type: 'credit',
                 amount: d.amount,
                 status: d.status,
-                date: d.createdAt
+                date: d.createdAt,
+                // NEW FIELDS REQUESTED BY FRONTEND
+                provider: d.provider || 'gateway',
+                currency: d.currency || 'NGN',
+                paymentPurpose: d.paymentPurpose || 'wallet_funding'
             });
         });
 
         // 4. STANDARDIZE WITHDRAWALS (Tasker Payouts)
         withdrawals.forEach(w => {
-            // Transform tasker data to match the 'User' shape so the frontend table doesn't break
             const taskerObj = w.tasker ? {
                 _id: w.tasker._id,
                 fullName: `${w.tasker.firstName} ${w.tasker.lastName}`,
@@ -122,7 +135,11 @@ export const getAllPayments = async (req, res) => {
                 type: 'debit',
                 amount: w.amount,
                 status: w.status,
-                date: w.createdAt
+                date: w.createdAt,
+                // NEW FIELDS REQUESTED BY FRONTEND
+                provider: w.payoutMethod || 'system',
+                currency: 'NGN', // Withdrawals deduct from the NGN wallet balance
+                paymentPurpose: 'withdrawal'
             });
         });
 

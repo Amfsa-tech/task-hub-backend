@@ -190,25 +190,22 @@ export const creditWallet = async (transaction, gatewayData) => {
     const user = await User.findById(transaction.user);
     if (!user) return;
 
-    // TAKING THE BALANCE SNAPSHOTS
     const previousBalance = user.wallet || 0;
     const newBalance = previousBalance + transaction.amount;
 
-    // Update the user's actual wallet
     user.wallet = newBalance;
     await user.save();
 
-    // Update the transaction record with the snapshots
     const txn = await Transaction.findOneAndUpdate(
         { _id: transaction._id, status: 'pending' },
         {
-            status: 'success', // Admin dashboard checks for success
+            status: 'success', 
             providerTransactionId: String(gatewayData.id),
             gatewayResponse: gatewayData.gateway_response,
             verifiedAt: new Date(),
             creditedAt: new Date(),
-            previousBalance: previousBalance, // <-- FIXED: Matched to frontend expectation
-            balanceAfter: newBalance,         // <-- FIXED: Matched to frontend expectation
+            previousBalance: previousBalance, 
+            balanceAfter: newBalance,         
             metadata: {
                 ...transaction.metadata,
                 channel: gatewayData.channel,
