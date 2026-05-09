@@ -9,7 +9,7 @@ const withdrawalSchema = new mongoose.Schema({
     amount: {
         type: Number,
         required: true,
-        min: 5000 // Minimum 5,000 Naira
+        min: 500 // Minimum 500 Naira
     },
     status: {
         type: String,
