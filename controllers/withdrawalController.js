@@ -155,6 +155,11 @@ export const getBankAccount = async (req, res) => {
     }
 };
 
+/**
+ * POST /api/wallet/tasker/withdraw
+ * Request a withdrawal. Goes to admin for approval.
+ * Minimum: ₦500. Must be 24hrs after last completed task.
+ */
 export const requestWithdrawal = async (req, res) => {
     try {
         const authId = req.tasker ? req.tasker._id : req.user._id; 
