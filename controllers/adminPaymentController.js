@@ -8,7 +8,6 @@ import { escapeRegex } from '../utils/searchUtils.js';
 const PLATFORM_FEE_RATE = 0.15;
 
 // GET /api/admin/payments/stats
-// GET /api/admin/payments/stats
 export const getPaymentStats = async (req, res) => {
     try {
         const tasksAgg = await Task.aggregate([
