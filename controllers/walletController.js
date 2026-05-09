@@ -354,10 +354,10 @@ export const requestWithdrawal = async (req, res) => {
         const { amount, payoutMethod, stellarAddress } = req.body;
         const withdrawAmount = Number(amount);
         
-        if (!withdrawAmount || withdrawAmount < 5000) {
+        if (!withdrawAmount || withdrawAmount < 500) {
             return res.status(400).json({
                 status: 'error',
-                message: `Minimum withdrawal amount is ₦5,000`
+                message: `Minimum withdrawal amount is ₦500`
             });
         }
 
