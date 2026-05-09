@@ -371,8 +371,12 @@ export const rejectWithdrawal = async (req, res) => {
         const withdrawal = await Withdrawal.findById(req.params.id);
         if (!withdrawal) return res.status(404).json({ status: 'error', message: 'Withdrawal not found' });
 
-        if (!['pending', 'approved', 'processing'].includes(withdrawal.status)) {
-            return res.status(400).json({ status: 'error', message: `Cannot reject with status '${withdrawal.status}'` });
+        // 🛑 SECURITY FIX: Only allow rejecting requests that are strictly 'pending'
+        if (withdrawal.status !== 'pending') {
+            return res.status(400).json({ 
+                status: 'error', 
+                message: `Too late to reject! This withdrawal is already ${withdrawal.status} and funds are moving.` 
+            });
         }
 
         // 🔐 SNAPSHOT: Refund Wallet safely
@@ -386,7 +390,6 @@ export const rejectWithdrawal = async (req, res) => {
         withdrawal.rejectionReason = reason;
         withdrawal.reviewedBy = req.admin._id;
         withdrawal.reviewedAt = new Date();
-        // Option to record snapshot info on the rejected withdrawal as well
         withdrawal.balanceBefore = prevBal;
         withdrawal.balanceAfter = newBal;
         await withdrawal.save();
@@ -430,24 +433,9 @@ export const completeWithdrawal = async (req, res) => {
         withdrawal.completedAt = new Date();
         await withdrawal.save();
 
-        // 🔐 SNAPSHOT: Final logging 
-        const taskerModel = await Tasker.findById(withdrawal.tasker);
-        const currentTaskerBal = taskerModel.wallet || 0;
-
-        await Transaction.create({
-            tasker: withdrawal.tasker,
-            amount: withdrawal.amount,
-            type: 'debit',
-            description: `Bank Withdrawal to ${withdrawal.bankDetails?.bankName}`,
-            status: 'success',
-            reference: `WD-${withdrawal._id}`,
-            provider: 'system',
-            paymentPurpose: 'withdrawal',
-            currency: 'NGN',
-            balanceBefore: currentTaskerBal, // 🔐
-            balanceAfter: currentTaskerBal,  // 🔐
-            metadata: { withdrawalId: withdrawal._id.toString() }
-        });
+        // 🛑 LEDGER TRANSACTION CREATION REMOVED HERE 
+        // The automated approveWithdrawal function handles the ledger now.
+        // This ensures no double-deductions occur on the platform's financial records.
 
         try {
             await notifyWithdrawalCompleted(
@@ -461,13 +449,13 @@ export const completeWithdrawal = async (req, res) => {
 
         await logAdminAction({
             adminId: req.admin._id,
-            action: 'COMPLETE_BANK_WITHDRAWAL',
+            action: 'COMPLETE_BANK_WITHDRAWAL_MANUAL_OVERRIDE',
             resourceType: 'Withdrawal',
             resourceId: withdrawal._id,
             req
         });
 
-        return res.json({ status: 'success', message: 'Bank Withdrawal marked as completed' });
+        return res.json({ status: 'success', message: 'Bank Withdrawal marked as completed (Manual Override)' });
     } catch (error) {
         Sentry.captureException(error);
         return res.status(500).json({ status: 'error', message: 'Failed to complete withdrawal' });
