@@ -344,37 +344,20 @@ export const getStellarDepositInfo = async (req, res) => {
  */
 export const requestWithdrawal = async (req, res) => {
     try {
-<<<<<<< HEAD
-        const { amount, payoutMethod, stellarAddress, bankDetails, transactionPin } = req.body;
-        // Depending on your auth middleware, the ID might be on req.tasker._id or req.user._id.
-        // Assuming your middleware decodes the JWT to req.user regardless of account type:
-        const taskerId = req.user._id; 
-
-        // 1. CORRECTION: Fetch from Tasker model, not User model
-        const tasker = await Tasker.findById(taskerId);
-
-        if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
-
-        // 2. Basic Validation
-        const withdrawAmount = Number(amount);
-        if (isNaN(withdrawAmount) || withdrawAmount < 500) {
-            return res.status(400).json({ status: 'error', message: 'Minimum withdrawal is ₦500' });
-=======
         const authId = req.tasker ? req.tasker._id : req.user._id; 
         const tasker = await Tasker.findById(authId).select('wallet bankAccount');
         
         if (!tasker) {
             return res.status(404).json({ status: 'error', message: 'Tasker not found' });
->>>>>>> 7753ca6c5600ffb59660b3b17a1a47a1701630e7
         }
 
         const { amount, payoutMethod, stellarAddress } = req.body;
         const withdrawAmount = Number(amount);
         
-        if (!withdrawAmount || withdrawAmount < 5000) {
+        if (!withdrawAmount || withdrawAmount < 500) {
             return res.status(400).json({
                 status: 'error',
-                message: `Minimum withdrawal amount is ₦5,000`
+                message: `Minimum withdrawal amount is ₦500`
             });
         }
 
