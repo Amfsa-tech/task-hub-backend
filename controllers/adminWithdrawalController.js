@@ -10,6 +10,7 @@ import { baseLayout } from '../utils/taskerEmailTemplates.js';
 import { notifyWithdrawalRejected, notifyWithdrawalCompleted } from '../utils/notificationUtils.js';
 import * as Sentry from '@sentry/node';
 import * as StellarSdk from 'stellar-sdk';
+import flutterwaveService from '../services/flutterwave_service.js';
 
 // Setup Stellar Server for payouts
 const IS_TESTNET = process.env.STELLAR_NETWORK === 'TESTNET';
@@ -267,45 +268,94 @@ export const approveWithdrawal = async (req, res) => {
         // ==========================================
         // FLOW B: MANUAL BANK TRANSFER
         // ==========================================
+        // ==========================================
+        // FLOW B: AUTOMATED BANK TRANSFER (VIA FLUTTERWAVE)
+        // ==========================================
         else {
-            withdrawal.status = 'approved';
-            withdrawal.reviewedBy = req.admin._id;
-            withdrawal.reviewedAt = new Date();
-            await withdrawal.save();
-
-            await Notification.create({
-                tasker: tasker._id,
-                title: 'Withdrawal Approved 🏦',
-                message: `Your bank withdrawal of ₦${withdrawal.amount} is being processed.`,
-                type: 'payout'
-            });
-
             try {
-                const { sendWebPushToAccount } = await import('../services/webPushService.js');
-                const taskerWithPush = await Tasker.findById(tasker._id).select('pushSubscriptions');
-                if (taskerWithPush && taskerWithPush.pushSubscriptions && taskerWithPush.pushSubscriptions.length > 0) {
-                    await sendWebPushToAccount(taskerWithPush, 'Withdrawal Approved 🏦', `Your bank withdrawal of ₦${withdrawal.amount} is being processed.`, { type: 'payout', action: 'view_wallet' });
+                // 1. Grab the bank details the user saved
+                const { accountNumber, bankCode, bankName } = withdrawal.bankDetails;
+                const reference = `PAYOUT-${withdrawal._id}-${Date.now()}`;
+
+                // 2. Command Flutterwave to send the real money to the bank!
+                const payoutResponse = await flutterwaveService.initiatePayout({
+                    accountNumber: accountNumber,
+                    bankCode: bankCode,
+                    amount: withdrawal.amount,
+                    reference: reference,
+                    narration: `TaskHub Payout - ${tasker.firstName}`
+                });
+
+                // 3. If the bank accepts it, update the database to Completed
+                withdrawal.status = 'completed';
+                withdrawal.reviewedBy = req.admin._id;
+                withdrawal.reviewedAt = new Date();
+                withdrawal.completedAt = new Date();
+                withdrawal.blockchainTxId = String(payoutResponse.transfer_code); // Saving FLW tracking ID
+                await withdrawal.save();
+
+                // 4. 🔐 SNAPSHOT: Create the official ledger transaction
+                const taskerModel = await Tasker.findById(tasker._id);
+                const currentTaskerBal = taskerModel.wallet || 0;
+
+                await Transaction.create({
+                    tasker: tasker._id,
+                    amount: withdrawal.amount,
+                    type: 'debit',
+                    description: `Automated Bank Withdrawal to ${bankName}`,
+                    status: 'success',
+                    reference: reference,
+                    provider: 'flutterwave',
+                    paymentPurpose: 'withdrawal',
+                    currency: 'NGN',
+                    balanceBefore: currentTaskerBal, // 🔐
+                    balanceAfter: currentTaskerBal,  // 🔐
+                    metadata: { flwTransferCode: payoutResponse.transfer_code }
+                });
+
+                // 5. Send Notifications
+                await Notification.create({
+                    tasker: tasker._id,
+                    title: 'Withdrawal Successful 🏦',
+                    message: `Your bank withdrawal of ₦${withdrawal.amount} has been wired to your account.`,
+                    type: 'payout'
+                });
+
+                try {
+                    const { sendWebPushToAccount } = await import('../services/webPushService.js');
+                    const taskerWithPush = await Tasker.findById(tasker._id).select('pushSubscriptions');
+                    if (taskerWithPush && taskerWithPush.pushSubscriptions && taskerWithPush.pushSubscriptions.length > 0) {
+                        await sendWebPushToAccount(taskerWithPush, 'Withdrawal Successful 🏦', `Your bank withdrawal of ₦${withdrawal.amount} has been wired to your account.`, { type: 'payout', action: 'view_wallet' });
+                    }
+                } catch (webPushErr) {
+                    console.error('Web push notification error (bank approval):', webPushErr.message);
                 }
-            } catch (webPushErr) {
-                console.error('Web push notification error (bank approval):', webPushErr.message);
+
+                const bankHtml = baseLayout('Withdrawal Processed', `<p>Hi ${tasker.firstName}, your bank withdrawal of <b>₦${withdrawal.amount}</b> has been successfully wired to your account.</p>`);
+                await sendEmail({
+                    to: tasker.emailAddress,
+                    subject: 'TaskHub: Withdrawal Successful 🏦',
+                    html: bankHtml
+                });
+
+                await logAdminAction({
+                    adminId: req.admin._id,
+                    action: 'APPROVE_AND_EXECUTE_BANK_WITHDRAWAL',
+                    resourceType: 'Withdrawal',
+                    resourceId: withdrawal._id,
+                    req
+                });
+
+                return res.json({ status: 'success', message: 'Funds have been successfully wired to the Tasker!' });
+
+            } catch (payoutError) {
+                // If Flutterwave rejects it (e.g., your Admin Flutterwave wallet is empty)
+                console.error("Flutterwave Payout Failed:", payoutError);
+                return res.status(500).json({ 
+                    status: 'error', 
+                    message: payoutError.publicMessage || 'Gateway failed to send funds. Please check your Flutterwave dashboard balance.' 
+                });
             }
-
-            const bankHtml = baseLayout('Withdrawal Approved', `<p>Hi ${tasker.firstName}, your bank withdrawal of <b>₦${withdrawal.amount}</b> has been approved and is being processed.</p>`);
-            await sendEmail({
-                to: tasker.emailAddress,
-                subject: 'TaskHub: Withdrawal Approved 🏦',
-                html: bankHtml
-            });
-
-            await logAdminAction({
-                adminId: req.admin._id,
-                action: 'APPROVE_BANK_WITHDRAWAL',
-                resourceType: 'Withdrawal',
-                resourceId: withdrawal._id,
-                req
-            });
-
-            return res.json({ status: 'success', message: 'Bank withdrawal approved.' });
         }
     } catch (error) {
         Sentry.captureException(error);
