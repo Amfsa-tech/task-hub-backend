@@ -1,16 +1,24 @@
+import crypto from 'crypto';
 import Withdrawal from '../models/withdrawal.js';
 import Tasker from '../models/tasker.js';
+import Task from '../models/task.js';
 import Transaction from '../models/transaction.js';
-import Notification from '../models/notification.js'; // Added for in-app alerts
-import ActivityLog from '../models/ActivityLog.js'; // Added for audit trail
+import Notification from '../models/notification.js';
+import ActivityLog from '../models/ActivityLog.js';
+import AdminSettings from '../models/adminSettings.js';
+import paystackService from '../services/paystack_service.js';
+import flutterwaveService from '../services/flutterwave_service.js';
 import { logAdminAction } from '../utils/auditLogger.js';
 import { escapeRegex } from '../utils/searchUtils.js';
 import { sendEmail, payoutSuccessEmailHtml } from '../services/emailService.js';
 import { baseLayout } from '../utils/taskerEmailTemplates.js';
-import { notifyWithdrawalRejected, notifyWithdrawalCompleted } from '../utils/notificationUtils.js';
+import { 
+    notifyWithdrawalRequested, 
+    notifyWithdrawalRejected, 
+    notifyWithdrawalCompleted 
+} from '../utils/notificationUtils.js';
 import * as Sentry from '@sentry/node';
 import * as StellarSdk from 'stellar-sdk';
-import flutterwaveService from '../services/flutterwave_service.js';
 
 // Setup Stellar Server for payouts
 const IS_TESTNET = process.env.STELLAR_NETWORK === 'TESTNET';

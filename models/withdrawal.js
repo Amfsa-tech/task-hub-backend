@@ -13,7 +13,7 @@ const withdrawalSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['pending', 'processing', 'completed', 'rejected'],
+        enum: ['pending', 'processing', 'approved', 'completed', 'rejected'],
         default: 'pending'
     },
     // NEW: Define how the Tasker wants to be paid
