@@ -284,7 +284,7 @@ export const approveWithdrawal = async (req, res) => {
                 // 1. Grab the bank details the user saved
                 const { accountNumber, bankCode, bankName } = withdrawal.bankDetails;
                 const reference = `PAYOUT-${withdrawal._id}-${Date.now()}`;
-
+                console.log(`🚨 Payout Debug - Withdrawal ID: ${withdrawal._id} | Amount: ₦${withdrawal.amount} | Bank: ${bankName}`);
                 // 2. Command Flutterwave to send the real money to the bank!
                 const payoutResponse = await flutterwaveService.initiatePayout({
                     accountNumber: accountNumber,
