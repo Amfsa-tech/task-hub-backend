@@ -15,9 +15,9 @@ class FlutterwaveRequestError extends Error {
 
 class FlutterwaveService {
     constructor() {
-        this.secretKey = FLW_SECRET_KEY; // Ensure you are pulling from process.env
+        this.secretKey = FLW_SECRET_KEY; 
         this.baseUrl = FLW_BASE_URL || 'https://api.flutterwave.com/v3';
-        this.webhookHash = FLW_WEBHOOK_SECRET; // You will need to add this to your .env
+        this.webhookHash = FLW_WEBHOOK_SECRET; 
     }
 
     get headers() {
@@ -29,10 +29,8 @@ class FlutterwaveService {
 
     // --- 1. RECEIVE MONEY (Wallet Funding) ---
     async initializeTransaction({ email, amount, reference, metadata = {} }) {
-        // FIX: Removed /100 division. FLW uses raw Naira.
         const actualAmount = Number(amount);
 
-        // DYNAMIC CALLBACK
         const redirectUrl = `${FRONTEND_URL}/verify-payment`; 
 
         const payload = {
@@ -83,7 +81,6 @@ class FlutterwaveService {
 
             return {
                 status: finalStatus,
-                // FIX: Removed kobo multiplication. Returning exact Naira amount.
                 amount: Number(data.amount), 
                 gateway_response: data.processor_response,
                 id: data.id,
@@ -102,7 +99,6 @@ class FlutterwaveService {
 
     // --- 2. SEND MONEY (Tasker Payouts) ---
     async initiatePayout({ accountNumber, bankCode, amount, reference, narration = 'TaskHub Payout' }) {
-        // 🛑 FIX: Removed all kobo logic. Passing raw Naira.
         const actualAmount = Number(amount);
 
         const payload = {
@@ -161,9 +157,7 @@ class FlutterwaveService {
 
     // --- 4. WEBHOOK SECURITY ---
     verifyWebhook(req) {
-        // Flutterwave sends your secret hash in the 'verif-hash' header
         const signature = req.headers['verif-hash'];
-        
         if (!signature || (signature !== this.webhookHash)) {
             return false;
         }
