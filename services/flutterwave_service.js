@@ -1,4 +1,4 @@
-import { FLW_SECRET_KEY, FRONTEND_URL } from '../config/envConfig.js';
+import { FLW_SECRET_KEY, FRONTEND_URL, FLW_WEBHOOK_SECRET} from '../config/envConfig.js';
 import axios from 'axios';
 
 const FLW_BASE_URL = 'https://api.flutterwave.com/v3';
@@ -15,8 +15,9 @@ class FlutterwaveRequestError extends Error {
 
 class FlutterwaveService {
     constructor() {
-        this.secretKey = FLW_SECRET_KEY;
-        this.baseUrl = FLW_BASE_URL;
+        this.secretKey = FLW_SECRET_KEY; // Ensure you are pulling from process.env
+        this.baseUrl = FLW_BASE_URL || 'https://api.flutterwave.com/v3';
+        this.webhookHash = FLW_WEBHOOK_SECRET; // You will need to add this to your .env
     }
 
     get headers() {
@@ -28,10 +29,10 @@ class FlutterwaveService {
 
     // --- 1. RECEIVE MONEY (Wallet Funding) ---
     async initializeTransaction({ email, amount, reference, metadata = {} }) {
-        // FLW uses raw Naira, not kobo! 
-        const actualAmount = amount >= 100 ? amount / 100 : amount;
+        // FIX: Removed /100 division. FLW uses raw Naira.
+        const actualAmount = Number(amount);
 
-        // DYNAMIC CALLBACK: Uses localhost in dev, and real domain in production based on your .env
+        // DYNAMIC CALLBACK
         const redirectUrl = `${FRONTEND_URL}/verify-payment`; 
 
         const payload = {
@@ -69,7 +70,6 @@ class FlutterwaveService {
             const txResponse = await axios.get(`${this.baseUrl}/transactions?tx_ref=${encodeURIComponent(reference)}`, { headers: this.headers });
             
             if (!txResponse.data.data || txResponse.data.data.length === 0) {
-                 // Return pending instead of failed so that the frontend can retry/poll
                  return { status: 'pending', gateway_response: 'Transaction not found or still processing' };
             }
 
@@ -82,8 +82,9 @@ class FlutterwaveService {
             else if (data.status === 'failed' || data.status === 'cancelled' || data.status === 'reversed') finalStatus = 'failed';
 
             return {
-                status: data.status === 'successful' ? 'success' : 'failed',
-                amount: Math.round(data.amount * 100), // Convert back to kobo for backend consistency
+                status: finalStatus,
+                // FIX: Removed kobo multiplication. Returning exact Naira amount.
+                amount: Number(data.amount), 
                 gateway_response: data.processor_response,
                 id: data.id,
                 channel: data.payment_type,
@@ -101,8 +102,8 @@ class FlutterwaveService {
 
     // --- 2. SEND MONEY (Tasker Payouts) ---
     async initiatePayout({ accountNumber, bankCode, amount, reference, narration = 'TaskHub Payout' }) {
-        // Convert kobo back to raw Naira if necessary
-        const actualAmount = amount >= 100 ? amount / 100 : amount;
+        // 🛑 FIX: Removed all kobo logic. Passing raw Naira.
+        const actualAmount = Number(amount);
 
         const payload = {
             account_bank: bankCode,
@@ -119,7 +120,7 @@ class FlutterwaveService {
             
             return {
                 status: 'success',
-                transfer_code: response.data.data.id, // FLW uses this ID to track the transfer
+                transfer_code: response.data.data.id,
                 message: response.data.message
             };
         } catch (error) {
@@ -156,6 +157,17 @@ class FlutterwaveService {
         } catch (error) {
             throw new FlutterwaveRequestError('Failed to resolve account on FLW', error.response?.status, null, 'Could not verify bank account.');
         }
+    }
+
+    // --- 4. WEBHOOK SECURITY ---
+    verifyWebhook(req) {
+        // Flutterwave sends your secret hash in the 'verif-hash' header
+        const signature = req.headers['verif-hash'];
+        
+        if (!signature || (signature !== this.webhookHash)) {
+            return false;
+        }
+        return true;
     }
 }
 
