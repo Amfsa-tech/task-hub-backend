@@ -8,7 +8,16 @@ const ALLOWED_CHAT_TYPES = [
     'application/pdf',
     'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'text/plain',
+    'text/csv',
+    'application/csv',
 ];
+const ALLOWED_CHAT_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.csv'];
+const GENERIC_FILE_TYPES = ['application/octet-stream', 'binary/octet-stream'];
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 
 const imageFilter = (req, file, cb) => {
@@ -20,10 +29,15 @@ const imageFilter = (req, file, cb) => {
 };
 
 const chatFilter = (req, file, cb) => {
-    if (ALLOWED_CHAT_TYPES.includes(file.mimetype)) {
+    const filename = file.originalname?.toLowerCase() || '';
+    const hasAllowedExtension = ALLOWED_CHAT_EXTENSIONS.some((extension) => filename.endsWith(extension));
+    const hasAllowedMimeType = ALLOWED_CHAT_TYPES.includes(file.mimetype);
+    const hasGenericMimeType = !file.mimetype || GENERIC_FILE_TYPES.includes(file.mimetype);
+
+    if (hasAllowedMimeType || (hasGenericMimeType && hasAllowedExtension)) {
         cb(null, true);
     } else {
-        cb(new Error(`Invalid file type: ${file.mimetype}. Allowed: images, pdf, doc, docx`), false);
+        cb(new Error(`Invalid file type: ${file.mimetype}. Allowed: images, pdf, doc, docx, xls, xlsx, ppt, pptx, txt, csv`), false);
     }
 };
 
@@ -62,7 +76,7 @@ export const handleMulterError = (err, req, res, next) => {
     if (err instanceof multer.MulterError) {
         const messages = {
             LIMIT_FILE_SIZE: `File too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)} MB`,
-            LIMIT_FILE_COUNT: 'Too many files. Maximum is 5 images',
+            LIMIT_FILE_COUNT: 'Too many files. Maximum is 5 attachments',
             LIMIT_UNEXPECTED_FILE: `Unexpected field: ${err.field}`,
         };
         return res.status(400).json({
