@@ -79,7 +79,7 @@ export const handleFlutterwaveWebhook = async (req, res) => {
                 withdrawal = await Withdrawal.findById(withdrawalId);
             }
             if (!withdrawal) {
-                // Fallback: Search by the transfer_code we saved in Step 1
+                // Fallback: Search by the transfer_code we saved when approving
                 withdrawal = await Withdrawal.findOne({ blockchainTxId: String(flwTransferId) });
             }
 
@@ -124,7 +124,8 @@ export const handleFlutterwaveWebhook = async (req, res) => {
                             paymentPurpose: 'refund',
                             currency: 'NGN',
                             balanceBefore: prevBal,
-                            balanceAfter: newBal
+                            balanceAfter: newBal,
+                            metadata: { originalReference: reference }
                         });
                         console.log(`💰 Refunded ₦${withdrawal.amount} to Tasker ${tasker._id}`);
                     }
