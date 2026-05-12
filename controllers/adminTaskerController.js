@@ -15,7 +15,8 @@ export const getTaskerStats = async (req, res) => {
     try {
         const [
             totalTaskers, activeTaskers, verifiedTaskers, pendingKyc,
-            suspendedTaskers, completedTasks, totalCategories, disputes, ratingAgg
+            suspendedTaskers, completedTasks, totalCategories, disputes, ratingAgg,
+            kycDiditCount, kycManualCount // 🚨 NEW: Count Tasker KYC Methods
         ] = await Promise.all([
             Tasker.countDocuments(),
             Tasker.countDocuments({ isActive: true }),
@@ -28,7 +29,11 @@ export const getTaskerStats = async (req, res) => {
             Tasker.aggregate([
                 { $match: { averageRating: { $exists: true } } }, 
                 { $group: { _id: null, avg: { $avg: '$averageRating' } } }
-            ])
+            ]),
+            // Count verified TASKERS via didit
+            KYCVerification.countDocuments({ userType: 'Tasker', status: 'approved', provider: 'didit' }),
+            // Count verified TASKERS via manual
+            KYCVerification.countDocuments({ userType: 'Tasker', status: 'approved', provider: { $ne: 'didit' } })
         ]);
 
         const avgRating = ratingAgg[0]?.avg?.toFixed(1) || 0;
@@ -38,11 +43,13 @@ export const getTaskerStats = async (req, res) => {
             data: {
                 total: totalTaskers, active: activeTaskers, verified: verifiedTaskers,
                 suspended: suspendedTaskers, pendingKyc, completedTasks,
-                categories: totalCategories, averageRating: avgRating, disputes
+                categories: totalCategories, averageRating: avgRating, disputes,
+                // 🚨 NEW: Return to frontend
+                verifiedViaDidit: kycDiditCount, 
+                verifiedManually: kycManualCount
             }
         });
     } catch (error) {
-        Sentry.captureException(error);
         console.error('Tasker stats error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch tasker stats' });
     }
@@ -135,10 +142,9 @@ export const getTaskerById = async (req, res) => {
 
         if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
 
-        // OPTIMIZATION: 5 Waterfall Queries combined into 1 Parallel Query execution
         const [kycRecord, totalAssigned, completedCount, revenueAgg, recentReviews] = await Promise.all([
-            // 🚨 FIX 1: Added 'maskedNin' and 'verificationData' to the select statement
-            KYCVerification.findOne({ user: taskerId }).select('idType idNumber status maskedNin verificationData'),
+            // 🚨 FIX: Pull the raw `nin` and the `provider`
+            KYCVerification.findOne({ user: taskerId }).select('idType idNumber nin status maskedNin verificationData provider'),
             Task.countDocuments({ assignedTasker: tasker._id }),
             Task.countDocuments({ assignedTasker: tasker._id, status: 'completed' }),
             Task.aggregate([
@@ -166,11 +172,13 @@ export const getTaskerById = async (req, res) => {
         res.json({
             status: 'success',
             data: {
-                // 🚨 FIX 2: Map the Didit fields directly to the response
                 kyc: {
                     type: kycRecord?.verificationData?.documentType || kycRecord?.idType || 'N/A', 
-                    number: kycRecord?.maskedNin || kycRecord?.idNumber || 'Not Submitted',
-                    status: kycRecord?.status || 'unverified'
+                    // 🚨 FIX: Return the raw NIN
+                    number: kycRecord?.nin || kycRecord?.idNumber || 'Not Submitted',
+                    status: kycRecord?.status || 'unverified',
+                    // 🚨 NEW: Tell the frontend how it was verified
+                    method: kycRecord?.provider === 'didit' ? 'Didit (Automated)' : 'Manual'
                 },
                 stats: {
                     rating: tasker.averageRating || 0, completionRate: `${completionRate}%`,
@@ -197,7 +205,6 @@ export const getTaskerById = async (req, res) => {
             }
         });
     } catch (error) {
-        // Sentry.captureException(error);
         console.error('Get tasker details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch tasker details' });
     }
