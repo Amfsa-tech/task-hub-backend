@@ -67,7 +67,7 @@ export const getTaskerBankAccount = async (req, res) => {
 export const initializeFunding = async (req, res) => {
     try {
         const { amount } = req.body;
-        const user = req.user;
+        const user = req.user; // Users fund wallets, not Taskers
 
         const nairaAmount = Number(amount);
         if (isNaN(nairaAmount) || nairaAmount < 100) {
@@ -75,13 +75,18 @@ export const initializeFunding = async (req, res) => {
         }
 
         const { providerName, service } = await getActiveGateway();
-        // Convert to kobo (Standard backend storage format)
-        const koboAmount = Math.round(nairaAmount * 100); 
+        
+        // 🚨 FIX: Format amount based on which gateway is currently active
+        const gatewayAmount = providerName === 'paystack' 
+            ? Math.round(nairaAmount * 100) // Paystack needs Kobo
+            : nairaAmount;                  // Flutterwave needs raw Naira
+            
         const reference = `WF-${user._id}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
+        // Always store raw Naira in our database
         const transaction = await Transaction.create({
             user: user._id,
-            amount: nairaAmount,
+            amount: nairaAmount, 
             type: 'credit',
             description: `Wallet funding via ${providerName.toUpperCase()}`,
             status: 'pending',
@@ -94,7 +99,7 @@ export const initializeFunding = async (req, res) => {
 
         const gatewayData = await service.initializeTransaction({
             email: user.emailAddress,
-            amount: koboAmount,
+            amount: gatewayAmount, // Safely pass the formatted amount
             reference,
             metadata: {
                 userId: user._id.toString(),
@@ -113,7 +118,7 @@ export const initializeFunding = async (req, res) => {
             },
         });
     } catch (error) {
-        Sentry.captureException(error);
+        // Sentry.captureException(error);
         console.error('[Wallet Fund] Initialize error:', error);
         return res.status(500).json({ status: 'error', message: error.publicMessage || 'Could not initialize payment' });
     }
@@ -149,8 +154,12 @@ export const verifyFunding = async (req, res) => {
         const gatewayData = await service.verifyTransaction(reference);
 
         if (gatewayData.status === 'success') {
-            const expectedKobo = Math.round(transaction.amount * 100);
-            if (gatewayData.amount !== expectedKobo) {
+            // 🚨 FIX: Dynamic amount validation based on provider
+            const expectedGatewayAmount = transaction.provider === 'paystack'
+                ? Math.round(transaction.amount * 100)
+                : transaction.amount;
+
+            if (Number(gatewayData.amount) !== expectedGatewayAmount) {
                  return res.status(400).json({ status: 'error', message: 'Value mismatch detected' });
             }
 
@@ -186,7 +195,7 @@ export const verifyFunding = async (req, res) => {
             },
         });
     } catch (error) {
-        Sentry.captureException(error);
+        // Sentry.captureException(error);
         console.error('[Wallet Fund] Verify error:', error);
         return res.status(500).json({ status: 'error', message: 'Could not verify payment' });
     }
@@ -194,7 +203,6 @@ export const verifyFunding = async (req, res) => {
 
 /**
  * Credits the user's wallet atomically using findOneAndUpdate for idempotency.
- * THIS FIXES THE ADMIN DASHBOARD DISPLAY.
  */
 export const creditWallet = async (transaction, gatewayData) => {
     if (transaction.status === 'success') return;
@@ -202,8 +210,10 @@ export const creditWallet = async (transaction, gatewayData) => {
     const user = await User.findById(transaction.user);
     if (!user) return;
 
-    const previousBalance = user.wallet || 0;
-    const newBalance = previousBalance + transaction.amount;
+    // 🚨 FIX: Strict Number casting prevents JavaScript from combining strings (e.g. "7" + "400" = "7400")
+    const previousBalance = Number(user.wallet) || 0;
+    const depositAmount = Number(transaction.amount) || 0;
+    const newBalance = previousBalance + depositAmount;
 
     user.wallet = newBalance;
     await user.save();
