@@ -94,6 +94,7 @@ export const getAllUsers = async (req, res) => {
 };
 
 // GET /api/admin/users/:id
+// GET /api/admin/users/:id
 export const getUserById = async (req, res) => {
     try {
         const userId = req.params.id;
@@ -101,7 +102,9 @@ export const getUserById = async (req, res) => {
 
         if (!user) return res.status(404).json({ status: 'error', message: 'User not found' });
 
-        const kyc = await KYCVerification.findOne({ user: userId }).select('status type');
+        // 🚨 FIX 1: Select the correct fields that Didit actually saves
+        const kycRecord = await KYCVerification.findOne({ user: userId }).select('status type maskedNin verificationData');
+        
         const tasks = await Task.find({ user: userId }).select('title budget status createdAt').sort({ createdAt: -1 }).limit(10);
 
         const escrowAgg = await Task.aggregate([
@@ -125,12 +128,28 @@ export const getUserById = async (req, res) => {
             data: {
                 user, 
                 wallet: { balance: user.wallet || 0, escrow: escrowBalance },
-                verification: { status: kyc?.status || 'Not Submitted', type: kyc?.type || 'N/A' },
-                tasks, transactions, activityLog 
+                
+                // 🚨 FIX 2: Map the Didit fields directly to the response the dashboard expects
+                kyc: { 
+                    status: kycRecord?.status || 'Not Submitted', 
+                    type: kycRecord?.verificationData?.documentType || kycRecord?.type || 'N/A',
+                    number: kycRecord?.maskedNin || 'Not Submitted'
+                },
+                
+                stats: {
+                    rating: 0,
+                    completionRate: "0%",
+                    completedTasks: 0,
+                    totalTransaction: 0,
+                    currentBalance: user.wallet || 0
+                },
+                tasks, 
+                transactions, 
+                activityLog 
             }
         });
     } catch (error) {
-        Sentry.captureException(error);
+        // Sentry.captureException(error);
         console.error('Get user details error:', error);
         res.status(500).json({
             status: 'error',

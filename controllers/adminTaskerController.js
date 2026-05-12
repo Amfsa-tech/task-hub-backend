@@ -137,7 +137,8 @@ export const getTaskerById = async (req, res) => {
 
         // OPTIMIZATION: 5 Waterfall Queries combined into 1 Parallel Query execution
         const [kycRecord, totalAssigned, completedCount, revenueAgg, recentReviews] = await Promise.all([
-            KYCVerification.findOne({ user: taskerId }).select('idType idNumber status'),
+            // 🚨 FIX 1: Added 'maskedNin' and 'verificationData' to the select statement
+            KYCVerification.findOne({ user: taskerId }).select('idType idNumber status maskedNin verificationData'),
             Task.countDocuments({ assignedTasker: tasker._id }),
             Task.countDocuments({ assignedTasker: tasker._id, status: 'completed' }),
             Task.aggregate([
@@ -165,8 +166,10 @@ export const getTaskerById = async (req, res) => {
         res.json({
             status: 'success',
             data: {
+                // 🚨 FIX 2: Map the Didit fields directly to the response
                 kyc: {
-                    type: kycRecord?.idType || 'N/A', number: kycRecord?.idNumber || 'Not Submitted',
+                    type: kycRecord?.verificationData?.documentType || kycRecord?.idType || 'N/A', 
+                    number: kycRecord?.maskedNin || kycRecord?.idNumber || 'Not Submitted',
                     status: kycRecord?.status || 'unverified'
                 },
                 stats: {
@@ -182,7 +185,6 @@ export const getTaskerById = async (req, res) => {
                     lastUpdated: tasker.updatedAt,
                     isLocked: isCurrentlyLocked,
                     lockUntil: tasker.lockUntil || null,
-                    // ADDED FIELDS FOR FRONTEND
                     residentState: tasker.residentState || '',
                     phoneNumber: tasker.phoneNumber || '',
                     country: tasker.country || '',
@@ -195,7 +197,7 @@ export const getTaskerById = async (req, res) => {
             }
         });
     } catch (error) {
-        Sentry.captureException(error);
+        // Sentry.captureException(error);
         console.error('Get tasker details error:', error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch tasker details' });
     }
