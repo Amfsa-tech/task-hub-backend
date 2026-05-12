@@ -525,12 +525,23 @@ POST /api/chat/conversations/:id/messages
 Auth: protectAny
 ```
 
-**Request Body:**
+**Request Body (JSON text-only):**
 ```json
 {
   "text": "Hello, when can you start?"
 }
 ```
+
+**Request Body (multipart with files):**
+
+Use `multipart/form-data` with field name `attachments`. Chat supports up to 5 attachments: images, PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, and CSV.
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `text` | text | No* | Message text |
+| `attachments` | file(s) | No* | Up to 5 files, 20 MB each |
+
+\* At least one of `text` or `attachments` is required.
 
 ---
 

@@ -137,7 +137,11 @@ export const verifyFunding = async (req, res) => {
             return res.status(200).json({
                 status: 'success',
                 message: `Payment previously processed as ${transaction.status}`,
-                data: { reference: transaction.reference, transactionStatus: transaction.status },
+                data: {
+                    reference: transaction.reference,
+                    transactionStatus: transaction.status,
+                    amount: transaction.amount
+                },
             });
         }
 
@@ -157,7 +161,11 @@ export const verifyFunding = async (req, res) => {
             return res.status(200).json({
                 status: 'success',
                 message: 'Payment verified and wallet credited',
-                data: { reference: updated.reference, transactionStatus: updated.status },
+                data: {
+                    reference: updated.reference,
+                    transactionStatus: updated.status,
+                    amount: updated.amount
+                },
             });
         }
 
@@ -171,7 +179,11 @@ export const verifyFunding = async (req, res) => {
         return res.status(200).json({
             status: 'success',
             message: `Payment status: ${gatewayData.status}`,
-            data: { reference: transaction.reference, transactionStatus: 'pending' },
+            data: {
+                reference: transaction.reference,
+                transactionStatus: 'pending',
+                amount: transaction.amount
+            },
         });
     } catch (error) {
         Sentry.captureException(error);

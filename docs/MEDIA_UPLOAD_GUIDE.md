@@ -11,7 +11,7 @@ All media uploads use **multipart/form-data**. The backend handles uploading fil
 | Max file size | **20 MB** per file |
 | Max files per request | **5** |
 | Task image types | `image/jpeg`, `image/png`, `image/gif`, `image/webp` |
-| Chat attachment types | All image types above **+** `application/pdf`, `application/msword`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document` |
+| Chat attachment types | Images, PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, CSV |
 
 ---
 
@@ -210,7 +210,7 @@ Auth: `Bearer <user_token>` or `Bearer <tasker_token>`
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `text` | text | No* | Message text |
-| `attachments` | file(s) | No* | Up to 5 files (images, PDF, DOC, DOCX) |
+| `attachments` | file(s) | No* | Up to 5 files (images, PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, CSV) |
 
 \* At least one of `text` or `attachments` is required.
 
@@ -288,7 +288,7 @@ All upload errors return this shape:
 | Status | Message | Cause |
 |--------|---------|-------|
 | `400` | `File too large. Maximum size is 20 MB` | A single file exceeds 20 MB |
-| `400` | `Too many files. Maximum is 5 images` | More than 5 files sent |
+| `400` | `Too many files. Maximum is 5 attachments` | More than 5 chat files sent |
 | `400` | `Invalid file type: audio/mp3. Allowed: image/jpeg, ...` | Unsupported MIME type |
 | `400` | `Unexpected field: photos` | Wrong field name (use `images` for tasks, `attachments` for chat) |
 | `500` | `Failed to upload images` / `Failed to upload attachments` | Cloudinary upload failed (retry) |
