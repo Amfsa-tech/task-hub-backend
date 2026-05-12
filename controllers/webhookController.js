@@ -49,6 +49,7 @@ export const handleOneSignalWebhook = async (req, res) => {
 };
 
 // POST /api/webhooks/flutterwave
+// POST /api/webhooks/flutterwave
 export const handleFlutterwaveWebhook = async (req, res) => {
     try {
         // 1. Security Check
@@ -61,7 +62,9 @@ export const handleFlutterwaveWebhook = async (req, res) => {
         const event = req.body;
         console.log(`🔔 FLW Webhook Received: Event Type -> ${event.event}`);
 
-        // 2. We ONLY care about transfer completions
+        // ==========================================
+        // FLOW 1: WITHDRAWALS (Money leaving TaskHub)
+        // ==========================================
         if (event.event === 'transfer.completed') {
             const transferData = event.data;
             const reference = transferData.reference; 
@@ -69,26 +72,22 @@ export const handleFlutterwaveWebhook = async (req, res) => {
             
             console.log(`💸 Processing Transfer Update for Ref: ${reference} | Status: ${transferData.status}`);
 
-            // Extract the Withdrawal ID from the reference (e.g., PAYOUT-6a00...-1715)
             const parts = reference ? reference.split('-') : [];
             const withdrawalId = parts.length >= 2 ? parts[1] : null;
 
-            // Find the withdrawal in the database
             let withdrawal;
             if (withdrawalId) {
                 withdrawal = await Withdrawal.findById(withdrawalId);
             }
             if (!withdrawal) {
-                // Fallback: Search by the transfer_code we saved when approving
                 withdrawal = await Withdrawal.findOne({ blockchainTxId: String(flwTransferId) });
             }
 
             if (!withdrawal) {
                 console.error(`❌ Webhook Error: Could not find withdrawal in DB for Ref: ${reference}`);
-                return res.status(200).send('OK'); // Still return 200 so FLW stops pinging
+                return res.status(200).send('OK'); 
             }
 
-            // 3. Update Status based on Bank's final verdict
             if (transferData.status === 'SUCCESSFUL') {
                 if (withdrawal.status !== 'completed') {
                     withdrawal.status = 'completed';
@@ -104,15 +103,13 @@ export const handleFlutterwaveWebhook = async (req, res) => {
                     await withdrawal.save();
                     console.log(`❌ Withdrawal ${withdrawal._id} marked as FAILED. Reason: ${withdrawal.rejectionReason}`);
 
-                    // Refund the Tasker's wallet
                     const tasker = await Tasker.findById(withdrawal.tasker);
                     if (tasker) {
-                        const prevBal = tasker.wallet || 0;
-                        const newBal = prevBal + withdrawal.amount;
+                        const prevBal = Number(tasker.wallet) || 0;
+                        const newBal = prevBal + Number(withdrawal.amount);
                         tasker.wallet = newBal;
                         await tasker.save();
 
-                        // Log the refund transaction
                         await Transaction.create({
                             tasker: tasker._id,
                             amount: withdrawal.amount,
@@ -133,7 +130,61 @@ export const handleFlutterwaveWebhook = async (req, res) => {
             }
         }
 
-        // Always return 200 immediately
+        // ==========================================
+        // FLOW 2: WALLET FUNDING (Money entering TaskHub)
+        // ==========================================
+        else if (event.event === 'charge.completed') {
+            const chargeData = event.data;
+            // 🚨 Flutterwave uses tx_ref for charges, NOT reference!
+            const reference = chargeData.tx_ref; 
+            
+            console.log(`💰 Processing Wallet Funding for Ref: ${reference} | Status: ${chargeData.status}`);
+
+            // Find the pending transaction
+            const transaction = await Transaction.findOne({ reference, status: 'pending' });
+
+            if (transaction && chargeData.status === 'successful') {
+                // Figure out if it's a User or Tasker dynamically
+                let account = await User.findById(transaction.user);
+                let accountType = 'User';
+
+                if (!account) {
+                    account = await Tasker.findById(transaction.user);
+                    accountType = 'Tasker';
+                }
+
+                if (account) {
+                    // Strict Math
+                    const previousBalance = Number(account.wallet) || 0;
+                    const depositAmount = Number(transaction.amount) || 0;
+                    const newBalance = previousBalance + depositAmount;
+
+                    // Add money to the correct wallet
+                    account.wallet = newBalance;
+                    await account.save();
+
+                    // Update the transaction ledger
+                    transaction.status = 'success';
+                    transaction.providerTransactionId = String(chargeData.id);
+                    transaction.verifiedAt = new Date();
+                    transaction.creditedAt = new Date();
+                    transaction.previousBalance = previousBalance;
+                    transaction.balanceAfter = newBalance;
+                    transaction.metadata = {
+                        ...transaction.metadata,
+                        accountRole: accountType,
+                        webhookConfirmed: true
+                    };
+                    await transaction.save();
+
+                    console.log(`✅ Webhook successfully funded ₦${depositAmount} to ${accountType} ${account._id}`);
+                } else {
+                    console.error(`❌ Webhook Error: Account not found for funding Ref: ${reference}`);
+                }
+            }
+        }
+
+        // Always return 200 immediately so Flutterwave knows we got the message
         return res.status(200).send('OK');
 
     } catch (error) {

@@ -14,7 +14,8 @@ export const getUserStats = async (req, res) => {
         const [
             totalUsers, activeUsers, inactiveUsers, verifiedUsers,
             suspendedUsers, pendingKyc, totalTasks, completedTasks,
-            unverifiedUsers, disputes
+            unverifiedUsers, disputes,
+            kycDiditCount, kycManualCount // 🚨 NEW: Count User KYC Methods
         ] = await Promise.all([
             User.countDocuments(),
             User.countDocuments({ isActive: true }),
@@ -25,7 +26,11 @@ export const getUserStats = async (req, res) => {
             Task.countDocuments(),
             Task.countDocuments({ status: 'completed' }),
             User.countDocuments({ isKYCVerified: false }),
-            Report.countDocuments({ status: 'pending' })
+            Report.countDocuments({ status: 'pending' }),
+            // Count verified USERS via didit
+            KYCVerification.countDocuments({ userType: 'User', status: 'approved', provider: 'didit' }),
+            // Count verified USERS via manual
+            KYCVerification.countDocuments({ userType: 'User', status: 'approved', provider: { $ne: 'didit' } })
         ]);
 
         res.json({
@@ -34,11 +39,13 @@ export const getUserStats = async (req, res) => {
                 totalUsers, active: activeUsers, inactive: inactiveUsers,
                 verified: verifiedUsers, suspended: suspendedUsers,
                 pendingKyc, totalTasksPosted: totalTasks, completedTasks,
-                unverified: unverifiedUsers, disputes
+                unverified: unverifiedUsers, disputes,
+                // 🚨 NEW: Return to frontend
+                verifiedViaDidit: kycDiditCount, 
+                verifiedManually: kycManualCount
             }
         });
     } catch (error) {
-        Sentry.captureException(error);
         res.status(500).json({ status: 'error', message: 'Failed to fetch user stats' });
     }
 };
@@ -95,6 +102,7 @@ export const getAllUsers = async (req, res) => {
 
 // GET /api/admin/users/:id
 // GET /api/admin/users/:id
+// GET /api/admin/users/:id
 export const getUserById = async (req, res) => {
     try {
         const userId = req.params.id;
@@ -102,9 +110,10 @@ export const getUserById = async (req, res) => {
 
         if (!user) return res.status(404).json({ status: 'error', message: 'User not found' });
 
-        // 🚨 FIX 1: Select the correct fields that Didit actually saves
-        const kycRecord = await KYCVerification.findOne({ user: userId }).select('status type maskedNin verificationData');
-        
+        // 🚨 FIX: Select raw `nin`, `idNumber`, and `provider`
+        const kycRecord = await KYCVerification.findOne({ user: userId })
+            .select('status type idType nin idNumber maskedNin verificationData provider');
+
         const tasks = await Task.find({ user: userId }).select('title budget status createdAt').sort({ createdAt: -1 }).limit(10);
 
         const escrowAgg = await Task.aggregate([
@@ -128,14 +137,14 @@ export const getUserById = async (req, res) => {
             data: {
                 user, 
                 wallet: { balance: user.wallet || 0, escrow: escrowBalance },
-                
-                // 🚨 FIX 2: Map the Didit fields directly to the response the dashboard expects
                 kyc: { 
                     status: kycRecord?.status || 'Not Submitted', 
-                    type: kycRecord?.verificationData?.documentType || kycRecord?.type || 'N/A',
-                    number: kycRecord?.maskedNin || 'Not Submitted'
+                    type: kycRecord?.verificationData?.documentType || kycRecord?.type || kycRecord?.idType || 'N/A',
+                    // 🚨 FIX: Return the raw NIN instead of the masked one
+                    number: kycRecord?.nin || kycRecord?.idNumber || 'Not Submitted',
+                    // 🚨 NEW: Tell the frontend how it was verified
+                    method: kycRecord?.provider === 'didit' ? 'Didit (Automated)' : 'Manual'
                 },
-                
                 stats: {
                     rating: 0,
                     completionRate: "0%",
@@ -149,12 +158,8 @@ export const getUserById = async (req, res) => {
             }
         });
     } catch (error) {
-        // Sentry.captureException(error);
         console.error('Get user details error:', error);
-        res.status(500).json({
-            status: 'error',
-            message: 'Failed to fetch user details'
-        });
+        res.status(500).json({ status: 'error', message: 'Failed to fetch user details' });
     }
 };
 
