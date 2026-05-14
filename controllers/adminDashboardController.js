@@ -112,3 +112,64 @@ export const getDashboardStats = async (req, res) => {
     res.status(500).json({ status: 'error', message: 'Failed to fetch dashboard stats' });
   }
 };
+
+export const getTodaySignupsList = async (req, res) => {
+    try {
+        // 1. Define "Today"
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+
+        const endOfToday = new Date();
+        endOfToday.setHours(23, 59, 59, 999);
+
+        // 2. Fetch both lists in parallel to keep it fast
+        // Using .lean() makes the query faster because it returns raw JSON objects instead of heavy Mongoose documents
+        const [usersToday, taskersToday] = await Promise.all([
+            User.find({ createdAt: { $gte: startOfToday, $lte: endOfToday } })
+                .select('fullName emailAddress isKYCVerified createdAt')
+                .lean(),
+            Tasker.find({ createdAt: { $gte: startOfToday, $lte: endOfToday } })
+                .select('firstName lastName emailAddress verifyIdentity createdAt')
+                .lean()
+        ]);
+
+        // 3. Standardize the User Data
+        const formattedUsers = usersToday.map(user => ({
+            id: user._id,
+            name: user.fullName,
+            email: user.emailAddress,
+            role: 'User',
+            isVerified: user.isKYCVerified || false, // Normalizing the flag name
+            signupTime: user.createdAt
+        }));
+
+        // 4. Standardize the Tasker Data
+        const formattedTaskers = taskersToday.map(tasker => ({
+            id: tasker._id,
+            name: `${tasker.firstName} ${tasker.lastName}`, // Combining names to match User schema
+            email: tasker.emailAddress,
+            role: 'Tasker',
+            isVerified: tasker.verifyIdentity || false, // Normalizing the flag name
+            signupTime: tasker.createdAt
+        }));
+
+        // 5. Combine and Sort (Newest signups at the top)
+        const combinedList = [...formattedUsers, ...formattedTaskers].sort(
+            (a, b) => new Date(b.signupTime) - new Date(a.signupTime)
+        );
+
+        // 6. Send to Frontend
+        return res.status(200).json({
+            status: 'success',
+            data: {
+                totalSignupsToday: combinedList.length,
+                date: startOfToday.toISOString().split('T')[0],
+                list: combinedList
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching today signups list:', error);
+        return res.status(500).json({ status: 'error', message: 'Failed to fetch today\'s signup list' });
+    }
+};
