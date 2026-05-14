@@ -84,6 +84,8 @@ const taskerSchema = new Schema({
     
     verifyIdentity: { type: Boolean, default: false, index: true }, // ADDED
     isActive: { type: Boolean, default: true, index: true }, // ADDED
+    isOnline: { type: Boolean, default: false, index: true },
+    lastSeenAt: { type: Date, default: null },
     
     lastLogin: { type: Date },
     loginAttempts: { type: Number, default: 0 },

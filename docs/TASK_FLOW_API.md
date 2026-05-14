@@ -507,6 +507,67 @@ GET /api/chat/conversations
 Auth: protectAny
 ```
 
+Conversation responses include:
+
+```json
+{
+  "unread": { "user": 0, "tasker": 2 },
+  "participantPresence": {
+    "type": "tasker",
+    "isOnline": false,
+    "lastSeenAt": "2026-05-14T11:00:00.000Z"
+  }
+}
+```
+
+---
+
+### 5.2.1 Message Notifications
+
+```
+GET /api/chat/notifications
+Auth: protectAny
+```
+
+Returns unread message notifications for the logged-in chat participant. This is separate from `GET /api/notifications`; chat message alerts are not stored in the regular notification feed.
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "unreadCount": 2,
+    "notifications": [
+      {
+        "conversationId": "conversation-id",
+        "unreadCount": 2,
+        "lastMessage": "Hello",
+        "lastMessageAt": "2026-05-14T10:00:00.000Z",
+        "conversation": {}
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 5.2.2 Update Chat Presence
+
+```
+PATCH /api/chat/presence
+Auth: protectAny
+```
+
+**Request Body:**
+```json
+{
+  "isOnline": true
+}
+```
+
+Use `true` when the chat client is active and `false` when the app goes to background or the user signs out. Chat endpoints also refresh `lastSeenAt` during normal activity.
+
 ---
 
 ### 5.3 Get Messages
@@ -515,6 +576,8 @@ Auth: protectAny
 GET /api/chat/conversations/:id/messages
 Auth: protectAny
 ```
+
+Message responses include sender presence on populated `senderUser` or `senderTasker`, plus `participantPresence` for the other side of the conversation.
 
 ---
 

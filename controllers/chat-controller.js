@@ -2,11 +2,14 @@ import Conversation from '../models/conversation.js';
 import Message from '../models/message.js';
 import Task from '../models/task.js';
 import Bid from '../models/bid.js';
+import User from '../models/user.js';
+import Tasker from '../models/tasker.js';
 import { Types } from 'mongoose';
 import * as Sentry from '@sentry/node';
 import { notifyOnNewChatMessage } from '../utils/notificationUtils.js';
 import { uploadMultipleToCloudinary } from '../utils/uploadService.js';
 import { formatPublicUser } from '../utils/publicUserUtils.js';
+import { addParticipantPresence, buildMessageNotificationSummary } from '../utils/chatNotificationUtils.js';
 
 const isValidId = (id) => Types.ObjectId.isValid(id);
 
@@ -23,9 +26,34 @@ const ensureParticipant = (conversation, req) => {
   }
 };
 
+const userPopulateFields = 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent isOnline lastSeenAt';
+const taskerPopulateFields = 'firstName lastName profilePicture isOnline lastSeenAt';
+
+const accountModelFor = (userType) => (userType === 'user' ? User : Tasker);
+
+const touchPresence = async (req, isOnline = true) => {
+  const Model = accountModelFor(req.userType);
+  const now = new Date();
+  await Model.updateOne(
+    { _id: req.user._id },
+    { $set: { isOnline: Boolean(isOnline), lastSeenAt: now } }
+  );
+  req.user.isOnline = Boolean(isOnline);
+  req.user.lastSeenAt = now;
+  return { isOnline: Boolean(isOnline), lastSeenAt: now };
+};
+
+const formatConversationForResponse = (conversation, viewerType) => {
+  const obj = addParticipantPresence(conversation, viewerType);
+  obj.user = formatPublicUser(obj.user, 'full');
+  return obj;
+};
+
 // Create or get conversation for a task owner and a bidding tasker
 export const createOrGetConversation = async (req, res) => {
   try {
+    await touchPresence(req, true);
+
     const { taskId, bidId, taskerId } = req.body || {};
 
     if (!taskId || !isValidId(taskId)) {
@@ -93,11 +121,10 @@ export const createOrGetConversation = async (req, res) => {
 
     const populated = await Conversation.findById(conversation._id)
       .populate('task', 'title budget status')
-      .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
-      .populate('tasker', 'firstName lastName profilePicture');
+      .populate('user', userPopulateFields)
+      .populate('tasker', taskerPopulateFields);
 
-    const convObj = populated.toObject();
-    convObj.user = formatPublicUser(convObj.user, 'full');
+    const convObj = formatConversationForResponse(populated, req.userType);
 
     return res.status(200).json({ status: 'success', conversation: convObj });
   } catch (error) {
@@ -109,6 +136,8 @@ export const createOrGetConversation = async (req, res) => {
 
 export const listConversations = async (req, res) => {
   try {
+    await touchPresence(req, true);
+
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
@@ -121,14 +150,10 @@ export const listConversations = async (req, res) => {
       .skip(skip)
       .limit(limit)
       .populate('task', 'title budget status')
-      .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
-      .populate('tasker', 'firstName lastName profilePicture');
+      .populate('user', userPopulateFields)
+      .populate('tasker', taskerPopulateFields);
 
-    const transformed = conversations.map(c => {
-      const obj = c.toObject();
-      obj.user = formatPublicUser(obj.user, 'full');
-      return obj;
-    });
+    const transformed = conversations.map(c => formatConversationForResponse(c, req.userType));
 
     return res.status(200).json({
       status: 'success',
@@ -145,18 +170,19 @@ export const listConversations = async (req, res) => {
 
 export const getConversation = async (req, res) => {
   try {
+    await touchPresence(req, true);
+
     const { id } = req.params;
     if (!isValidId(id)) return res.status(400).json({ status: 'error', message: 'Invalid conversation id' });
 
     const conversation = await Conversation.findById(id)
       .populate('task', 'title budget status')
-      .populate('user', 'fullName profilePicture country residentState tasksPostedCount completedTasksCount totalSpent')
-      .populate('tasker', 'firstName lastName profilePicture');
+      .populate('user', userPopulateFields)
+      .populate('tasker', taskerPopulateFields);
     if (!conversation) return res.status(404).json({ status: 'error', message: 'Conversation not found' });
     if (!ensureParticipant(conversation, req)) return res.status(403).json({ status: 'error', message: 'Forbidden' });
 
-    const convObj = conversation.toObject();
-    convObj.user = formatPublicUser(convObj.user, 'full');
+    const convObj = formatConversationForResponse(conversation, req.userType);
 
     return res.status(200).json({ status: 'success', conversation: convObj });
   } catch (error) {
@@ -168,6 +194,8 @@ export const getConversation = async (req, res) => {
 
 export const listMessages = async (req, res) => {
   try {
+    await touchPresence(req, true);
+
     const { id } = req.params;
     if (!isValidId(id)) return res.status(400).json({ status: 'error', message: 'Invalid conversation id' });
 
@@ -182,12 +210,23 @@ export const listMessages = async (req, res) => {
 
     const messages = await Message.find(query)
       .sort({ createdAt: 1 })
-      .limit(limit + 1);
+      .limit(limit + 1)
+      .populate('senderUser', 'fullName profilePicture isOnline lastSeenAt')
+      .populate('senderTasker', 'firstName lastName profilePicture isOnline lastSeenAt');
 
     const hasMore = messages.length > limit;
     if (hasMore) messages.pop();
 
-    return res.status(200).json({ status: 'success', messages, hasMore });
+    const populatedConversation = await Conversation.findById(id)
+      .populate('user', userPopulateFields)
+      .populate('tasker', taskerPopulateFields);
+
+    return res.status(200).json({
+      status: 'success',
+      messages,
+      hasMore,
+      participantPresence: addParticipantPresence(populatedConversation, req.userType).participantPresence,
+    });
   } catch (error) {
     Sentry.captureException(error);
     console.error('listMessages error:', error);
@@ -197,6 +236,8 @@ export const listMessages = async (req, res) => {
 
 export const sendMessage = async (req, res) => {
   try {
+    await touchPresence(req, true);
+
     const { id } = req.params;
     if (!isValidId(id)) return res.status(400).json({ status: 'error', message: 'Invalid conversation id' });
 
@@ -262,6 +303,8 @@ export const sendMessage = async (req, res) => {
 
 export const markRead = async (req, res) => {
   try {
+    await touchPresence(req, true);
+
     const { id } = req.params;
     if (!isValidId(id)) return res.status(400).json({ status: 'error', message: 'Invalid conversation id' });
 
@@ -276,7 +319,7 @@ export const markRead = async (req, res) => {
 
     // Mark messages as read (best-effort)
     await Message.updateMany(
-      { conversation: id, status: 'sent' },
+      { conversation: id, status: 'sent', senderType: { $ne: who } },
       { $set: { status: 'read' }, $push: { readBy: { who, at: new Date() } } }
     );
 
@@ -288,6 +331,50 @@ export const markRead = async (req, res) => {
   }
 };
 
+export const listMessageNotifications = async (req, res) => {
+  try {
+    await touchPresence(req, true);
+
+    const filter = req.userType === 'user'
+      ? { user: req.user._id, 'unread.user': { $gt: 0 } }
+      : { tasker: req.user._id, 'unread.tasker': { $gt: 0 } };
+
+    const conversations = await Conversation.find(filter)
+      .sort({ lastMessageAt: -1, updatedAt: -1 })
+      .populate('task', 'title budget status')
+      .populate('user', userPopulateFields)
+      .populate('tasker', taskerPopulateFields);
+
+    const data = buildMessageNotificationSummary(conversations, req.userType);
+    data.notifications = data.notifications.map((notification) => ({
+      ...notification,
+      conversation: formatConversationForResponse(notification.conversation, req.userType),
+    }));
+
+    return res.status(200).json({ status: 'success', data });
+  } catch (error) {
+    Sentry.captureException(error);
+    console.error('listMessageNotifications error:', error);
+    return res.status(500).json({ status: 'error', message: 'Error fetching message notifications', error: error.message });
+  }
+};
+
+export const updatePresence = async (req, res) => {
+  try {
+    const { isOnline } = req.body || {};
+    if (typeof isOnline !== 'boolean') {
+      return res.status(400).json({ status: 'error', message: 'isOnline boolean is required' });
+    }
+
+    const presence = await touchPresence(req, isOnline);
+    return res.status(200).json({ status: 'success', presence });
+  } catch (error) {
+    Sentry.captureException(error);
+    console.error('updatePresence error:', error);
+    return res.status(500).json({ status: 'error', message: 'Error updating presence', error: error.message });
+  }
+};
+
 export default {
   createOrGetConversation,
   listConversations,
@@ -295,4 +382,6 @@ export default {
   listMessages,
   sendMessage,
   markRead,
+  listMessageNotifications,
+  updatePresence,
 };

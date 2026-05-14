@@ -56,6 +56,8 @@ const userSchema = new Schema({
     
     isActive: { type: Boolean, default: true },
     isDeleted: {type: Boolean,default: false},
+    isOnline: { type: Boolean, default: false, index: true },
+    lastSeenAt: { type: Date, default: null },
 
     isKYCVerified: { type: Boolean,default: false},
     verifyIdentity: { type: Boolean, default: false },
