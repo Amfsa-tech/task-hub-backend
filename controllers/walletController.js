@@ -67,7 +67,12 @@ export const getTaskerBankAccount = async (req, res) => {
 export const initializeFunding = async (req, res) => {
     try {
         const { amount } = req.body;
-        const user = req.user;
+        
+        // 🚨 FIX: Dynamically grab whoever is making the request (User OR Tasker)
+        const account = req.user || req.tasker;
+        if (!account) {
+            return res.status(401).json({ status: 'error', message: 'Unauthorized. Please log in.' });
+        }
 
         const nairaAmount = Number(amount);
         if (isNaN(nairaAmount) || nairaAmount < 100) {
@@ -75,13 +80,17 @@ export const initializeFunding = async (req, res) => {
         }
 
         const { providerName, service } = await getActiveGateway();
-        // Convert to kobo (Standard backend storage format)
-        const koboAmount = Math.round(nairaAmount * 100); 
-        const reference = `WF-${user._id}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+        
+        // Format amount based on which gateway is currently active
+        const gatewayAmount = providerName === 'paystack' 
+            ? Math.round(nairaAmount * 100) 
+            : nairaAmount;                  
+            
+        const reference = `WF-${account._id}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
         const transaction = await Transaction.create({
-            user: user._id,
-            amount: nairaAmount,
+            user: account._id, // Attach to whoever is logged in
+            amount: nairaAmount, 
             type: 'credit',
             description: `Wallet funding via ${providerName.toUpperCase()}`,
             status: 'pending',
@@ -93,11 +102,11 @@ export const initializeFunding = async (req, res) => {
         });
 
         const gatewayData = await service.initializeTransaction({
-            email: user.emailAddress,
-            amount: koboAmount,
+            email: account.emailAddress, // Use the dynamically fetched account email
+            amount: gatewayAmount, 
             reference,
             metadata: {
-                userId: user._id.toString(),
+                userId: account._id.toString(),
                 transactionId: transaction._id.toString(),
                 purpose: 'wallet_funding',
             },
@@ -113,7 +122,6 @@ export const initializeFunding = async (req, res) => {
             },
         });
     } catch (error) {
-        Sentry.captureException(error);
         console.error('[Wallet Fund] Initialize error:', error);
         return res.status(500).json({ status: 'error', message: error.publicMessage || 'Could not initialize payment' });
     }
@@ -126,11 +134,17 @@ export const initializeFunding = async (req, res) => {
 export const verifyFunding = async (req, res) => {
     try {
         const { reference } = req.query;
-        const user = req.user;
+        
+        // 🚨 FIX: Dynamically grab whoever is making the request (User OR Tasker)
+        const account = req.user || req.tasker;
+        if (!account) {
+            return res.status(401).json({ status: 'error', message: 'Unauthorized. Please log in.' });
+        }
 
         if (!reference) return res.status(400).json({ status: 'error', message: 'Reference is required' });
 
-        const transaction = await Transaction.findOne({ reference, user: user._id });
+        // Find the transaction using the dynamic account ID
+        const transaction = await Transaction.findOne({ reference, user: account._id });
         if (!transaction) return res.status(404).json({ status: 'error', message: 'Transaction not found' });
 
         if (transaction.status === 'success' || transaction.status === 'failed') {
@@ -149,8 +163,12 @@ export const verifyFunding = async (req, res) => {
         const gatewayData = await service.verifyTransaction(reference);
 
         if (gatewayData.status === 'success') {
-            const expectedKobo = Math.round(transaction.amount * 100);
-            if (gatewayData.amount !== expectedKobo) {
+            // Dynamic amount validation based on provider
+            const expectedGatewayAmount = transaction.provider === 'paystack'
+                ? Math.round(transaction.amount * 100)
+                : transaction.amount;
+
+            if (Number(gatewayData.amount) !== expectedGatewayAmount) {
                  return res.status(400).json({ status: 'error', message: 'Value mismatch detected' });
             }
 
@@ -186,7 +204,6 @@ export const verifyFunding = async (req, res) => {
             },
         });
     } catch (error) {
-        Sentry.captureException(error);
         console.error('[Wallet Fund] Verify error:', error);
         return res.status(500).json({ status: 'error', message: 'Could not verify payment' });
     }
@@ -194,19 +211,37 @@ export const verifyFunding = async (req, res) => {
 
 /**
  * Credits the user's wallet atomically using findOneAndUpdate for idempotency.
- * THIS FIXES THE ADMIN DASHBOARD DISPLAY.
+ */
+/**
+ * Credits the user's or tasker's wallet atomically using findOneAndUpdate.
  */
 export const creditWallet = async (transaction, gatewayData) => {
     if (transaction.status === 'success') return;
 
-    const user = await User.findById(transaction.user);
-    if (!user) return;
+    // 🚨 FIX: Dynamically check which role the ID belongs to
+    let account = await User.findById(transaction.user);
+    let accountType = 'User';
 
-    const previousBalance = user.wallet || 0;
-    const newBalance = previousBalance + transaction.amount;
+    // If it's not a regular User, check if it's a Tasker
+    if (!account) {
+        account = await Tasker.findById(transaction.user);
+        accountType = 'Tasker';
+    }
 
-    user.wallet = newBalance;
-    await user.save();
+    // If somehow neither exists, silently abort to prevent crashes
+    if (!account) {
+        console.error(`[Wallet Fund] Critical: Account not found for ID ${transaction.user}`);
+        return;
+    }
+
+    // Strict Number casting for bulletproof math
+    const previousBalance = Number(account.wallet) || 0;
+    const depositAmount = Number(transaction.amount) || 0;
+    const newBalance = previousBalance + depositAmount;
+
+    // Credit the correct wallet (whether it is a User or Tasker)
+    account.wallet = newBalance;
+    await account.save();
 
     const txn = await Transaction.findOneAndUpdate(
         { _id: transaction._id, status: 'pending' },
@@ -222,6 +257,7 @@ export const creditWallet = async (transaction, gatewayData) => {
                 ...transaction.metadata,
                 channel: gatewayData.channel,
                 paidAt: gatewayData.paid_at,
+                accountRole: accountType // Handy for your admin logs to see who funded!
             },
         },
         { new: true }
