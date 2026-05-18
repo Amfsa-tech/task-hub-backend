@@ -73,7 +73,8 @@ const userSchema = new Schema({
     lockUntil: { type: Date },
     
     createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now }
+    updatedAt: { type: Date, default: Date.now },
+    lastKnownIp: { type: String, default: 'Unknown' }
 });
 
 // Virtual for checking if account is locked

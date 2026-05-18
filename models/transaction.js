@@ -37,7 +37,7 @@ const transactionSchema = new mongoose.Schema({
     },
     paymentPurpose: {
         type: String,
-        enum: ['wallet_funding', 'escrow_hold', 'escrow_release', 'escrow_refund', 'withdrawal', 'platform_fee', 'other'],
+        enum: ['wallet_funding', 'escrow_hold', 'escrow_release', 'escrow_refund', 'withdrawal', 'platform_fee', 'other','refund'],
         default: 'other'
     },
     currency: {

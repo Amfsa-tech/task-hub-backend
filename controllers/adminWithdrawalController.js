@@ -135,16 +135,77 @@ export const getAllWithdrawals = async (req, res) => {
  */
 export const getWithdrawalById = async (req, res) => {
     try {
+        // 1. Fetch the Withdrawal and populate Tasker/Admin info
         const withdrawal = await Withdrawal.findById(req.params.id)
-            .populate('tasker', 'firstName lastName emailAddress profilePicture wallet bankAccount')
+            .populate('tasker', 'firstName lastName emailAddress profilePicture wallet')
             .populate('reviewedBy', 'name');
 
-        if (!withdrawal) return res.status(404).json({ status: 'error', message: 'Withdrawal not found' });
+        if (!withdrawal) {
+            return res.status(404).json({ status: 'error', message: 'Withdrawal not found' });
+        }
 
-        return res.json({ status: 'success', data: withdrawal });
+        const tasker = withdrawal.tasker;
+
+        // 2. Calculate Current Escrow (Sum of budgets for active tasks)
+        const escrowAgg = await Task.aggregate([
+            { $match: { assignedTasker: tasker._id, status: { $in: ['assigned', 'in-progress'] } } },
+            { $group: { _id: null, totalEscrow: { $sum: '$budget' } } }
+        ]);
+        const currentEscrowBalance = escrowAgg[0]?.totalEscrow || 0;
+
+        // 3. Fetch Proof of Earnings (Recent tasks this tasker completed)
+        const recentTasks = await Task.find({ 
+            assignedTasker: tasker._id, 
+            status: 'completed' 
+        })
+        .select('title budget taskerPayout balanceAfter completedAt updatedAt')
+        .sort({ completedAt: -1, updatedAt: -1 }) // Get the newest completed tasks first
+        .limit(15); 
+
+        // 4. Structure the response for the frontend
+        return res.json({ 
+            status: 'success', 
+            data: {
+                // Core Withdrawal & Bank Details
+                withdrawalInfo: {
+                    id: withdrawal._id,
+                    amount: withdrawal.amount,
+                    status: withdrawal.status,
+                    payoutMethod: withdrawal.payoutMethod,
+                    bankDetails: withdrawal.bankDetails,       // 💳 Exposed for the admin
+                    stellarDetails: withdrawal.stellarDetails, 
+                    requestedAt: withdrawal.createdAt,
+                    blockchainTxId: withdrawal.blockchainTxId,
+                    rejectionReason: withdrawal.rejectionReason,
+                    reviewedBy: withdrawal.reviewedBy
+                },
+
+                // Live Wallet & Escrow Balances
+                taskerFinancials: {
+                    taskerId: tasker._id,
+                    name: `${tasker.firstName} ${tasker.lastName}`,
+                    email: tasker.emailAddress,
+                    currentWalletBalance: tasker.wallet || 0,
+                    currentEscrowBalance: currentEscrowBalance
+                },
+
+                // The Audit Trail (Tasks & Balance Snapshots)
+                auditTrail: {
+                    tasksCompleted: recentTasks.map(task => ({
+                        taskId: task._id,
+                        title: task.title,
+                        taskBudget: task.budget,             // What the user paid
+                        amountEarned: task.taskerPayout,     // What the tasker actually earned (minus platform fees)
+                        balanceAfterTask: task.balanceAfter, // 💰 The exact wallet balance after this specific task
+                        completedAt: task.completedAt || task.updatedAt
+                    }))
+                }
+            } 
+        });
     } catch (error) {
         Sentry.captureException(error);
-        return res.status(500).json({ status: 'error', message: 'Failed to fetch withdrawal' });
+        console.error('[Admin] Error fetching withdrawal details:', error);
+        return res.status(500).json({ status: 'error', message: 'Failed to fetch withdrawal audit data' });
     }
 };
 

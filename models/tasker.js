@@ -90,6 +90,7 @@ const taskerSchema = new Schema({
     lastLogin: { type: Date },
     loginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date },
+    lastKnownIp: { type: String, default: 'Unknown' },
     
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now }

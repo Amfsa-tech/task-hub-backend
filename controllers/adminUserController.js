@@ -101,8 +101,6 @@ export const getAllUsers = async (req, res) => {
 };
 
 // GET /api/admin/users/:id
-// GET /api/admin/users/:id
-// GET /api/admin/users/:id
 export const getUserById = async (req, res) => {
     try {
         const userId = req.params.id;
@@ -110,7 +108,6 @@ export const getUserById = async (req, res) => {
 
         if (!user) return res.status(404).json({ status: 'error', message: 'User not found' });
 
-        // 🚨 FIX: Select raw `nin`, `idNumber`, and `provider`
         const kycRecord = await KYCVerification.findOne({ user: userId })
             .select('status type idType nin idNumber maskedNin verificationData provider');
 
@@ -132,6 +129,15 @@ export const getUserById = async (req, res) => {
             ...tasks.map(t => ({ action: 'Posted Task', date: t.createdAt, details: `Posted "${t.title}"` }))
         ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 10);
 
+        // 🚨 NEW: Calculate Security metrics for the frontend card
+        const isLocked = user.lockUntil && new Date(user.lockUntil) > new Date();
+        let securityStatus = 'Secure';
+        if (!user.isActive) securityStatus = 'Suspended';
+        else if (isLocked) securityStatus = 'Locked';
+
+        // Simple risk score logic: 20 points per failed login, max 100.
+        const riskScore = isLocked ? 100 : Math.min((user.loginAttempts || 0) * 20, 100);
+
         res.json({
             status: 'success',
             data: {
@@ -140,9 +146,7 @@ export const getUserById = async (req, res) => {
                 kyc: { 
                     status: kycRecord?.status || 'Not Submitted', 
                     type: kycRecord?.verificationData?.documentType || kycRecord?.type || kycRecord?.idType || 'N/A',
-                    // 🚨 FIX: Return the raw NIN instead of the masked one
                     number: kycRecord?.nin || kycRecord?.idNumber || 'Not Submitted',
-                    // 🚨 NEW: Tell the frontend how it was verified
                     method: kycRecord?.provider === 'didit' ? 'Didit (Automated)' : 'Manual'
                 },
                 stats: {
@@ -151,6 +155,13 @@ export const getUserById = async (req, res) => {
                     completedTasks: 0,
                     totalTransaction: 0,
                     currentBalance: user.wallet || 0
+                },
+                // 🚨 NEW: Pass the security object expected by the UI
+                security: {
+                    riskScore: riskScore,
+                    loginAttempts: user.loginAttempts || 0,
+                    lastKnownIp: user.lastKnownIp || 'Unknown',
+                    status: securityStatus
                 },
                 tasks, 
                 transactions, 
@@ -162,7 +173,6 @@ export const getUserById = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Failed to fetch user details' });
     }
 };
-
 // PATCH ACTIONS
 export const activateUser = async (req, res) => {
     const user = await User.findByIdAndUpdate(req.params.id, { isActive: true }, { new: true });

@@ -143,7 +143,6 @@ export const getTaskerById = async (req, res) => {
         if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
 
         const [kycRecord, totalAssigned, completedCount, revenueAgg, recentReviews] = await Promise.all([
-            // 🚨 FIX: Pull the raw `nin` and the `provider`
             KYCVerification.findOne({ user: taskerId }).select('idType idNumber nin status maskedNin verificationData provider'),
             Task.countDocuments({ assignedTasker: tasker._id }),
             Task.countDocuments({ assignedTasker: tasker._id, status: 'completed' }),
@@ -167,22 +166,39 @@ export const getTaskerById = async (req, res) => {
             comment: r.reviewText || 'No comment provided', date: r.createdAt
         }));
         
+        // 🚨 SECURITY: Calculate Status and Risk Score
         const isCurrentlyLocked = !!(tasker.lockUntil && new Date(tasker.lockUntil) > new Date());
+        
+        let securityStatus = 'Secure';
+        if (!tasker.isActive) securityStatus = 'Suspended';
+        else if (isCurrentlyLocked) securityStatus = 'Locked';
+
+        const riskScore = isCurrentlyLocked ? 100 : Math.min((tasker.loginAttempts || 0) * 20, 100);
         
         res.json({
             status: 'success',
             data: {
                 kyc: {
                     type: kycRecord?.verificationData?.documentType || kycRecord?.idType || 'N/A', 
-                    // 🚨 FIX: Return the raw NIN
                     number: kycRecord?.nin || kycRecord?.idNumber || 'Not Submitted',
                     status: kycRecord?.status || 'unverified',
-                    // 🚨 NEW: Tell the frontend how it was verified
-                    method: kycRecord?.provider === 'didit' ? 'Didit (Automated)' : 'Manual'
+                    // 🚨 FIX: Safely check for Didit, QoreID, or Manual
+                    method: kycRecord?.provider === 'didit' 
+                        ? 'Didit (Automated)' 
+                        : kycRecord?.provider === 'qoredid' 
+                            ? 'QoreID (Automated)' 
+                            : 'Manual'
                 },
                 stats: {
                     rating: tasker.averageRating || 0, completionRate: `${completionRate}%`,
                     completedTasks: completedCount, totalTransaction, currentBalance: tasker.wallet || 0 
+                },
+                // 🚨 NEW: The Security Object for the Frontend
+                security: {
+                    riskScore: riskScore,
+                    loginAttempts: tasker.loginAttempts || 0,
+                    lastKnownIp: tasker.lastKnownIp || 'Unknown',
+                    status: securityStatus
                 },
                 account: {
                     userId: tasker._id, 
