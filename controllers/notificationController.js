@@ -19,7 +19,8 @@ export const getMyNotifications = async (req, res) => {
 
         // Find notifications where either the user OR tasker field matches their ID
         const notifications = await Notification.find({
-            $or: [{ user: userId }, { tasker: userId }]
+            $or: [{ user: userId }, { tasker: userId }],
+            type: { $ne: 'chat' }
         })
         .sort({ createdAt: -1 }) // Newest first
         .limit(20); // Just fetch the last 20 to keep the app fast
@@ -107,6 +108,7 @@ export const markAllNotificationsRead = async (req, res) => {
         const result = await Notification.updateMany(
             {
                 $or: [{ user: userId }, { tasker: userId }],
+                type: { $ne: 'chat' },
                 read: false
             },
             { $set: { read: true } }

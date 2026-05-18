@@ -29,6 +29,7 @@ import adminUniversityRoutes from './routes/adminUniversityRoutes.js';
 import adminNotificationRoutes from './routes/adminNotificationRoutes.js';
 import adminRatingRoutes from './routes/adminRatingRoutes.js';
 import waitlistRoutes from './routes/waitlistRoute.js';
+import supportRoutes from './routes/supportRoute.js';
 import walletRoutes from './routes/walletRoute.js';
 import nearbyTaskerRoutes from './routes/nearbyTaskerRoute.js';
 import mainCategoryRoutes from './routes/mainCategoryRoute.js';
@@ -154,6 +155,7 @@ app.use('/api/taskers', nearbyTaskerRoutes); // Public nearby taskers
 app.use('/api/main-categories', mainCategoryRoutes); // Public main categories
 app.use('/api/universities', universityRoutes);       // Public universities
 app.use('/api/waitlist', waitlistRoutes);
+app.use('/api/support', supportRoutes);
 app.use('/api/nin', ninSubmissionRoutes);
 // User/Tasker side notifications
 app.use('/api/notifications', userNotificationRoutes);

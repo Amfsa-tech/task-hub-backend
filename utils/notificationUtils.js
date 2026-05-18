@@ -6,6 +6,7 @@ import { calculateDistance, milesToMeters } from './locationUtils.js';
 import { sendPushToUser, sendPushToMultipleUsers, sendTaskNotification, sendBidNotification } from '../services/onesignal.js';
 import { sendWebPushToAccount, sendWebPushToAccounts } from '../services/webPushService.js';
 import { sendEmail } from './authUtils.js';
+import { createChatNotificationPayload } from './chatNotificationUtils.js';
 import { newTaskEmailHtml, bidAcceptedEmailHtml, bidRejectedEmailHtml, taskCancelledEmailHtml } from './taskerEmailTemplates.js';
 
 // Notify taskers about new tasks matching their categories
@@ -566,9 +567,7 @@ export const notifyOnNewChatMessage = async (recipientType, recipientId, convers
             notificationId = tasker.notificationId;
         }
 
-        const title = 'New message';
-        const body = preview || 'You have a new chat message';
-        const data = { type: 'chat', conversationId: conversationId?.toString(), action: 'open_conversation' };
+        const { title, body, data } = createChatNotificationPayload(conversationId, preview);
 
         // OneSignal push
         if (notificationId) {
@@ -579,20 +578,6 @@ export const notifyOnNewChatMessage = async (recipientType, recipientId, convers
         if (account && account.pushSubscriptions && account.pushSubscriptions.length > 0) {
             await sendWebPushToAccount(account, title, body, data);
         }
-
-        // In-app notification
-        const notifDoc = {
-            title,
-            message: body,
-            type: 'chat',
-            metadata: { conversationId: conversationId?.toString() }
-        };
-        if (recipientType === 'user') {
-            notifDoc.user = recipientId;
-        } else {
-            notifDoc.tasker = recipientId;
-        }
-        await Notification.create(notifDoc).catch(e => console.error('In-app notification error:', e.message));
     } catch (error) {
         console.error('Error sending chat message notification:', error);
         Sentry.captureException(error);

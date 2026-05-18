@@ -246,7 +246,6 @@ export const userLogin = async (req, res) => {
 
     if (!loginResult.success) {
         // --- ACTIVITY LOG: LOGIN FAILED ---
-        // FIX: Attach directly to req instead of using { ...req }
         req.user = { _id: user._id };
         req.userType = 'user';
         
@@ -263,10 +262,21 @@ export const userLogin = async (req, res) => {
         });
     }
 
+    // 🚨 SECURITY FIX: Capture the IP address cleanly
+    // x-forwarded-for can be a comma-separated list if passing through load balancers, so we grab the first one
+    const forwardedIps = req.headers['x-forwarded-for'];
+    const userIp = forwardedIps ? forwardedIps.split(',')[0].trim() : (req.socket.remoteAddress || req.ip);
+    
+    user.lastKnownIp = userIp;
+    user.lastLoginAt = new Date();
+    // Assuming handleLoginAttempt already resets attempts on success, 
+    // but enforcing it here guarantees a clean slate for the UI dashboard.
+    user.loginAttempts = 0; 
+    await user.save();
+
     const token = generateToken(user._id);
 
     // --- ACTIVITY LOG: LOGIN SUCCESS ---
-    // FIX: Attach directly to req instead of using { ...req }
     req.user = user;
     req.userType = 'user';
     await logActivity(req, 'LOGIN_SUCCESS');
@@ -487,7 +497,6 @@ export const taskerLogin = async (req, res) => {
 
     if (!loginResult.success) {
         // --- ACTIVITY LOG: LOGIN FAILED ---
-        // FIX: Attach to existing req object to preserve headers (like x-forwarded-for)
         req.user = { _id: tasker._id };
         req.userType = 'tasker';
         
@@ -504,11 +513,19 @@ export const taskerLogin = async (req, res) => {
         });
     }
 
+    // 🚨 SECURITY FIX: Capture the IP address cleanly
+    const forwardedIps = req.headers['x-forwarded-for'];
+    const taskerIp = forwardedIps ? forwardedIps.split(',')[0].trim() : (req.socket.remoteAddress || req.ip);
+    
+    tasker.lastKnownIp = taskerIp;
+    tasker.lastLoginAt = new Date();
+    tasker.loginAttempts = 0; 
+    await tasker.save();
+
     // 4. Generate Token
     const token = generateToken(tasker._id);
 
     // --- ACTIVITY LOG: LOGIN SUCCESS ---
-    // FIX: Attach to existing req object to preserve headers
     req.user = tasker;
     req.userType = 'tasker';
     await logActivity(req, 'LOGIN_SUCCESS');

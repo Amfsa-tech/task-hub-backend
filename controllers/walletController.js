@@ -9,7 +9,7 @@ import Tasker from '../models/tasker.js';
 import flutterwaveService from '../services/flutterwave_service.js';
 import axios from 'axios'; 
 import * as Sentry from '@sentry/node';
-import { notifyWalletFunded } from '../utils/notificationUtils.js';
+import { notifyWalletFunded,notifyWithdrawalRejected,notifyWithdrawalCompleted} from '../utils/notificationUtils.js';
 
 // Helper to get active gateway
 const getActiveGateway = async () => {

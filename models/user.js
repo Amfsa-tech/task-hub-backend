@@ -56,6 +56,8 @@ const userSchema = new Schema({
     
     isActive: { type: Boolean, default: true },
     isDeleted: {type: Boolean,default: false},
+    isOnline: { type: Boolean, default: false, index: true },
+    lastSeenAt: { type: Date, default: null },
 
     isKYCVerified: { type: Boolean,default: false},
     verifyIdentity: { type: Boolean, default: false },
@@ -71,7 +73,8 @@ const userSchema = new Schema({
     lockUntil: { type: Date },
     
     createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now }
+    updatedAt: { type: Date, default: Date.now },
+    lastKnownIp: { type: String, default: 'Unknown' }
 });
 
 // Virtual for checking if account is locked
