@@ -9,24 +9,25 @@ export const handleResendWebhook = async (req, res) => {
     try {
         const event = req.body;
         
-        // 1. Acknowledge receipt immediately so Resend knows we got it and doesn't retry
+        // Acknowledge receipt immediately
         res.status(200).send('OK');
 
         if (event.type === 'email.opened') {
-            console.log('\n--- RESEND OPEN WEBHOOK TRIGGERED ---');
+            console.log('\n---RESEND OPEN WEBHOOK TRIGGERED ---');
             
-            // The || [] ensures that if Resend sends an email without tags, it doesn't crash!
-            const tags = event.data?.tags || [];
+            // FIX: Treat tags as an Object {}, not an Array []
+            const tags = event.data?.tags || {};
             console.log('Tags received from Resend:', tags);
 
-            // 2. We FORCE lowercase here because Resend sometimes alters the capitalization of tag names
-            const notifTag = tags.find(t => t.name.toLowerCase() === 'notificationid');
+            // FIX: Search through the Object keys case-insensitively
+            const targetKey = Object.keys(tags).find(key => key.toLowerCase() === 'notificationid');
 
-            if (notifTag && notifTag.value) {
-                const cleanId = notifTag.value.trim();
+            // If we found the key, grab its value
+            if (targetKey && tags[targetKey]) {
+                const cleanId = tags[targetKey].trim();
                 console.log(`Attempting to update AdminNotification ID: ${cleanId}`);
 
-                // 3. Perform the update
+                // Perform the update
                 const updatedDoc = await AdminNotification.findByIdAndUpdate(
                     cleanId,
                     { $inc: { openedCount: 1 } },
@@ -39,13 +40,12 @@ export const handleResendWebhook = async (req, res) => {
                     console.log(`ERROR: Could not find AdminNotification with ID ${cleanId} in the database.`);
                 }
             } else {
-                console.log('WARNING: No "notificationId" tag found in this open event. (This is normal for test emails sent without a database ID).');
+                console.log('WARNING: No "notificationId" tag found in this open event.');
             }
             console.log('----------------------------------------\n');
         }
     } catch (error) {
-        // Since we already sent the 200 OK at the top, this just logs the error safely
-        console.error('🔥 Resend Webhook Processing Error:', error);
+        console.error('Resend Webhook Processing Error:', error);
     }
 };
 
