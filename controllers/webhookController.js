@@ -8,21 +8,44 @@ import { FLW_WEBHOOK_SECRET } from '../config/envConfig.js';
 export const handleResendWebhook = async (req, res) => {
     try {
         const event = req.body;
+        
+        // 1. Acknowledge receipt immediately so Resend knows we got it and doesn't retry
+        res.status(200).send('OK');
+
         if (event.type === 'email.opened') {
+            console.log('\n--- RESEND OPEN WEBHOOK TRIGGERED ---');
+            
+            // The || [] ensures that if Resend sends an email without tags, it doesn't crash!
             const tags = event.data?.tags || [];
-            const notifTag = tags.find(t => t.name === 'notificationId');
+            console.log('Tags received from Resend:', tags);
+
+            // 2. We FORCE lowercase here because Resend sometimes alters the capitalization of tag names
+            const notifTag = tags.find(t => t.name.toLowerCase() === 'notificationid');
 
             if (notifTag && notifTag.value) {
-                await AdminNotification.findByIdAndUpdate(
-                    notifTag.value,
-                    { $inc: { openedCount: 1 } }
+                const cleanId = notifTag.value.trim();
+                console.log(`Attempting to update AdminNotification ID: ${cleanId}`);
+
+                // 3. Perform the update
+                const updatedDoc = await AdminNotification.findByIdAndUpdate(
+                    cleanId,
+                    { $inc: { openedCount: 1 } },
+                    { new: true }
                 );
+
+                if (updatedDoc) {
+                    console.log(`Success! New Open Count: ${updatedDoc.openedCount}`);
+                } else {
+                    console.log(`ERROR: Could not find AdminNotification with ID ${cleanId} in the database.`);
+                }
+            } else {
+                console.log('WARNING: No "notificationId" tag found in this open event. (This is normal for test emails sent without a database ID).');
             }
+            console.log('----------------------------------------\n');
         }
-        res.status(200).send('OK');
     } catch (error) {
-        console.error('Resend Webhook Error:', error);
-        res.status(500).send('Webhook Error');
+        // Since we already sent the 200 OK at the top, this just logs the error safely
+        console.error('🔥 Resend Webhook Processing Error:', error);
     }
 };
 
