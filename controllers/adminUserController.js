@@ -234,24 +234,39 @@ export const getUserProfile = async (req, res) => {
 };
 
 // Inside your adminUserController.js
-
 export const sendUserEmail = async (req, res) => {
     try {
         const { subject, message } = req.body;
         const user = await User.findById(req.params.id);
         
         if (!user) return res.status(404).json({ status: 'error', message: 'User not found' });
-        
-        // 1. Send Professional Branded Email 
-        const html = customAdminEmailHtml({ name: user.fullName, message });
-        await sendEmail({ to: user.emailAddress, subject, html });
 
-        // 2. NEW: Send In-App Notification (Fixed Enum)
+        // 1. NEW: Create the AdminNotification FIRST so it shows on the Dashboard and gives us an ID
+        const newNotification = await AdminNotification.create({
+            title: subject,
+            message: message,
+            type: 'Announcement', 
+            audience: 'Selected Users', // Since it's going to a specific user
+            sentThrough: ['Email', 'In-App'],
+            recipientsCount: 1, // It's a single email
+            sentBy: req.admin._id
+        });
+        
+        // 2. Send Professional Branded Email WITH TRACKING ID
+        const html = customAdminEmailHtml({ name: user.fullName, message });
+        await sendEmail({ 
+            to: user.emailAddress, 
+            subject, 
+            html,
+            dbNotificationId: newNotification._id // <-- THIS FIXES THE TRACKING!
+        });
+
+        // 3. Send In-App Notification
         await Notification.create({
             user: user._id,
             title: subject,
             message: message,
-            type: 'Announcement' // <-- Fixed to match schema enums
+            type: 'Announcement' 
         });
 
         await logAdminAction({ adminId: req.admin._id, action: 'SENT_EMAIL_TO_USER', resourceType: 'User', resourceId: user._id, req });

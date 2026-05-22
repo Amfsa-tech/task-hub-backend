@@ -297,14 +297,32 @@ export const sendTaskerEmail = async (req, res) => {
         
         if (!tasker) return res.status(404).json({ status: 'error', message: 'Tasker not found' });
         
-        const html = customAdminEmailHtml({ name: `${tasker.firstName} ${tasker.lastName}`, message });
-        await sendEmail({ to: tasker.emailAddress, subject, html });
+        // 1. NEW: Create the AdminNotification FIRST
+        const newNotification = await AdminNotification.create({
+            title: subject,
+            message: message,
+            type: 'Announcement', 
+            audience: 'Selected Users', 
+            sentThrough: ['Email', 'In-App'],
+            recipientsCount: 1, 
+            sentBy: req.admin._id
+        });
 
+        // 2. Send Professional Branded Email WITH TRACKING ID
+        const html = customAdminEmailHtml({ name: `${tasker.firstName} ${tasker.lastName}`, message });
+        await sendEmail({ 
+            to: tasker.emailAddress, 
+            subject, 
+            html,
+            dbNotificationId: newNotification._id // <-- THIS FIXES THE TRACKING!
+        });
+
+        // 3. Send In-App Notification
         await Notification.create({
             tasker: tasker._id,
             title: subject,
             message: message,
-            type: 'Announcement' // <-- Fixed to match schema enums
+            type: 'Announcement' 
         });
 
         await logAdminAction({ adminId: req.admin._id, action: 'SENT_EMAIL_TO_TASKER', resourceType: 'Tasker', resourceId: tasker._id, req });
