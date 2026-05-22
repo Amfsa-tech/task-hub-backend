@@ -13,7 +13,6 @@ const connectDB = async () => {
             w: 'majority',
             appName: 'Cluster0',
             // --- NEW: CONNECTION ARMOR FOR RENDER & ATLAS ---
-            keepAlive: true,                // Keeps connection active
             serverSelectionTimeoutMS: 5000, // Fails fast (5s) instead of hanging if network drops
             socketTimeoutMS: 45000,         // Closes inactive sockets to prevent memory leaks
             maxPoolSize: 10                 // Maintains up to 10 connections for heavy traffic
